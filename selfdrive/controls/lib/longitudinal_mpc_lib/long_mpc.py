@@ -93,8 +93,8 @@ def get_dynamic_follow(v_ego, personality=custom.LongitudinalPersonalitySP.stand
     x_vel =  [0,    11,   13,   15,   25,   40]
     y_dist = [1.3,  1.3,  1.3,  1.35,  1.4,  1.45]
   elif personality==custom.LongitudinalPersonalitySP.aggressive:
-    x_vel =  [0,    11,   14.5,   15,   20,   20.01,  25,   25.01,   36,   36.01]
-    y_dist = [1.135, 1.135, 1.135,  1.105, 1.105, 1.16, 1.16, 1.19, 1.19,  1.22]
+    x_vel =  [0,     11,    14.5,   15,    20,    20.01,  25, 25.01, 36,   36.01]
+    y_dist = [1.135, 1.135, 1.135,  1.105, 1.105, 1.15, 1.15, 1.18, 1.18,  1.22]
   else:
     raise NotImplementedError("Dynamic Follow personality not supported")
   return np.interp(v_ego, x_vel, y_dist)
