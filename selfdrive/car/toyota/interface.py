@@ -183,7 +183,7 @@ class CarInterface(CarInterfaceBase):
 
       if candidate in TSS2_CAR:
         tune.kiBP = [0., 0.1, 1., 2., 3., 5., 8., 12., 14., 20., 26., 36., 50]
-        tune.kiV = [0.346, 0.35, 0.33, 0.309, 0.287, 0.228, 0.222, 0.2085, 0.19, 0.17, 0.10, 0.06, 0.01]
+        tune.kiV = [0.346, 0.35, 0.33, 0.309, 0.289, 0.228, 0.222, 0.2085, 0.19, 0.17, 0.10, 0.06, 0.01]
         apply_tss2_car_tuning()
       else:
         apply_default_tuning()
