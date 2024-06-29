@@ -166,7 +166,7 @@ class CarInterface(CarInterfaceBase):
     def apply_custom_tss2_car_tuning():
       ret.vEgoStopping = 0.01
       ret.vEgoStarting = 0.01
-      ret.stoppingDecelRate = 0.70
+      ret.stoppingDecelRate = 0.35
 
     def apply_default_tss2_car_tuning():
       ret.vEgoStopping = 0.25
@@ -176,7 +176,7 @@ class CarInterface(CarInterfaceBase):
     #default tuning
     def apply_default_tuning():
       tune.kiBP = [0., 5., 35.]
-      tune.kiV = [3.6, 2.2, 1.5]
+      tune.kiV = [3.6, 2.3, 1.5]
 
     if candidate in TSS2_CAR or ret.enableGasInterceptorDEPRECATED:
       if sp_tss2_long_tune:
