@@ -64,9 +64,9 @@ def get_jerk_factor(personality=custom.LongitudinalPersonalitySP.standard):
   elif personality==custom.LongitudinalPersonalitySP.standard:
     return 1.0
   elif personality==custom.LongitudinalPersonalitySP.moderate:
-    return 1.0
-  elif personality==custom.LongitudinalPersonalitySP.aggressive:
     return 0.75
+  elif personality==custom.LongitudinalPersonalitySP.aggressive:
+    return 0.5
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
