@@ -176,14 +176,13 @@ class CarInterface(CarInterfaceBase):
     #default tuning
     def apply_default_tuning():
       tune.kiBP = [0., 5., 35.]
-      tune.kiV = [3.6, 2.4, 1.5]
+      tune.kiV = [3.6, 2.2, 1.5]
 
     if candidate in TSS2_CAR or ret.enableGasInterceptorDEPRECATED:
       if sp_tss2_long_tune:
         #tune.kiBP = [0., 5., 12., 20., 27., 36., 50]
         tune.kiBP = [0., 5., 12., 20., 27., 36., 50]
-        tune.kiV = [0.35, 0.229, 0.198, 0.17, 0.10, 0.07, 0.01]
-        #tune.kiV = [0.33, 0.22, 0.19, 0.17, 0.10, 0.07, 0.01]
+        tune.kiV = [0.35, 0.23, 0.198, 0.17, 0.10, 0.07, 0.01]
         apply_custom_tss2_car_tuning()
       else:
         tune.kpV = [0.0]
