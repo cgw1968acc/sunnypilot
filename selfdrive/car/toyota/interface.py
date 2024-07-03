@@ -172,8 +172,9 @@ class CarInterface(CarInterfaceBase):
       ret.stoppingDecelRate = 0.3  # reach stopping target smoothly
 
     def default_longitudinal_tuning():
-      tune.kiBP = [0., 5., 35.]
-      tune.kiV = [3.6, 2.4, 1.5]
+      tune.kiBP = [0., 35.]
+      tune.kpV = [3.6, 2.4, 1.5]
+      tune.kiV = [0.54, 0.36]
 
     tune = ret.longitudinalTuning
     if candidate in TSS2_CAR or ret.enableGasInterceptorDEPRECATED:
