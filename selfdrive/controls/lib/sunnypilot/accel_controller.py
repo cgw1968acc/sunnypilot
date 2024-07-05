@@ -30,9 +30,9 @@ AccelProfile = custom.AccelerationProfile
 
 # accel profile by @arne182 modified by cgw
 _DP_CRUISE_MIN_V =       [-0.25,  -0,25,  -0.35,  -0.35,  -0.40,  -0.88,  -0.82]
-_DP_CRUISE_MIN_V_ECO =   [-0.20,  -0.20,  -0.30,  -0.30,  -0.35,  -0.80,  -0.80]
+_DP_CRUISE_MIN_V_ECO =   [-0.10,  -0.10,  -0.30,  -0.30,  -0.35,  -0.80,  -0.80]
 _DP_CRUISE_MIN_V_SPORT = [-0.35,  -0.35,  -0.40,  -0.40,  -0.45,  -0.90,  -0.84]
-_DP_CRUISE_MIN_BP =      [0.,     8.32,   8.33,   15.99,  16.,    30.,    40.]
+_DP_CRUISE_MIN_BP =      [0.,     5.32,   5.33,   15.99,  16.,    30.,    40.]
 
 _DP_CRUISE_MAX_V =       [3.2, 2.5, 2.5, 1.70, 1.05, .81,  .625, .42,  .348, .12]
 _DP_CRUISE_MAX_V_ECO =   [3.0, 2.0, 2.0, 1.4, .80,   .68,  .53,  .32,  .20,  .085]
