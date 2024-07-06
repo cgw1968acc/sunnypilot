@@ -29,8 +29,8 @@ from openpilot.common.numpy_fast import interp
 AccelProfile = custom.AccelerationProfile
 
 # accel profile by @arne182 modified by cgw
-_DP_CRUISE_MIN_V =       [-0.02,  -0.02,  -0.70,  -0.70,  -0.88,  -0.95,  -1.00]
-_DP_CRUISE_MIN_V_ECO =   [-0.01,  -0.01,  -0.68,  -0.68,  -0.86,  -0.90,  -1.00]
+_DP_CRUISE_MIN_V =       [-0.70,  -0.70,  -0.70,  -0.70,  -0.88,  -0.95,  -1.00]
+_DP_CRUISE_MIN_V_ECO =   [-0.68,  -0.68,  -0.68,  -0.68,  -0.86,  -0.90,  -1.00]
 _DP_CRUISE_MIN_V_SPORT = [-0.72,  -0.72,  -0.72,  -0.72,  -0.90,  -1.00,  -1.00]
 _DP_CRUISE_MIN_BP =      [0.,     5.32,   5.33,   15.99,  16.,    30.,    40.]
 
