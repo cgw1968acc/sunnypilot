@@ -173,7 +173,7 @@ class CarInterface(CarInterfaceBase):
 
     def default_longitudinal_tuning():
       tune.kiBP = [0., 5., 35.]
-      tune.kiV = [3.0, 2.4, 1.5]
+      tune.kiV = [2.8, 2.0, 1.5]
 
     tune = ret.longitudinalTuning
     if candidate in TSS2_CAR or ret.enableGasInterceptorDEPRECATED:
