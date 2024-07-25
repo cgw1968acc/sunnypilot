@@ -3,7 +3,7 @@ import os
 import time
 import numpy as np
 from cereal import custom
-from openpilot.common.numpy_fast import clip, intrep
+from openpilot.common.numpy_fast import clip, interp
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
