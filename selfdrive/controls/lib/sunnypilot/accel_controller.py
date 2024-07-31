@@ -31,9 +31,9 @@ AccelPersonality = custom.AccelerationPersonality
 # accel personality by @arne182 modified by cgw
 
 # accel personality by @arne182 modified by cgw
-_DP_CRUISE_MIN_V =       [-0.07, -0.07,  -0.270,  -0.270,  -0.42,  -0.42,  -0.64,  -0.64,  -0.82]
-_DP_CRUISE_MIN_V_ECO =   [-0.07, -0.07,  -0.265,  -0.266,  -0.40,  -0.40,  -0.62,  -0.62,  -0.80]
-_DP_CRUISE_MIN_V_SPORT = [-0.07, -0.07,  -0.275,  -0.275,  -0.44,  -0.44,  -0.66,  -0.66,  -0.84]
+_DP_CRUISE_MIN_V =       [-0.11, -0.12,  -0.270,  -0.270,  -0.42,  -0.42,  -0.64,  -0.64,  -0.82]
+_DP_CRUISE_MIN_V_ECO =   [-0.10, -0.10,  -0.265,  -0.266,  -0.40,  -0.40,  -0.62,  -0.62,  -0.80]
+_DP_CRUISE_MIN_V_SPORT = [-0.13, -0.13,  -0.275,  -0.275,  -0.44,  -0.44,  -0.66,  -0.66,  -0.84]
 _DP_CRUISE_MIN_BP =      [0.,     5.55,  5.56,    18.,     18.01,  27.77,  27.78,  33.,    33.01]
 
 _DP_CRUISE_MAX_V =       [3.5, 3.5, 3.4, 2.4,  1.4,  .91,  .70,  .51,  .42,  .13]
