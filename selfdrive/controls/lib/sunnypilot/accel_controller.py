@@ -30,7 +30,7 @@ AccelPersonality = custom.AccelerationPersonality
 
 # accel personality by @arne182 modified by cgw and kumar
 _DP_CRUISE_MIN_V =       [-0.02, -0.02, -0.22, -0.23, -0.37, -0.37, -1.00]
-_DP_CRUISE_MIN_V_ECO =   [-0.02, -0.02, -0.20, -0.20, -0.36, -0.36, -1.00]
+_DP_CRUISE_MIN_V_ECO =   [-0.01, -0.01, -0.20, -0.20, -0.36, -0.36, -1.00]
 _DP_CRUISE_MIN_V_SPORT = [-0.03, -0.03, -0.24, -0.24, -0.38, -0.38, -1.00]
 _DP_CRUISE_MIN_BP =      [0.,    0.05,   3.12,  10.,  10.01, 20.,   30.,   55.]
 
