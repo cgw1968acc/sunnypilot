@@ -319,7 +319,8 @@ void Device::setAwake(bool on) {
 
 void Device::resetInteractiveTimeout(int timeout) {
   if (timeout == -1) {
-    timeout = (ignition_on ? 10 : 30);
+    // Set timeout to 1 minute (60 seconds) if ignition is on or off
+    timeout = 60;
   }
   interactive_timeout = timeout * UI_FREQ;
 }
