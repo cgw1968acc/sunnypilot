@@ -39,7 +39,7 @@ CRUISE_INTERVAL_SIGN = {
 
 # Constants for Limit controllers.
 LIMIT_ADAPT_ACC = -0.8  # m/s^2 Ideal acceleration for the adapting (braking) phase when approaching speed limits.
-LIMIT_MIN_ACC = -1.5  # m/s^2 Maximum deceleration allowed for limit controllers to provide.
+LIMIT_MIN_ACC = -1.2  # m/s^2 Maximum deceleration allowed for limit controllers to provide.
 LIMIT_MAX_ACC = 0.6   # m/s^2 Maximum acceleration allowed for limit controllers to provide while active.
 LIMIT_MIN_SPEED = 8.33  # m/s, Minimum speed limit to provide as solution on limit controllers.
 LIMIT_SPEED_OFFSET_TH = -1.  # m/s Maximum offset between speed limit and current speed for adapting state.
