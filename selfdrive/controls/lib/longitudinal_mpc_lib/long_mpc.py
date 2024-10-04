@@ -96,7 +96,7 @@ def get_dynamic_personality(v_ego, personality=custom.LongitudinalPersonalitySP.
     y_dist = [1.5,  1.5,  1.51, 1.51, 1.5,  1.5,  1.70,   1.70]
   elif personality==custom.LongitudinalPersonalitySP.moderate:
     x_vel =  [0.,   11.9, 12.,  14.,  16.,  22.,  22.01,  36.1]
-    y_dist = [1.3,  1.3,  1.31, 1.31, 1.3,  1.3,  1.40,   1.40]
+    y_dist = [1.3,  1.3,  1.31, 1.31, 1.3,  1.3,  1.45,   1.45]
   elif personality==custom.LongitudinalPersonalitySP.aggressive:
     x_vel =  [0.,   11.9, 12.,  14.,  16.,  22.,  22.01,  36.1]
     y_dist = [1.15, 1.15, 1.16, 1.16, 1.15, 1.15, 1.25,   1.25]
