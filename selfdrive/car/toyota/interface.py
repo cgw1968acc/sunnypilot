@@ -165,38 +165,26 @@ class CarInterface(CarInterfaceBase):
 
     sp_tss2_long_tune = Params().get_bool("ToyotaTSS2Long")
 
-    # hand tuned (August 12, 2024)
-    def custom_tss2_longitudinal_tuning():
+    tune = ret.longitudinalTuning
+    if candidate in TSS2_CAR:
+      # on stock Toyota this is -2.5
+      ret.stopAccel = -0.4
       ret.vEgoStopping = 0.25
       ret.vEgoStarting = 0.25
-      ret.stoppingDecelRate = 0.003
-
-    def default_tss2_longitudinal_tuning():
-      ret.vEgoStopping = 0.25
-      ret.vEgoStarting = 0.25
-      ret.stoppingDecelRate = 0.3  # reach stopping target smoothly
-
-    def default_longitudinal_tuning():
+      tune = ret.longitudinalTuning
+      tune.kpBP = [0.0]
+      tune.kpV =  [0.0]
+      tune.kiBP = [0.0]
+      tune.kiV =  [0.5]
+      ret.stoppingDecelRate = 0.1  # reach stopping target smoothly
+      # Since we compensate for imprecise acceleration in carcontroller, we can be less aggressive with tuning
+      # This also prevents unnecessary request windup due to internal car jerk limits
+      if ret.flags & ToyotaFlags.RAISED_ACCEL_LIMIT:
+        tune.kiV = [0.25]
+    else:
       tune.kiBP = [0., 5., 35.]
       tune.kiV = [3.6, 2.4, 1.5]
-
-    tune = ret.longitudinalTuning
-    if candidate in TSS2_CAR or ret.enableGasInterceptorDEPRECATED:
-      if sp_tss2_long_tune:
-        tune.kiBP = [0.,   2.,   8.,   12.,  20.,  27.,  36.,  40.]
-        tune.kiV = [0.352, 0.3,  0.22, 0.21, 0.175, 0.105, 0.09, 0.08]
-        custom_tss2_longitudinal_tuning()
-      else:
-        tune.kpV = [0.0]
-        tune.kiV = [0.5]
-        # Since we compensate for imprecise acceleration in carcontroller, we can be less aggressive with tuning
-        # This also prevents unnecessary request windup due to internal car jerk limits
-        if ret.flags & ToyotaFlags.RAISED_ACCEL_LIMIT:
-          tune.kiV = [0.25]
-      if candidate in TSS2_CAR:
-        default_tss2_longitudinal_tuning()
-    else:
-      default_longitudinal_tuning()
+    return ret
 
     if Params().get_bool("ToyotaEnhancedBsm"):
       ret.spFlags |= ToyotaFlagsSP.SP_ENHANCED_BSM.value
