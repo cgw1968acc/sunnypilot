@@ -65,7 +65,7 @@ class CarInterface(CarInterfaceBase):
     if Ecu.hybrid in found_ecus:
       ret.flags |= ToyotaFlags.HYBRID.value
 
-    if True: # candidate in (CAR.LEXUS_ES_TSS2, CAR.TOYOTA_COROLLA_TSS2, CAR.TOYOTA_PRIUS_TSS2, CAR.LEXUS_RX_TSS2) and Ecu.hybrid not in found_ecus:
+    if candidate in (CAR.LEXUS_ES_TSS2, CAR.TOYOTA_COROLLA_TSS2, CAR.TOYOTA_PRIUS_TSS2, CAR.LEXUS_RX_TSS2) and Ecu.hybrid not in found_ecus:
       ret.flags |= ToyotaFlags.RAISED_ACCEL_LIMIT.value
 
     if candidate == CAR.TOYOTA_PRIUS:
