@@ -13,7 +13,7 @@ from openpilot.common.conversions import Conversions as CV
 from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib.sunnypilot.helpers import debug
 
-TARGET_LAT_A = 1.9  # m/s^2
+TARGET_LAT_A = 2.0  # m/s^2
 MIN_TARGET_V = 5  # m/s
 
 PARAMS_UPDATE_PERIOD = 5.
@@ -104,7 +104,7 @@ class VisionTurnController:
     max_curve = self.max_pred_lat_acc / (v_ego**2)
 
     # Get the target velocity for the maximum curve
-    self._v_target = (TARGET_LAT_A / max_curve) ** 0.5
+    self._v_target = (TARGET_LAT_A / max_curve) ** 0.7
     self._v_target = max(self._v_target, MIN_TARGET_V)
 
   def _state_transition(self):
