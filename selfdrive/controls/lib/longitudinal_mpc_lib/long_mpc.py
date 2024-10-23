@@ -71,57 +71,66 @@ def get_jerk_factor(personality=custom.LongitudinalPersonalitySP.standard):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
-# multiplier for A_CHANGE_COST = 200.
 def get_a_change_factor(v_ego, v_lead0, v_lead1, personality=custom.LongitudinalPersonalitySP.standard):
+  # Set cost multipliers based on driving personality (relaxed, standard, moderate, aggressive).
+  # These values adjust the sensitivity of acceleration change.
+  # Higher value = more cautious (slower reaction), smaller value = quicker response (more aggressive driving)
   if personality==custom.LongitudinalPersonalitySP.relaxed:
-    a_change_cost_multiplier_follow = 1.0
-    a_change_cost_high_speed_factor = 1.0
+    a_change_cost_multiplier_follow = 1.0  # Highest cost for changing acceleration, meaning more gradual transitions
+    a_change_cost_high_speed_factor = 1.0  # No extra penalty for high-speed changes (more cautious)
   elif personality==custom.LongitudinalPersonalitySP.standard:
-    a_change_cost_multiplier_follow = 0.5
-    a_change_cost_high_speed_factor = 1.5
+    a_change_cost_multiplier_follow = 0.5  # Moderate cost for changing acceleration (quicker transitions compared to relaxed)
+    a_change_cost_high_speed_factor = 1.5  # Higher penalty for changes at higher speeds (more cautious)
   elif personality==custom.LongitudinalPersonalitySP.moderate:
-    a_change_cost_multiplier_follow = 0.5
-    a_change_cost_high_speed_factor = 1.5
+    a_change_cost_multiplier_follow = 0.5  # Similar to standard (quicker transitions compared to relaxed)
+    a_change_cost_high_speed_factor = 1.5  # Similar to standard (higher penalty for high speeds)
   elif personality==custom.LongitudinalPersonalitySP.aggressive:
-    a_change_cost_multiplier_follow = 0.1
-    a_change_cost_high_speed_factor = 5.
+    a_change_cost_multiplier_follow = 0.1  # Very low cost for changing acceleration, meaning quicker reactions (less cautious)
+    a_change_cost_high_speed_factor = 5.0  # Much higher penalty for abrupt changes at high speeds (very cautious at high speeds)
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
-  # stolen from @KRKeegan
-  # values used for interpolation
-  # start with a small A_CHANGE_COST_MULTIPLIER_V during interpolation to allow for faster change in accel
-  LEAD_AUGMENTATION_BP_MAX = 5.    # max vEgo for rapid acceleration
+  # Variables to modify the acceleration change based on speed and lead vehicle conditions.
+  # LEAD_AUGMENTATION_BP_MAX defines the vEgo threshold for rapid acceleration.
+  LEAD_AUGMENTATION_BP_MAX = 5.0  # Maximum speed (5 m/s ~ 18 km/h) where rapid acceleration adjustments are allowed
 
-  LEAD_AUGMENTATION_BP = [0., LEAD_AUGMENTATION_BP_MAX]  # vEgo, in m/s
-  LEAD_AUGMENTATION_V = [.05, 1.]  # multiplier values
+  # LEAD_AUGMENTATION_BP: breakpoints for ego vehicle speed (vEgo) in m/s
+  # LEAD_AUGMENTATION_V: multiplier values for ego vehicle speed interpolation
+  LEAD_AUGMENTATION_BP = [0., LEAD_AUGMENTATION_BP_MAX]  # vEgo breakpoints: [0 m/s, 5 m/s (~18 km/h)]
+  LEAD_AUGMENTATION_V = [.05, 1.]  # acceleration multipliers: At 0 m/s, allow very small changes (.05), at 5 m/s allow faster acceleration (1.0)
 
-  # increase a_change_cost at higher speed to reduce abrupt braking
-  SPEED_AUGMENTATION_BP = [0., LEAD_AUGMENTATION_BP_MAX, 10.]
-  SPEED_AUGMENTATION_V = [1., 1., a_change_cost_high_speed_factor]
+  # SPEED_AUGMENTATION_BP: breakpoints for speed adjustment to reduce abrupt braking at higher speeds
+  # SPEED_AUGMENTATION_V: interpolation values for scaling acceleration cost based on speed
+  # Higher = more cautious (penalizes abrupt braking), smaller = more aggressive (less penalty)
+  SPEED_AUGMENTATION_BP = [0., LEAD_AUGMENTATION_BP_MAX, 10.]  # Speed breakpoints: [0 m/s, 5 m/s, 10 m/s (~36 km/h)]
+  SPEED_AUGMENTATION_V = [1., 1., a_change_cost_high_speed_factor]  # Multiplier: between 0-5 m/s, no change (1.0), after 5 m/s, scale by a_change_cost_high_speed_factor (e.g., 1.5 in standard mode)
 
-  # when lead is pulling away, and speed is between 0 and 5 m/s, interpolate a_change_cost_multiplier_v_ego
-  lead_augmented_a_change_cost = 1.
+  # Calculate a cost for acceleration changes when lead vehicles are pulling away and ego speed is below the threshold.
+  lead_augmented_a_change_cost = 1.0  # Default cost factor
   if (v_lead0 - v_ego > 1e-3) and (v_lead1 - v_ego > 1e-3):
+    # Interpolate for the acceleration change cost when lead vehicles are increasing speed, based on vEgo
     lead_augmented_a_change_cost = interp(v_ego, LEAD_AUGMENTATION_BP, LEAD_AUGMENTATION_V)
 
+  # Multiply the lead-based cost with speed-based cost to get a final cost factor, scaling with vehicle speed
   speed_augmented_a_change_cost = a_change_cost_multiplier_follow * interp(v_ego, SPEED_AUGMENTATION_BP, SPEED_AUGMENTATION_V)
-  # get the minimum between a_change_factor based on driving personality, and a_change_factor based on v_ego
+
+  # Choose the smaller factor between the lead-based cost and the speed-based cost
   a_change_factor = lead_augmented_a_change_cost if v_ego <= LEAD_AUGMENTATION_BP_MAX else speed_augmented_a_change_cost
 
-  # and pass it on as the final result
+  # Return the final acceleration change factor to be applied
   return a_change_factor
 
-# multiplier for DANGER_ZONE_COST = 100.
+# Function to return a multiplier for a danger zone cost based on driving personality
 def get_danger_zone_factor(personality=custom.LongitudinalPersonalitySP.standard):
+  # Higher values mean more cautious driving in dangerous situations, scaling the cost accordingly
   if personality==custom.LongitudinalPersonalitySP.relaxed:
-    return 1.6
+    return 1.6  # Higher danger zone cost for relaxed personality (more cautious)
   elif personality==custom.LongitudinalPersonalitySP.standard:
-    return 1.3
+    return 1.3  # Medium danger zone cost for standard personality
   elif personality==custom.LongitudinalPersonalitySP.moderate:
-    return 1.3
+    return 1.3  # Medium danger zone cost for moderate personality (similar to standard)
   elif personality==custom.LongitudinalPersonalitySP.aggressive:
-    return 1.0
+    return 1.0  # Lowest danger zone cost for aggressive personality (less cautious)
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
