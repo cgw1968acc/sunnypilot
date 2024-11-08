@@ -81,6 +81,7 @@ class CarController(CarControllerBase):
     self._auto_lock_speed = 10 * (CV.KPH_TO_MS if CS.params_list.is_metric else CV.MPH_TO_MS)
 
     actuators = CC.actuators
+    stopping = actuators.longControlState == LongCtrlState.stopping
     hud_control = CC.hudControl
     pcm_cancel_cmd = CC.cruiseControl.cancel
     lat_active = CC.latActive and abs(CS.out.steeringTorque) < MAX_USER_TORQUE and abs(CS.out.steeringAngleDeg) < MAX_USER_TORQUE
