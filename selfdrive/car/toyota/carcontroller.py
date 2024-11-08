@@ -6,7 +6,7 @@ from common.conversions import Conversions as CV
 from openpilot.common.numpy_fast import clip, interp
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.car import apply_meas_steer_torque_limits, apply_std_steer_angle_limits, common_fault_avoidance, make_can_msg, make_tester_present_msg, \
-                                    create_gas_interceptor_command, rate_limit
+                                    create_gas_interceptor_command, rate_limit, DT_CTRL
 from openpilot.selfdrive.car.interfaces import CarControllerBase
 from openpilot.selfdrive.car.toyota import toyotacan
 from openpilot.selfdrive.car.toyota.values import CAR, STATIC_DSU_MSGS, NO_STOP_TIMER_CAR, TSS2_CAR, \
