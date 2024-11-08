@@ -18,6 +18,7 @@ SteerControlType = car.CarParams.SteerControlType
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
+ACCELERATION_DUE_TO_GRAVITY = 9.81  # m/s^2
 ACCEL_WINDUP_LIMIT = 0.5  # m/s^2 / frame
 
 # LKA limits
