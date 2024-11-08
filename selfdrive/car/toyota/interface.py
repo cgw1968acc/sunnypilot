@@ -62,8 +62,6 @@ class CarInterface(CarInterfaceBase):
     found_ecus = [fw.ecu for fw in car_fw]
     ret.enableDsu = len(found_ecus) > 0 and Ecu.dsu not in found_ecus and candidate not in (NO_DSU_CAR | UNSUPPORTED_DSU_CAR) \
                                         and not (ret.flags & ToyotaFlags.SMART_DSU)
-    if Ecu.hybrid in found_ecus:
-      ret.flags |= ToyotaFlags.HYBRID.value
 
     if True: # candidate in (CAR.LEXUS_ES_TSS2, CAR.TOYOTA_COROLLA_TSS2, CAR.TOYOTA_PRIUS_TSS2, CAR.LEXUS_RX_TSS2) and Ecu.hybrid not in found_ecus:
       ret.flags |= ToyotaFlags.RAISED_ACCEL_LIMIT.value
@@ -167,9 +165,9 @@ class CarInterface(CarInterfaceBase):
 
     # hand tuned (August 12, 2024)
     def custom_tss2_longitudinal_tuning():
-      ret.vEgoStopping = 0.10
-      ret.vEgoStarting = 0.01
-      ret.stoppingDecelRate = 0.006
+      ret.vEgoStopping = 0.25
+      ret.vEgoStarting = 0.12
+      ret.stoppingDecelRate = 0.003
 
     def default_tss2_longitudinal_tuning():
       ret.vEgoStopping = 0.25
@@ -187,8 +185,8 @@ class CarInterface(CarInterfaceBase):
         #tune.kiV = [0.1,  0.12, 0.08, 0.06, 0.5, 1.0]
         #tune.kpBP = [0., 5., 20.]
         #tune.kpV = [2.3, 1.0, 0.7]
-        tune.kiBP = [0.,  8.,   12.,  20.,  27.,  36.,  40.]
-        tune.kiV = [0.35, 0.22, 0.21, 0.175, 0.105, 0.09, 0.08]
+        tune.kiBP = [0.,   2.,    8.,   12.,  20.,  27.,  36.,  40.]
+        tune.kiV = [0.345,  0.276,  0.216,  0.21, 0.173, 0.10, 0.09, 0.08]
         custom_tss2_longitudinal_tuning()
       else:
         tune.kpV = [0.0]
