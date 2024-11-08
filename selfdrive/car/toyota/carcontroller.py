@@ -4,6 +4,7 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib.pid import PIDController
 from common.conversions import Conversions as CV
 from openpilot.common.numpy_fast import clip, interp
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.car import apply_meas_steer_torque_limits, apply_std_steer_angle_limits, common_fault_avoidance, make_can_msg, make_tester_present_msg, \
                                     create_gas_interceptor_command, rate_limit
 from openpilot.selfdrive.car.interfaces import CarControllerBase
