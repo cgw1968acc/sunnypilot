@@ -4,6 +4,7 @@
 [submodule "opendbc"]
   path = opendbc
   url = ../../sunnyhaibin/opendbc.git
+  branch = toyota-new
 [submodule "msgq"]
   path = msgq_repo
   url = ../../commaai/msgq.git
