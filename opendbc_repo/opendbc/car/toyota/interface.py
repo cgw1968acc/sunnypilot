@@ -1,7 +1,8 @@
 from panda import Panda
 from panda import uds
+from openpilot.common.params import Params
 from opendbc.car import Bus, structs, get_safety_config
-from opendbc.car.toyota.values import Ecu, CAR, DBC, ToyotaFlags, CarControllerParams, TSS2_CAR, RADAR_ACC_CAR, NO_DSU_CAR, \
+from opendbc.car.toyota.values import Ecu, CAR, DBC, ToyotaFlags, ToyotaFlagsSP, CarControllerParams, TSS2_CAR, RADAR_ACC_CAR, NO_DSU_CAR, \
                                                   MIN_ACC_SPEED, EPS_SCALE, UNSUPPORTED_DSU_CAR, NO_STOP_TIMER_CAR, ANGLE_CONTROL_CAR
 from opendbc.car.disable_ecu import disable_ecu
 from opendbc.car.interfaces import CarInterfaceBase
@@ -99,6 +100,15 @@ class CarInterface(CarInterfaceBase):
     # Detect flipped signals and enable for C-HR and others
     ret.enableBsm = 0x3F6 in fingerprint[0] and candidate in TSS2_CAR
 
+    if Params().get_bool("ToyotaEnhancedBsm"):
+      ret.spFlags |= ToyotaFlagsSP.SP_ENHANCED_BSM.value
+
+    if candidate == CAR.TOYOTA_PRIUS_TSS2:
+      ret.spFlags |= ToyotaFlagsSP.SP_NEED_DEBUG_BSM.value
+
+    if Params().get_bool("ToyotaAutoHold") and candidate in (TSS2_CAR - RADAR_ACC_CAR):
+      ret.spFlags |= ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD.value
+
     # No radar dbc for cars without DSU which are not TSS 2.0
     # TODO: make an adas dbc file for dsu-less models
     ret.radarUnavailable = Bus.radar not in DBC[candidate] or candidate in (NO_DSU_CAR - TSS2_CAR)
@@ -132,18 +142,26 @@ class CarInterface(CarInterfaceBase):
     # min speed to enable ACC. if car can do stop and go, then set enabling speed
     # to a negative value, so it won't matter.
     ret.minEnableSpeed = -1. if stop_and_go else MIN_ACC_SPEED
+    sp_tss2_long_tune = Params().get_bool("ToyotaTSS2Long")
 
     tune = ret.longitudinalTuning
     if candidate in TSS2_CAR:
-      tune.kpV = [0.0]
-      tune.kiV = [0.5]
-      ret.vEgoStopping = 0.25
-      ret.vEgoStarting = 0.25
-      ret.stoppingDecelRate = 0.3  # reach stopping target smoothly
-
-      # Since we compensate for imprecise acceleration in carcontroller and error correct on aEgo, we can avoid using gains
-      if ret.flags & ToyotaFlags.RAISED_ACCEL_LIMIT:
-        tune.kiV = [0.0]
+      if sp_tss2_long_tune:
+        tune.kiBP = [0.,   2.,    3.,    5.,    8.,     12.,   20.,   27.]
+        tune.kiV = [0.327, 0.297, 0.276, 0.2405,  0.225,  0.205,  0.17, 0.10]
+        ret.vEgoStopping = 0.25
+        ret.vEgoStarting = 0.01
+        ret.stoppingDecelRate = 0.0025
+      else:
+        tune.kpV = [0.0]
+        tune.kiV = [0.5]
+        ret.vEgoStopping = 0.25
+        ret.vEgoStarting = 0.25
+        ret.stoppingDecelRate = 0.3  # reach stopping target smoothly
+        # Since we compensate for imprecise acceleration in carcontroller, we can be less aggressive with tuning
+        # This also prevents unnecessary request windup due to internal car jerk limits
+        if ret.flags & ToyotaFlags.RAISED_ACCEL_LIMIT:
+          tune.kiV = [0.0]
     else:
       tune.kiBP = [0., 5., 35.]
       tune.kiV = [3.6, 2.4, 1.5]
