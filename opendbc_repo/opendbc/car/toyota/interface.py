@@ -146,7 +146,7 @@ class CarInterface(CarInterfaceBase):
 
     if candidate in TSS2_CAR:
       ret.vEgoStopping = 0.25
-      ret.vEgoStarting = 0.25
+      ret.vEgoStarting = 0.10
       ret.stoppingDecelRate = 0.1  # reach stopping target smoothly
 
     return ret
