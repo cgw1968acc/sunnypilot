@@ -44,9 +44,10 @@ def manager_init() -> None:
 
   sunnypilot_default_params: list[tuple[str, str | bytes]] = [
     ("Mads", "1"),
-    ("MadsCruiseMain", "1"),
-    ("MadsDisengageLateralOnBrake", "0"),
+    ("MadsMainCruiseAllowed", "1"),  # TODO-SP: if we ever change the default to 0, it will have implications on users without LFA/LKAS button.
+    ("MadsPauseLateralOnBrake", "0"),
     ("MadsUnifiedEngagementMode", "1"),
+    ("HyundaiLongitudinalMainCruiseToggleable", "1"),
 
     ("ToyotaAutoHold", "0"),
     ("ToyotaEnhancedBsm", "0"),
