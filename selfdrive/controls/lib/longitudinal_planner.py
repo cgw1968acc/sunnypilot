@@ -24,7 +24,7 @@ A_CRUISE_MAX_VALS =   [2.0, 2.0,  2.0,  1.99,  1.246, .762,  .626, .436,  .333, 
 A_CRUISE_MAX_BP =     [0.,  1.,   6.,   8.,   11.,  16.,   20.,  25.,  30.,  55.]
 #A_CRUISE_MIN_VALS =    [-1.2, -1.2]
 #A_CRUISE_MIN_BP =      [0.,   40.]
-A_CRUISE_MIN_VALS =    [-0.10, -0.10, -0.20, -0.20,  -0.30, -0.30, -1.2, -1.2]
+A_CRUISE_MIN_VALS =    [-0.05, -0.05, -0.12, -0.12,  -0.28, -0.28, -1.0, -1.0]
 A_CRUISE_MIN_BP =      [0.,    10.,    10.01,  15.,  15.01, 20.,  20.01, 40.]
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
