@@ -83,7 +83,7 @@ def get_stopped_equivalence_factor(v_lead):
   return (v_lead**2) / (2 * COMFORT_BRAKE)
 
 def get_stopped_equivalence_factor_krkeegen(v_lead, v_ego):
-  v_diff_offset_max = 10  # 🔧 Controls max offset distance (default: 10m, increase for more aggression)
+  v_diff_offset_max = 15  # 🔧 Controls max offset distance (default: 10m, increase for more aggression)
   delta_speed = v_lead - v_ego  # Relative speed of lead vs. ego
 
   v_diff_offset = np.zeros_like(delta_speed)  # Ensures proper shape (works with scalars & arrays)
@@ -93,13 +93,13 @@ def get_stopped_equivalence_factor_krkeegen(v_lead, v_ego):
   if np.any(mask):
     # 🔧 **Scaling Factor - Adjusts offset growth rate based on ego speed**
     # Higher = faster acceleration demand
-    scaling_factor = np.interp(v_ego, [0, 15], [2.0, 1.2])  # Try tweaking the [2.0, 1.2] range
+    scaling_factor = np.interp(v_ego, [0, 15], [2.3, 1.4])  # Try tweaking the [2.0, 1.2] range
     v_diff_offset[mask] = delta_speed[mask] * scaling_factor
     v_diff_offset = np.clip(v_diff_offset, 0, v_diff_offset_max)  # Limits offset
 
     # 🔧 **Ego Speed Scaling - Reduces offset effect at higher speeds for smoothness**
     # Lower values at high speeds prevent unnecessary jerks
-    ego_scaling = np.interp(v_ego, [0, 20], [1.0, 0.3])  # Try adjusting [1.0, 0.3] for different response
+    ego_scaling = np.interp(v_ego, [0, 20], [1.0, 0.7])  # Try adjusting [1.0, 0.3] for different response
     v_diff_offset *= ego_scaling
 
   stopping_distance = (v_lead**2) / (2 * COMFORT_BRAKE) + v_diff_offset
