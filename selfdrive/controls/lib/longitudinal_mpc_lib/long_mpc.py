@@ -71,11 +71,11 @@ def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
 
 def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
-    return 1.67
+    return 1.675
   elif personality==log.LongitudinalPersonality.standard:
-    return 1.27
+    return 1.275
   elif personality==log.LongitudinalPersonality.aggressive:
-    return 0.97
+    return 0.975
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
@@ -97,7 +97,7 @@ def get_stopped_equivalence_factor_krkeegen(v_lead, v_ego):
     v_diff_offset = np.clip(v_diff_offset, 0, v_diff_offset_max)  
 
     # 🏁 **Ego Speed Damping - Keeps More Space at 20-40 kph**
-    ego_scaling = np.interp(v_ego, [0, 20, 40], [1.0, 0.9, 0.85])  # Slightly increases following distance
+    ego_scaling = np.interp(v_ego, [0, 20, 40], [0.9, 0.9, 0.85])  # Slightly increases following distance
     v_diff_offset *= ego_scaling  
 
     # 🔧 **Mid-Speed Buffer to Prevent Closing in Too Much**
