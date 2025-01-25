@@ -101,7 +101,7 @@ def get_stopped_equivalence_factor_krkeegen(v_lead, v_ego):
     v_diff_offset *= ego_scaling  
 
     # 🔧 **Mid-Speed Buffer to Prevent Closing in Too Much**
-    mid_speed_following_buffer = np.interp(v_ego, [0, 20, 40], [1.0, 1.1, 1.2])  # More space at 20-40 kph
+    mid_speed_following_buffer = np.interp(v_ego, [0, 20, 40], [0.95, 1.1, 1.2])  # More space at 20-40 kph
     v_diff_offset *= mid_speed_following_buffer  
 
   stopping_distance = (v_lead**2) / (2 * COMFORT_BRAKE) + v_diff_offset
