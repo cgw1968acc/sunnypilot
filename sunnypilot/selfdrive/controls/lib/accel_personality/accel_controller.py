@@ -35,11 +35,10 @@ _DP_CRUISE_MIN_V_NORMAL = [-1.0,  -1.0]
 _DP_CRUISE_MIN_V_SPORT =  [-1.0,  -1.0]
 _DP_CRUISE_MIN_BP =       [0., 20.]
 
-
-_DP_CRUISE_MAX_V_ECO =    [1.6, 1.6, 1.6, 1.60, 0.82, .532, .432, .32,  .095]
-_DP_CRUISE_MAX_V_NORMAL = [1.8, 1.8, 1.8, 1.80, 0.92, .62,  .47,  .36,  .11]
-_DP_CRUISE_MAX_V_SPORT =  [2.0, 2.0, 2.0, 2.00, 1.05, .71,  .54,  .46,  .2]
-_DP_CRUISE_MAX_BP =       [0.,  1.,  6.,  8.,   11.,  20.,  25.,  30.,  55.]
+_DP_CRUISE_MAX_V_ECO =    [1.65, 1.65, 1.65, 1.65, 0.82, .532, .432, .32,  .28,  .085]
+_DP_CRUISE_MAX_V_NORMAL = [1.85, 1.85, 1.85, 1.85, 0.92, .73,  .56,  .36,  .30,  .12]
+_DP_CRUISE_MAX_V_SPORT =  [2.00, 2.00, 2.00, 2.00, 1.10, .78,  .61,  .42,  .333, .2]
+_DP_CRUISE_MAX_BP =       [0.,   1.,   6.,   8.,   11.,  16,   20.,  25.,  30.,  55.]
 
 
 class AccelController:
