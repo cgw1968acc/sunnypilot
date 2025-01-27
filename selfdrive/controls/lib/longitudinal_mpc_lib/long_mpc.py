@@ -92,7 +92,7 @@ def get_stopped_equivalence_factor_krkeegen(v_lead, v_ego):
 
   if np.any(mask):
     # 🔧 **Scaling Factor - Higher acceleration demand at lower speeds**
-    scaling_factor = np.interp(v_ego, [0, 3, 8, 16], [2.4, 2.2, 2.2, 1.8])  # Increased low-speed response
+    scaling_factor = np.interp(v_ego, [0, 3, 8, 16], [2.4, 2.1, 2.0, 1.8])  # Increased low-speed response
     v_diff_offset[mask] = delta_speed[mask] * scaling_factor
     v_diff_offset = np.clip(v_diff_offset, 0, v_diff_offset_max)
 
