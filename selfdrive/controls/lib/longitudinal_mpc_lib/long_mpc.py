@@ -93,7 +93,7 @@ def get_stopped_equivalence_factor_krkeegen(v_lead, v_ego):
   if np.any(mask):
     # 🔧 **Scaling Factor - Adjusts offset growth rate based on ego speed**
     # Higher = faster acceleration demand
-    scaling_factor = np.interp(v_ego, [0,  1,  2,  3,  4,  5,  8, 16], [2.4, 2.2, 2.0, 2.0, 2.0, 2.0, 2.0, 1.6])  # Try tweaking the [2.0, 1.2] range
+    scaling_factor = np.interp(v_ego, [0,  1,  2,  3,  4,  5,  8, 16], [2.4, 2.3, 2.2, 2.1, 2.0, 2.0, 2.0, 1.6])  # Try tweaking the [2.0, 1.2] range
     v_diff_offset[mask] = delta_speed[mask] * scaling_factor
     v_diff_offset = np.clip(v_diff_offset, 0, v_diff_offset_max)  # Limits offset
 
