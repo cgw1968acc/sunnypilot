@@ -91,18 +91,17 @@ def get_stopped_equivalence_factor_krkeegen(v_lead, v_ego):
   mask = delta_speed > 0  # Only apply logic when lead is pulling away
 
   if np.any(mask):
-    # 🔧 **Scaling Factor - Higher acceleration demand at lower speeds**
-    scaling_factor = np.interp(v_ego, [0, 2, 8, 16, 22], [2.4, 1.9, 1.8, 1.8, 1.0])  # Increased low-speed response
+    # 🔧 **Stronger Low-Speed Acceleration Scaling**
+    scaling_factor = np.interp(v_ego, [0, 1, 3, 8, 16, 22], [3.2, 2.8, 2.3, 1.9, 1.8, 1.0])  
     v_diff_offset[mask] = delta_speed[mask] * scaling_factor
     v_diff_offset = np.clip(v_diff_offset, 0, v_diff_offset_max)
 
-    # 🔧 **Ego Speed Scaling - Limits effect at higher speeds for stability**
-    ego_scaling = np.interp(v_ego, [0, 1, 10, 20], [1.0, 1.3, 1.2, 0.85])  # Slightly stronger response at low speed
+    # 🔧 **Reduce Ego Speed Scaling Effect at Low Speeds**
+    ego_scaling = np.interp(v_ego, [0, 1, 5, 10, 20], [1.3, 1.25, 1.2, 1.1, 0.85])  
     v_diff_offset *= ego_scaling
 
   stopping_distance = (v_lead**2) / (2 * COMFORT_BRAKE) + v_diff_offset
   return stopping_distance
-
 
 
 def get_safe_obstacle_distance(v_ego, t_follow):
