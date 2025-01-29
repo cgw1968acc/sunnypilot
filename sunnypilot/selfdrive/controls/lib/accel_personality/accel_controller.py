@@ -30,8 +30,8 @@ AccelPersonality = custom.LongitudinalPlanSP.AccelerationPersonality
 
 # Accel personality by @arne182 modified by cgw and kumar
 
-_DP_CRUISE_MIN_V_ECO =    [-0.02, -0.02, -0.85, -0.85, -0.85, -0.85, -1.0,  -1.0]
-_DP_CRUISE_MIN_V_NORMAL = [-0.02, -0.02, -0.90, -0.90, -0.90, -0.90, -1.0,  -1.0]
+_DP_CRUISE_MIN_V_ECO =    [-0.02, -0.02, -0.85, -0.85, -0.85, -0.85, -1.2,  -1.2]
+_DP_CRUISE_MIN_V_NORMAL = [-0.02, -0.02, -0.90, -0.90, -0.90, -0.90, -1.2,  -1.2]
 _DP_CRUISE_MIN_V_SPORT =  [-0.02, -0.02, -1.0,  -1.0,  -1.0,  -1.0,  -1.2,  -1.2]
 _DP_CRUISE_MIN_BP =       [0.,     2.0,    2.01,   15.,   15.01, 20.,   20.01, 40.]
 
