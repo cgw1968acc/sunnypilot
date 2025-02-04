@@ -97,7 +97,7 @@ def get_stopped_equivalence_factor_krkeegen(v_lead, v_ego):
     v_diff_offset = np.clip(v_diff_offset, 0, v_diff_offset_max)
 
     # 🔧 **Reduce Ego Speed Scaling Effect at Low Speeds**
-    ego_scaling = np.interp(v_ego, [0, 1, 3, 5, 20], [1.8, 1.7, 1.1, 1.0, 1.0])  
+    ego_scaling = np.interp(v_ego, [0, 1, 3, 5, 20], [2.4, 2.2, 1.4, 1.0, 1.0])  
     v_diff_offset *= ego_scaling
 
   stopping_distance = (v_lead**2) / (2 * COMFORT_BRAKE) + v_diff_offset
