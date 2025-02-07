@@ -62,7 +62,7 @@ def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
     return 1.0
   elif personality==log.LongitudinalPersonality.standard:
-    return 1.0
+    return 0.8
   elif personality==log.LongitudinalPersonality.aggressive:
     return 0.6
   else:
