@@ -49,8 +49,8 @@ def get_long_tune(CP, params):
         #optimal for rav4
         #kiBP = [2.,  12.,  20.,  27.]
         #kiV = [.348, .20,  .17,  .10]
-        kiBP = [2., 5.,]
-        kiV = [0.5, 0.25]
+        kiBP = [2., 8.,]
+        kiV = [0.5, 0.22]
       else:
         #optimal for corolla
         #kiBP = [0.,  12.,   20.,   27.]
