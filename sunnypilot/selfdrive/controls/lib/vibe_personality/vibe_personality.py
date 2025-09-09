@@ -17,7 +17,7 @@ AccelPersonality = custom.LongitudinalPlanSP.AccelerationPersonality
 MAX_ACCEL_PROFILES = {
     AccelPersonality.eco:       [2.00, 2.0,  1.80, 1.23, .523, .288, .13, .088],  # eco
     AccelPersonality.normal:    [2.00, 2.0,  1.95, 1.40, .600, .299, .17, .12],   # normal
-    AccelPersonality.sport:     [2.00, 2.0,  1.99, 1.65, .800, .333, .24, .2],   # sport
+    AccelPersonality.sport:     [2.00, 2.0,  1.99, 1.65, .800, .333, .24, .2],    # sport
 }
 MAX_ACCEL_BREAKPOINTS =         [0.,   4.,   6.,   9.,   16.,  25.,  30., 55.]
 
@@ -29,21 +29,13 @@ MIN_ACCEL_PROFILES = {
 }
 MIN_ACCEL_BREAKPOINTS =         [0.,   8.,  20.,  50.]
 
-
-def get_T_FOLLOW_vibe(personality):
-    """Get base T_FOLLOW value for each personality"""
-    return {
-        LongPersonality.relaxed: 1.75,
-        LongPersonality.standard: 1.45,
-        LongPersonality.aggressive: 1.25
-    }[personality]
-
-
-def get_dynamic_personality(v_ego, personality):
-    """Adjust T_FOLLOW based on vehicle speed"""
-    scale_factor = np.interp(v_ego, [0, 3, 6, 12, 36], [1.0, 1.0, 0.8, 1.0, 1.2])
-    return get_T_FOLLOW_vibe(personality) * scale_factor
-
+# Follow distance profiles mapped to LongPersonality (relaxed/standard/aggressive)
+FOLLOW_PROFILES = {
+    LongPersonality.relaxed:    [1.75, 1.75, 1.60, 1.80, 2.10],  # more spread out
+    LongPersonality.standard:   [1.45, 1.45, 1.30, 1.50, 1.70],  # balanced
+    LongPersonality.aggressive: [1.25, 1.25, 1.10, 1.25, 1.45],  # tighter
+}
+FOLLOW_BREAKPOINTS = [0., 3., 6., 12., 36.]
 
 class VibePersonalityController:
     """Controller for acceleration and distance personalities"""
@@ -134,7 +126,7 @@ class VibePersonalityController:
     def get_follow_distance_multiplier(self, v_ego: float) -> float:
         """Get dynamic following distance based on speed and personality"""
         self._update_from_params()
-        return get_dynamic_personality(v_ego, self.long_personality)
+        return float(np.interp(v_ego, FOLLOW_BREAKPOINTS, FOLLOW_PROFILES[self.long_personality]))
 
     def get_min_accel(self, v_ego: float) -> float:
         return self.get_accel_limits(v_ego)[0]
