@@ -31,11 +31,11 @@ MIN_ACCEL_BREAKPOINTS =         [0.,    50.]
 
 # Follow distance profiles mapped to LongPersonality (relaxed/standard/aggressive)
 FOLLOW_PROFILES = {
-    LongPersonality.relaxed:    [1.75, 1.76, 1.75, 1.65, 1.80, 1.80],  # more spread out
-    LongPersonality.standard:   [1.45, 1.46, 1.45, 1.40, 1.50, 1.50],  # balanced
-    LongPersonality.aggressive: [1.25, 1.27, 1.25, 1.25, 1.25, 1.30],  # tighter
+    LongPersonality.relaxed:    [1.75, 1.77, 1.75, 1.65, 1.80, 1.80],  # more spread out
+    LongPersonality.standard:   [1.45, 1.48, 1.45, 1.40, 1.50, 1.50],  # balanced
+    LongPersonality.aggressive: [1.25, 1.28, 1.25, 1.25, 1.25, 1.30],  # tighter
 }
-FOLLOW_BREAKPOINTS = [0., 1., 3., 6., 12., 36.]
+FOLLOW_BREAKPOINTS = [0., 2., 3., 6., 12., 36.]
 
 class VibePersonalityController:
     """Controller for acceleration and distance personalities"""
