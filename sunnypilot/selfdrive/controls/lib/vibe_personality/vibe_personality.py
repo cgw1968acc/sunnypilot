@@ -23,9 +23,9 @@ MAX_ACCEL_BREAKPOINTS =         [0.,   4.,   6.,   9.,   16.,  25.,  30., 55.]
 
 # Braking profiles mapped to LongPersonality (relaxed/standard/aggressive)
 MIN_ACCEL_PROFILES = {
-    LongPersonality.relaxed:    [-.0060, -1.1],  # gentler braking
+    LongPersonality.relaxed:    [-.5000, -1.1],  # gentler braking
     LongPersonality.standard:   [-.6000, -1.2],  # normal braking
-    LongPersonality.aggressive: [-.0070, -1.2],  # more aggressive braking
+    LongPersonality.aggressive: [-.7000, -1.2],  # more aggressive braking
 }
 MIN_ACCEL_BREAKPOINTS =         [0.,    50.]
 
