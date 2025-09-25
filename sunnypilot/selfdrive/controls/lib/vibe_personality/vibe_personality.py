@@ -33,7 +33,7 @@ MIN_ACCEL_BREAKPOINTS =         [0.,   1.5,    3.,   11.,   16.,  50.]
 FOLLOW_PROFILES = {
     LongPersonality.relaxed:    [1.65, 1.65, 1.65, 1.65, 1.65, 1.80, 1.80],  # more spread out
     LongPersonality.standard:   [1.30, 1.35, 1.40, 1.45, 1.45, 1.50, 1.50],  # balanced
-    LongPersonality.aggressive: [1.08, 1.13, 1.08, 1.16, 1.16, 1.25, 1.27],  # tighter
+    LongPersonality.aggressive: [1.06, 1.11, 1.08, 1.16, 1.16, 1.25, 1.27],  # tighter
 }
 FOLLOW_BREAKPOINTS =            [0.,   1.5,  3.,   6.,   18.,  20.,  36.]
 
