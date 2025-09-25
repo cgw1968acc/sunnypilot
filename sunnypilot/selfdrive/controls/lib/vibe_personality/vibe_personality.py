@@ -35,7 +35,7 @@ FOLLOW_PROFILES = {
     LongPersonality.standard:   [1.40, 1.45, 1.40, 1.45, 1.45, 1.50, 1.50],  # balanced
     LongPersonality.aggressive: [1.06, 1.11, 1.06, 1.17, 1.17, 1.25, 1.27],  # tighter
 }
-FOLLOW_BREAKPOINTS =            [0.,   1.5,  3.,   5.,   18.,  20.,  36.]
+FOLLOW_BREAKPOINTS =            [0.,   1.6,  3.,   5.,   18.,  20.,  36.]
 
 class VibePersonalityController:
     """Controller for acceleration and distance personalities"""
