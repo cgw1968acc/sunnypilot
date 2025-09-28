@@ -27,7 +27,7 @@ MIN_ACCEL_PROFILES = {
     LongPersonality.standard:   [-.0008, -.0008, -.06,  -1.10,  -1.10],  # normal braking
     LongPersonality.aggressive: [-.0009, -.0009, -.08,  -1.20,  -1.20],  # more aggressive braking
 }
-MIN_ACCEL_BREAKPOINTS =         [0.,   1.5,    11.,   16.,  50.]
+MIN_ACCEL_BREAKPOINTS =         [0.,   1.5,    11.,   22.,  50.]
 
 # Follow distance profiles mapped to LongPersonality (relaxed/standard/aggressive)
 FOLLOW_PROFILES = {
