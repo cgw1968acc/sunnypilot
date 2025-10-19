@@ -24,8 +24,8 @@ MAX_ACCEL_BREAKPOINTS =         [0.,   4.,   6.,   9.,   16.,  25.,  30., 55.]
 # Braking profiles mapped to LongPersonality (relaxed/standard/aggressive)
 MIN_ACCEL_PROFILES = {
     LongPersonality.relaxed:    [-.0006, -.0006, -.010,  -.30,  -1.20],  # gentler braking
-    LongPersonality.standard:   [-1.200, -1.200, -1.20,  -1.20, -1.20],  # normal braking
-    LongPersonality.aggressive: [-.0020, -.0008, -.014,  -.40,  -1.20],  # more aggressive braking
+    LongPersonality.standard:   [-1.200, -1.200, -1.20,  -1.20, -1.20],  # rav4ice needs stock -1.2
+    LongPersonality.aggressive: [-.0020, -.0008, -.014,  -.40,  -1.20],  # for corollaH only
 }
 MIN_ACCEL_BREAKPOINTS =         [0.,   3.0,    11.,    14,  50.]
 
