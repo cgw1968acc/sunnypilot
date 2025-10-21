@@ -50,7 +50,7 @@ def get_long_tune(CP, params):
         #kiBP = [2.,  12.,  20.,  27.]
         #kiV = [.348, .20,  .17,  .10]
         kiBP = [2., 5.,]
-        kiV = [0.42, 0.25]
+        kiV = [0.37, 0.25]
       else:
         #optimal for corolla
         #kiBP = [0.,  12.,   20.,   27.]
