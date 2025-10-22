@@ -24,16 +24,16 @@ MAX_ACCEL_BREAKPOINTS =         [0.,   4.,   6.,   9.,   16.,  25.,  30., 55.]
 # Braking profiles mapped to LongPersonality (relaxed/standard/aggressive)
 MIN_ACCEL_PROFILES = {
     LongPersonality.relaxed:    [-.0006, -.0006, -.010,  -.30,  -1.20],  # gentler braking
-    LongPersonality.standard:   [-.0008, -.0008, -.014,  -.40, -1.20],  # rav4ice needs stock -1.2
-    LongPersonality.aggressive: [-1.200, -1.200, -1.20,  -1.20,  -1.20],  # for corollaH only
+    LongPersonality.standard:   [-.0008, -.0008, -.014,  -.40,  -1.20],  # rav4ice needs stock -1.2
+    LongPersonality.aggressive: [-1.200, -1.200, -1.20,  -1.2,  -1.20],  # for corollaH only
 }
 MIN_ACCEL_BREAKPOINTS =         [0.,   3.0,    11.,    14,  50.]
 
 # Follow distance profiles mapped to LongPersonality (relaxed/standard/aggressive)
 FOLLOW_PROFILES = {
     LongPersonality.relaxed:    [1.55, 1.65, 1.65, 1.80],  # more spread out
-    LongPersonality.standard:   [1.45, 1.45, 1.45, 1.50],  # balanced
-    LongPersonality.aggressive: [1.20, 1.22, 1.28, 1.35],  # tighter
+    LongPersonality.standard:   [1.30, 1.30, 1.45, 1.50],  # balanced
+    LongPersonality.aggressive: [1.20, 1.22, 1.22, 1.35],  # tighter
 }
 FOLLOW_BREAKPOINTS =            [0.,   6.,   18.,  36.]
 
