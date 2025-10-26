@@ -27,7 +27,7 @@ MIN_ACCEL_PROFILES = {
   AccelPersonality.normal: [-.0009, -.0009, -.009,  -.29,  -1.20],  # normal braking
   AccelPersonality.sport:  [-.0010, -.0010, -.010,  -.30,  -1.20],  # more aggressive braking
 }
-MIN_ACCEL_BREAKPOINTS =    [0.,   3.0,    11.,    14,  50.]
+MIN_ACCEL_BREAKPOINTS =    [0.,   3.0,    11.,    14,  20.]
 
 
 class AccelPersonalityController:
