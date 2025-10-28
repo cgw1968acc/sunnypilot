@@ -23,11 +23,11 @@ MAX_ACCEL_BREAKPOINTS =       [0.,   4.,   6.,   9.,   16.,  25.,  30., 55.]
 
 # Braking Profiles
 MIN_ACCEL_PROFILES = {
-  AccelPersonality.eco:    [-1.2, -1.2, -1.2,  -1.2,  -1.20],  # gentler braking
-  AccelPersonality.normal: [-1.2, -1.2, -1.2,  -1.2,  -1.20],  # normal braking
-  AccelPersonality.sport:  [-1.2, -1.2, -1.2,  -1.2,  -1.20],  # more aggressive braking
+  AccelPersonality.eco:    [-.0001, -.0001, -1.2,  -1.2,  -1.20],  # gentler braking
+  AccelPersonality.normal: [-.0002, -.0002, -1.2,  -1.2,  -1.20],  # normal braking
+  AccelPersonality.sport:  [-.0003, -.0003, -1.2,  -1.2,  -1.20],  # more aggressive braking
 }
-MIN_ACCEL_BREAKPOINTS =    [0.,   3.0,    11.,    14,  25.]
+MIN_ACCEL_BREAKPOINTS =    [0.,   5.0,    11.,    14,  25.]
 
 
 class AccelPersonalityController:
