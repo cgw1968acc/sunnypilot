@@ -124,4 +124,3 @@ class FollowDistanceController:
 
   def update(self):
     self.frame += 1
-    self._update_from_params()
