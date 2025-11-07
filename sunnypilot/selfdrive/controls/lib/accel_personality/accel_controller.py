@@ -22,11 +22,11 @@ MAX_ACCEL_BREAKPOINTS =      [0.,  4.,   6.,   9.,   16.,  25., 30., 55.]
 
 # Braking Profiles
 MIN_ACCEL_PROFILES = {
-  AccelPersonality.eco:    [-0.05, -0.08, -0.16, -0.20, -0.24, -1.20],
-  AccelPersonality.normal: [-0.06, -0.10, -0.18, -0.22, -0.24, -1.20],
-  AccelPersonality.sport:  [-0.08, -0.12, -0.20, -0.24, -0.26, -1.20],
+  AccelPersonality.eco:    [-0.05, -0.20, -1.20],
+  AccelPersonality.normal: [-0.06, -0.24, -1.20],
+  AccelPersonality.sport:  [-0.08, -0.28, -1.20],
 }
-MIN_ACCEL_BREAKPOINTS = [0., 4., 6., 8., 12., 25.]
+MIN_ACCEL_BREAKPOINTS =。  [0.,    14.,   36.] 
 
 
 DECEL_SMOOTH_ALPHA = 0.05  # Very aggressive smoothing for decel (lower = smoother)
