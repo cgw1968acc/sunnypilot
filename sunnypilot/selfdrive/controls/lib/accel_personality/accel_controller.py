@@ -33,7 +33,7 @@ DECEL_SMOOTH_ALPHA = 0.04  # Very aggressive smoothing for decel (lower = smooth
 ACCEL_SMOOTH_ALPHA = 0.20  # Less aggressive for accel (higher = more responsive)
 
 # Asymmetric rate limiting
-MAX_DECEL_INCREASE_RATE = 0.2  # When braking harder (m/s² per second)
+MAX_DECEL_INCREASE_RATE = 0.1  # When braking harder (m/s² per second)
 MAX_DECEL_DECREASE_RATE = 0.15  # When releasing brake (m/s² per second)
 
 
