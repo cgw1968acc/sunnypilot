@@ -19,7 +19,7 @@ FOLLOW_PROFILES = {
   LongPersonality.aggressive: [0.97, 0.95, 1.110, 1.09, 1.16, 1.15],
 }
 
-FOLLOW_BREAKPOINTS =          [0.,   7.,   8,    17.,  25.,  36]
+FOLLOW_BREAKPOINTS =          [0.,   7.,   8,    17.,  22.,  36]
 
 SMOOTHING_BASE = 0.70  # Base smoothing factor (higher = smoother)
 SMOOTHING_RANGE = 0.25  # Additional smoothing at high speeds
