@@ -14,8 +14,8 @@ AccelPersonality = custom.LongitudinalPlanSP.AccelerationPersonality
 
 # Acceleration Profiles
 MAX_ACCEL_PROFILES = {
-  AccelPersonality.eco:      [1.40, 1.25, 1.00, .650, .500, .32, .23, .110],
-  AccelPersonality.normal:   [1.92, 1.92, 1.40, .700, .550, .38, .27, .155],
+  AccelPersonality.eco:      [1.30, 1.20, 1.00, .650, .500, .32, .23, .110],
+  AccelPersonality.normal:   [1.65, 1.55, 1.40, .750, .565, .38, .27, .155],
   AccelPersonality.sport:    [2.00, 2.00, 1.85, .999, .700, .55, .34, .181],
 }
 MAX_ACCEL_BREAKPOINTS =      [0.,  4.,   6.,   9.,   16.,  25., 30., 55.]
