@@ -42,7 +42,7 @@ V_CRUISE_UNSET = 255.
 
 CRUISE_BUTTONS_PLUS = (ButtonType.accelCruise, ButtonType.resumeCruise)
 CRUISE_BUTTONS_MINUS = (ButtonType.decelCruise, ButtonType.setCruise)
-CRUISE_BUTTON_CONFIRM_HOLD = 0.1  # secs.
+CRUISE_BUTTON_CONFIRM_HOLD = 0.01  # secs.
 
 
 class SpeedLimitAssist:
