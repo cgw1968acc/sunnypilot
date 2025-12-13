@@ -14,19 +14,19 @@ AccelPersonality = custom.LongitudinalPlanSP.AccelerationPersonality
 
 # Acceleration Profiles
 MAX_ACCEL_PROFILES = {
-  AccelPersonality.eco:      [1.30, 1.20, 1.00, .650, .460, .32, .23, .110],
-  AccelPersonality.normal:   [1.90, 1.85, 1.75, .812, .521, .39, .27, .155],
-  AccelPersonality.sport:    [2.00, 2.00, 2.00, 1.20, .750, .55, .34, .181],
+  AccelPersonality.eco:      [1.30, 1.25, 1.15, 0.83, 0.66, 0.51, 0.30, 0.14, 0.10, 0.07],
+  AccelPersonality.normal:   [1.80, 1.76, 1.48, 0.88, 0.74, 0.58, 0.40, 0.19, 0.12, 0.09],
+  AccelPersonality.sport:    [2.00, 1.95, 1.80, 0.93, 0.83, 0.69, 0.50, 0.26, 0.16, 0.12],
 }
-MAX_ACCEL_BREAKPOINTS =      [0.,  4.,   6.,   9.,   16.,  25., 30., 55.]
+MAX_ACCEL_BREAKPOINTS =      [0.,   3.,   5.,   8.,   12.,  18.,  24.,  32.,  42.,  55.]
 
 # Braking Profiles
 MIN_ACCEL_PROFILES = {
-  AccelPersonality.eco:    [-0.50, -0.50, -0.46, -1.20],
-  AccelPersonality.normal: [-0.55, -0.55, -0.50, -1.30],
-  AccelPersonality.sport:  [-0.54, -0.60, -0.54, -1.40],
+  AccelPersonality.eco:    [-0.150, -0.200, -0.40, -0.40, -1.1, -1.1],
+  AccelPersonality.normal: [-0.250, -0.300, -0.45, -0.45, -1.2, -1.2],
+  AccelPersonality.sport:  [-0.350, -0.400, -0.55, -0.55, -1.3, -1.3],
 }
-MIN_ACCEL_BREAKPOINTS =    [0.,    5.,    14.,   25.] 
+MIN_ACCEL_BREAKPOINTS =    [0.,     5.,    7.5,    14.,   15.,  25.] 
 
 
 DECEL_SMOOTH_ALPHA = 0.50  # Very aggressive smoothing for decel (lower = smoother)
