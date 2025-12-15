@@ -22,23 +22,23 @@ MAX_ACCEL_BREAKPOINTS =      [0.,   3.,   5.,   8.,   12.,  18.,  24.,  32.,  42
 
 # Braking Profiles
 MIN_ACCEL_PROFILES = {
-  AccelPersonality.eco:    [-0.66, -0.66, -0.66, -1.30],
-  AccelPersonality.normal: [-0.69, -0.69, -0.69, -1.40],
+  AccelPersonality.eco:    [-0.50, -0.60, -0.70, -1.00],
+  AccelPersonality.normal: [-0.60, -0.65, -0.80, -1.20],
   AccelPersonality.sport:  [-0.72, -0.72, -0.72, -1.50],
 }
-MIN_ACCEL_BREAKPOINTS =    [0.,     5.,    7.5,    14.] 
+MIN_ACCEL_BREAKPOINTS =    [0.,     5.,    7.5,    14.]
 
 
-DECEL_SMOOTH_ALPHA = 0.55  # Very aggressive smoothing for decel (lower = smoother)
-ACCEL_SMOOTH_ALPHA = 0.95  # Less aggressive for accel (higher = more responsive)
+DECEL_SMOOTH_ALPHA = 0.10  # Very aggressive smoothing for decel (lower = smoother)
+ACCEL_SMOOTH_ALPHA = 0.20  # Less aggressive for accel (higher = more responsive)
 
 # Asymmetric rate limiting
-MAX_DECEL_INCREASE_RATE = 0.1  # When braking harder (m/s² per second)
-MAX_DECEL_DECREASE_RATE = 0.20  # When releasing brake (m/s² per second)
+MAX_DECEL_INCREASE_RATE = 1.5  # When braking harder (m/s² per second)
+MAX_DECEL_DECREASE_RATE = 0.5  # When releasing brake (m/s² per second)
 
+LEAD_DETECTION_DIST = 100.0 # meters - Start dampening accel if lead is within this range
 
 class AccelPersonalityController:
-
   def __init__(self):
     self.params = Params()
     self.frame = 0
@@ -46,76 +46,89 @@ class AccelPersonalityController:
     self.last_max_accel = 2.0
     self.last_min_accel = -0.01
     self.first_run = True
-    self.param_keys = {
-      'personality': 'AccelPersonality',
-      'enabled': 'AccelPersonalityEnabled'
-    }
+    self.has_lead = False
+    self.lead_dist = float('inf')
+    self.param_keys = {'personality': 'AccelPersonality', 'enabled': 'AccelPersonalityEnabled'}
     self._load_personality_from_params()
 
   def _load_personality_from_params(self):
     try:
       saved = self.params.get(self.param_keys['personality'])
       if saved is not None:
-        personality_value = int(saved)
-        if personality_value in [AccelPersonality.eco, AccelPersonality.normal, AccelPersonality.sport]:
-          self.accel_personality = personality_value
-        else:
-          self.accel_personality = AccelPersonality.normal
+        val = int(saved)
+        if val in [AccelPersonality.eco, AccelPersonality.normal, AccelPersonality.sport]:
+          self.accel_personality = val
     except (ValueError, TypeError):
-      self.accel_personality = AccelPersonality.normal
+      pass
 
   def _update_from_params(self):
-    if self.frame % int(1. / DT_MDL) != 0:
-      return
-    self._load_personality_from_params()
+    if self.frame % int(1. / DT_MDL) == 0:
+      self._load_personality_from_params()
+
+  def update(self, sm=None):
+    self.frame += 1
+    self._update_from_params()
+    if sm is not None and sm.valid.get('radarState', False):
+      self.has_lead = sm['radarState'].leadOne.status
+      self.lead_dist = sm['radarState'].leadOne.dRel if self.has_lead else float('inf')
 
   def get_accel_personality(self) -> int:
     self._update_from_params()
     return int(self.accel_personality)
 
   def set_accel_personality(self, personality: int):
-    if personality not in [AccelPersonality.eco, AccelPersonality.normal, AccelPersonality.sport]:
-      return
-
-    self.accel_personality = personality
-    self.params.put(self.param_keys['personality'], str(personality))
+    if personality in [AccelPersonality.eco, AccelPersonality.normal, AccelPersonality.sport]:
+      self.accel_personality = personality
+      self.params.put(self.param_keys['personality'], str(personality))
 
   def cycle_accel_personality(self) -> int:
-    personalities = [AccelPersonality.eco, AccelPersonality.normal, AccelPersonality.sport]
-    current_idx = personalities.index(self.accel_personality)
-    next_personality = personalities[(current_idx + 1) % len(personalities)]
+    personality = [AccelPersonality.eco, AccelPersonality.normal, AccelPersonality.sport]
+    next_personality = personality[(personality.index(self.accel_personality) + 1) % len(personality)]
     self.set_accel_personality(next_personality)
     return int(next_personality)
 
   def get_accel_limits(self, v_ego: float) -> tuple[float, float]:
     v_ego = max(0.0, v_ego)
-    target_max_accel = np.interp(v_ego, MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES[self.accel_personality])
-    target_min_accel = np.interp(v_ego, MIN_ACCEL_BREAKPOINTS, MIN_ACCEL_PROFILES[self.accel_personality])
+    target_max = np.interp(v_ego, MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES[self.accel_personality])
+    target_min = np.interp(v_ego, MIN_ACCEL_BREAKPOINTS, MIN_ACCEL_PROFILES[self.accel_personality])
 
     if self.first_run:
-      self.last_max_accel = target_max_accel
-      self.last_min_accel = target_min_accel
+      self.last_max_accel, self.last_min_accel = target_max, target_min
       self.first_run = False
-      return float(target_min_accel), float(target_max_accel)
+      return float(target_min), float(target_max)
 
-    # exponential smoothing to max accel
-    self.last_max_accel = (ACCEL_SMOOTH_ALPHA * target_max_accel + (1 - ACCEL_SMOOTH_ALPHA) * self.last_max_accel)
+    # Lead dampening: Sport->Normal, Normal->Eco, Eco->Eco
+    if self.has_lead and self.lead_dist < LEAD_DETECTION_DIST:
+      dist_factor = max(0.0, self.lead_dist / LEAD_DETECTION_DIST)
+      floor_profile = MAX_ACCEL_PROFILES[AccelPersonality.normal if self.accel_personality == AccelPersonality.sport else AccelPersonality.eco]
+      floor_max = np.interp(v_ego, MAX_ACCEL_BREAKPOINTS, floor_profile)
 
-    # VERY aggressive smoothing to min accel for ultra-smooth braking
-    smoothed_decel = (DECEL_SMOOTH_ALPHA * target_min_accel + (1 - DECEL_SMOOTH_ALPHA) * self.last_min_accel)
+      if target_max > floor_max:
+        target_max = (dist_factor * target_max) + ((1 - dist_factor) * floor_max)
 
-    # asymmetric rate limiting
-    decel_change = smoothed_decel - self.last_min_accel
-    if decel_change < 0:
-      max_change_per_step = MAX_DECEL_INCREASE_RATE * DT_MDL
+    # Smoothing
+    self.last_max_accel = (ACCEL_SMOOTH_ALPHA * target_max + (1 - ACCEL_SMOOTH_ALPHA) * self.last_max_accel)
+    smoothed_decel = (DECEL_SMOOTH_ALPHA * target_min + (1 - DECEL_SMOOTH_ALPHA) * self.last_min_accel)
+
+    # Rate Limiting (Asymmetric)
+    raw_change = smoothed_decel - self.last_min_accel
+
+    if raw_change < 0:
+      limit = MAX_DECEL_INCREASE_RATE * DT_MDL
+      decel_change = np.clip(raw_change, -limit, limit)
     else:
-      max_change_per_step = MAX_DECEL_DECREASE_RATE * DT_MDL
+      limit = MAX_DECEL_DECREASE_RATE * DT_MDL
+      decel_change = np.clip(raw_change, -limit, limit)
 
-    decel_change = np.clip(decel_change, -max_change_per_step, max_change_per_step)
-    self.last_min_accel = self.last_min_accel + decel_change
+    self.last_min_accel += decel_change
 
-    if self.last_min_accel > self.last_max_accel:
-      self.last_min_accel = self.last_max_accel - 0.1
+    # Dynamic Safety Corridor: Ensure min is always strictly less than max.
+    # We maintain a gap of at least 0.1, or 5% of the current max acceleration.
+    # This scaling gap prevents solver crashes at high acceleration values.
+    gap = max(0.1, abs(self.last_max_accel) * 0.05)
+
+    if self.last_min_accel > self.last_max_accel - gap:
+      self.last_min_accel = self.last_max_accel - gap
 
     return float(self.last_min_accel), float(self.last_max_accel)
 
@@ -142,7 +155,5 @@ class AccelPersonalityController:
     self.last_max_accel = 2.0
     self.last_min_accel = -0.01
     self.first_run = True
-
-  def update(self):
-    self.frame += 1
-    self._update_from_params()
+    self.has_lead = False
+    self.lead_dist = float('inf')
