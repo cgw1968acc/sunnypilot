@@ -60,7 +60,7 @@ def get_long_tune(CP, params):
         # kiBP = [0.,  12.,   20.,   27.]
         # kiV =  [0.35, 0.20, 0.168, 0.1]
         # balanced
-        kiBP = [0.2,   12.,   27.]
+        kiBP = [2.0,   12.,   27.]
         kiV =  [0.50,  0.22,  0.1]
         # conservative
         # kiBP = [0.,  3.,  5.,  8., 12., 25.]
