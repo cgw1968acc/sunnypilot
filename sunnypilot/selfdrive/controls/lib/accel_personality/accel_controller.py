@@ -29,8 +29,8 @@ MIN_ACCEL_PROFILES = {
 MIN_ACCEL_BREAKPOINTS =    [0.,     5.,    7.5,    14.]
 
 
-DECEL_SMOOTH_ALPHA = 0.08  # Very aggressive smoothing for decel (lower = smoother)
-ACCEL_SMOOTH_ALPHA = 0.15  # Less aggressive for accel (higher = more responsive)
+DECEL_SMOOTH_ALPHA = 0.55  # Very aggressive smoothing for decel (lower = smoother)
+ACCEL_SMOOTH_ALPHA = 0.65  # Less aggressive for accel (higher = more responsive)
 
 # Asymmetric rate limiting
 MAX_DECEL_INCREASE_RATE = 1.0  # When braking harder (m/s² per second)
