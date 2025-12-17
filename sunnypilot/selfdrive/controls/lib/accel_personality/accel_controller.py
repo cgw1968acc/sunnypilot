@@ -22,19 +22,19 @@ MAX_ACCEL_BREAKPOINTS =      [0.,   3.,   5.,   8.,   12.,  18.,  24.,  32.,  42
 
 # Braking Profiles
 MIN_ACCEL_PROFILES = {
-  AccelPersonality.eco:    [-0.50, -0.60, -0.70, -1.00],
-  AccelPersonality.normal: [-0.65, -0.65, -0.80, -1.20],
-  AccelPersonality.sport:  [-0.72, -0.72, -0.72, -1.50],
+  AccelPersonality.eco:    [-0.40, -0.50, -0.60, -0.85],
+  AccelPersonality.normal: [-0.50, -0.55, -0.65, -0.95],
+  AccelPersonality.sport:  [-0.60, -0.65, -0.70, -1.20],
 }
 MIN_ACCEL_BREAKPOINTS =    [0.,     5.,    7.5,    14.]
 
 
-DECEL_SMOOTH_ALPHA = 0.10  # Very aggressive smoothing for decel (lower = smoother)
-ACCEL_SMOOTH_ALPHA = 0.20  # Less aggressive for accel (higher = more responsive)
+DECEL_SMOOTH_ALPHA = 0.08  # Very aggressive smoothing for decel (lower = smoother)
+ACCEL_SMOOTH_ALPHA = 0.15  # Less aggressive for accel (higher = more responsive)
 
 # Asymmetric rate limiting
-MAX_DECEL_INCREASE_RATE = 1.5  # When braking harder (m/s² per second)
-MAX_DECEL_DECREASE_RATE = 0.5  # When releasing brake (m/s² per second)
+MAX_DECEL_INCREASE_RATE = 1.0  # When braking harder (m/s² per second)
+MAX_DECEL_DECREASE_RATE = 0.4  # When releasing brake (m/s² per second)
 
 LEAD_DETECTION_DIST = 100.0 # meters - Start dampening accel if lead is within this range
 
@@ -49,6 +49,9 @@ class AccelPersonalityController:
     self.has_lead = False
     self.lead_dist = float('inf')
     self.param_keys = {'personality': 'AccelPersonality', 'enabled': 'AccelPersonalityEnabled'}
+    self.decel_history = []
+    self.max_history_len = 3
+
     self._load_personality_from_params()
 
   def _load_personality_from_params(self):
@@ -94,6 +97,7 @@ class AccelPersonalityController:
 
     if self.first_run:
       self.last_max_accel, self.last_min_accel = target_max, target_min
+      self.decel_history = [target_min] * self.max_history_len
       self.first_run = False
       return float(target_min), float(target_max)
 
@@ -106,9 +110,15 @@ class AccelPersonalityController:
       if target_max > floor_max:
         target_max = (dist_factor * target_max) + ((1 - dist_factor) * floor_max)
 
+    # responds to target changes
+    exp_smoothed = (DECEL_SMOOTH_ALPHA * target_min + (1 - DECEL_SMOOTH_ALPHA) * self.last_min_accel)
+    self.decel_history.append(exp_smoothed)
+    if len(self.decel_history) > self.max_history_len:
+      self.decel_history.pop(0)
+    smoothed_decel = np.mean(self.decel_history)
+
     # Smoothing
     self.last_max_accel = (ACCEL_SMOOTH_ALPHA * target_max + (1 - ACCEL_SMOOTH_ALPHA) * self.last_max_accel)
-    smoothed_decel = (DECEL_SMOOTH_ALPHA * target_min + (1 - DECEL_SMOOTH_ALPHA) * self.last_min_accel)
 
     # Rate Limiting (Asymmetric)
     raw_change = smoothed_decel - self.last_min_accel
@@ -125,7 +135,7 @@ class AccelPersonalityController:
     # Dynamic Safety Corridor: Ensure min is always strictly less than max.
     # We maintain a gap of at least 0.1, or 5% of the current max acceleration.
     # This scaling gap prevents solver crashes at high acceleration values.
-    gap = max(0.1, abs(self.last_max_accel) * 0.05)
+    gap = max(0.12, abs(self.last_max_accel) * 0.06)
 
     if self.last_min_accel > self.last_max_accel - gap:
       self.last_min_accel = self.last_max_accel - gap
@@ -157,3 +167,4 @@ class AccelPersonalityController:
     self.first_run = True
     self.has_lead = False
     self.lead_dist = float('inf')
+    self.decel_history = []
