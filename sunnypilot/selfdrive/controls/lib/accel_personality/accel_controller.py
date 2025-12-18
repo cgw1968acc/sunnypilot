@@ -22,9 +22,9 @@ MAX_ACCEL_BREAKPOINTS =      [0.,   3.,   5.,   8.,   12.,  18.,  24.,  32.,  42
 
 # Braking Profiles
 MIN_ACCEL_PROFILES = {
-  AccelPersonality.eco:    [-1.20, -1.20],
-  AccelPersonality.normal: [-1.30, -1.30],
-  AccelPersonality.sport:  [-1.40, -1.50],
+  AccelPersonality.eco:    [-0.74, -1.20],
+  AccelPersonality.normal: [-0.80, -1.30],
+  AccelPersonality.sport:  [-0.86, -1.50],
 }
 MIN_ACCEL_BREAKPOINTS =    [7.5,    14.]
 
@@ -36,8 +36,6 @@ ACCEL_SMOOTH_ALPHA = 0.65  # Less aggressive for accel (higher = more responsive
 MAX_DECEL_INCREASE_RATE = 1.5  # When braking harder (m/s² per second)
 MAX_DECEL_DECREASE_RATE = 0.5  # When releasing brake (m/s² per second)
 
-LEAD_DETECTION_DIST = 100.0 # meters - Start dampening accel if lead is within this range
-
 class AccelPersonalityController:
   def __init__(self):
     self.params = Params()
@@ -46,8 +44,6 @@ class AccelPersonalityController:
     self.last_max_accel = 2.0
     self.last_min_accel = -0.01
     self.first_run = True
-    self.has_lead = False
-    self.lead_dist = float('inf')
     self.param_keys = {'personality': 'AccelPersonality', 'enabled': 'AccelPersonalityEnabled'}
     self._load_personality_from_params()
 
@@ -68,9 +64,6 @@ class AccelPersonalityController:
   def update(self, sm=None):
     self.frame += 1
     self._update_from_params()
-    if sm is not None and sm.valid.get('radarState', False):
-      self.has_lead = sm['radarState'].leadOne.status
-      self.lead_dist = sm['radarState'].leadOne.dRel if self.has_lead else float('inf')
 
   def get_accel_personality(self) -> int:
     self._update_from_params()
@@ -96,15 +89,6 @@ class AccelPersonalityController:
       self.last_max_accel, self.last_min_accel = target_max, target_min
       self.first_run = False
       return float(target_min), float(target_max)
-
-    # Lead dampening: Sport->Normal, Normal->Eco, Eco->Eco
-    if self.has_lead and self.lead_dist < LEAD_DETECTION_DIST:
-      dist_factor = max(0.0, self.lead_dist / LEAD_DETECTION_DIST)
-      floor_profile = MAX_ACCEL_PROFILES[AccelPersonality.normal if self.accel_personality == AccelPersonality.sport else AccelPersonality.eco]
-      floor_max = np.interp(v_ego, MAX_ACCEL_BREAKPOINTS, floor_profile)
-
-      if target_max > floor_max:
-        target_max = (dist_factor * target_max) + ((1 - dist_factor) * floor_max)
 
     # Smoothing
     self.last_max_accel = (ACCEL_SMOOTH_ALPHA * target_max + (1 - ACCEL_SMOOTH_ALPHA) * self.last_max_accel)
@@ -155,5 +139,3 @@ class AccelPersonalityController:
     self.last_max_accel = 2.0
     self.last_min_accel = -0.01
     self.first_run = True
-    self.has_lead = False
-    self.lead_dist = float('inf')
