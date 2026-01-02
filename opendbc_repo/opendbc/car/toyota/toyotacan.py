@@ -20,8 +20,7 @@ def create_lta_steer_command(packer, steer_control_type, steer_angle, steer_req,
 
   values = {
     "COUNTER": frame + 128,
-    "SETME_X1": 1,  # suspected LTA feature availability
-    # 1 for TSS 2.5 cars, 3 for TSS 2.0. Send based on whether we're using LTA for lateral control
+    "SETME_X1": 1,
     "SETME_X3": 1 if steer_control_type == SteerControlType.angle else 3,
     "PERCENTAGE": 100,
     "TORQUE_WIND_DOWN": torque_wind_down,
@@ -42,7 +41,6 @@ def create_lta_steer_command_2(packer, frame):
 
 
 def create_accel_command(packer, accel, pcm_cancel, permit_braking, standstill_req, lead, acc_type, fcw_alert, distance):
-  # TODO: find the exact canceling bit that does not create a chime
   values = {
     "ACCEL_CMD": accel,
     "ACC_TYPE": acc_type,
@@ -52,7 +50,7 @@ def create_accel_command(packer, accel, pcm_cancel, permit_braking, standstill_r
     "RELEASE_STANDSTILL": not standstill_req,
     "CANCEL_REQ": pcm_cancel,
     "ALLOW_LONG_PRESS": 2, # SUNNYPILOT MOD: Forced 2 for +/- 5 short press
-    "ACC_CUT_IN": fcw_alert,  # only shown when ACC enabled
+    "ACC_CUT_IN": fcw_alert,
   }
   return packer.make_can_msg("ACC_CONTROL", 0, values)
 
@@ -75,11 +73,11 @@ def create_pcs_commands(packer, accel, active, mass):
   msg1 = packer.make_can_msg("PRE_COLLISION", 0, values1)
 
   values2 = {
-    "DSS1GDRV": min(accel, 0),     # accel
-    "PCSALM": 1 if active else 0,  # goes high same time as PRECOLLISION_ACTIVE
-    "IBTRGR": 1 if active else 0,  # unknown
-    "PBATRGR": 1 if active else 0, # noisy actuation bit?
-    "PREFILL": 1 if active else 0, # goes on and off before DSS1GDRV
+    "DSS1GDRV": min(accel, 0),
+    "PCSALM": 1 if active else 0,
+    "IBTRGR": 1 if active else 0,
+    "PBATRGR": 1 if active else 0,
+    "PREFILL": 1 if active else 0,
     "AVSTRGR": 1 if active else 0,
   }
   msg2 = packer.make_can_msg("PRE_COLLISION_2", 0, values2)
@@ -101,7 +99,7 @@ def create_acc_cancel_command(packer):
 
 def create_fcw_command(packer, fcw):
   values = {
-    "PCS_INDICATOR": 1,  # PCS turned off
+    "PCS_INDICATOR": 1,
     "FCW": fcw,
     "SET_ME_X20": 0x20,
     "SET_ME_X10": 0x10,
@@ -118,8 +116,6 @@ def create_ui_command(packer, steer, chime, left_line, right_line, left_lane_dep
     "RIGHT_LINE": 3 if right_lane_depart else 1 if right_line else 2,
     "LEFT_LINE": 3 if left_lane_depart else 1 if left_line else 2,
     "BARRIERS": 1 if enabled else 0,
-
-    # static signals
     "SET_ME_X02": 2,
     "SET_ME_X01": 1,
     "LKAS_STATUS": 1,
@@ -142,10 +138,10 @@ def create_ui_command(packer, steer, chime, left_line, right_line, left_lane_dep
     "LDW_EXIST": 1,
   }
 
-  # lane sway functionality
-  # not all cars have LKAS_HUD — update with camera values if available
   if len(stock_lkas_hud):
-    values.update({s: stock_lkas_hud[s] for s in})
+    # FIXED: Restored missing iterable list
+    sway_signals =
+    values.update({s: stock_lkas_hud[s] for s in sway_signals if s in stock_lkas_hud})
 
   return packer.make_can_msg("LKAS_HUD", 0, values)
 
@@ -163,7 +159,6 @@ def toyota_checksum(address: int, sig, d: bytearray) -> int:
 def create_set_bsm_debug_mode(lr_blindspot, enabled):
   dat = b"\x02\x10\x60\x00\x00\x00\x00" if enabled else b"\x02\x10\x01\x00\x00\x00\x00"
   dat = lr_blindspot + dat
-
   return CanData(0x750, dat, 0)
 
 
@@ -171,15 +166,15 @@ def create_bsm_polling_status(lr_blindspot):
   return CanData(0x750, lr_blindspot + b"\x02\x21\x69\x00\x00\x00\x00", 0)
 
 
-# auto brake hold
 def create_brake_hold_command(packer, frame, pre_collision_2, brake_hold_active):
-  # forward PRE_COLLISION_2 when auto brake hold is not active
-  values = {s: pre_collision_2[s] for s in}
+  # FIXED: Restored missing signal list
+  signals =
+  values = {s: pre_collision_2[s] for s in signals if s in pre_collision_2}
 
   if brake_hold_active:
     values = {
       "DSS1GDRV": 0x3FF,
-      "PBRTRGR": frame % 730 < 727,  # cut actuation for 3 frames
+      "PBRTRGR": frame % 730 < 727,
     }
 
   return packer.make_can_msg("PRE_COLLISION_2", 0, values)
