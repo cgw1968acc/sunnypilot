@@ -6,7 +6,6 @@ SteerControlType = CarParams.SteerControlType
 
 def create_steer_command(packer, steer, steer_req):
   """Creates a CAN message for the Toyota Steer Command."""
-
   values = {
     "STEER_REQUEST": steer_req,
     "STEER_TORQUE_CMD": steer,
@@ -17,7 +16,6 @@ def create_steer_command(packer, steer, steer_req):
 
 def create_lta_steer_command(packer, steer_control_type, steer_angle, steer_req, frame, torque_wind_down):
   """Creates a CAN message for the Toyota LTA Steer Command."""
-
   values = {
     "COUNTER": frame + 128,
     "SETME_X1": 1,
@@ -139,7 +137,6 @@ def create_ui_command(packer, steer, chime, left_line, right_line, left_lane_dep
   }
 
   if len(stock_lkas_hud):
-    # FIXED: Restored missing iterable list
     sway_signals =
     values.update({s: stock_lkas_hud[s] for s in sway_signals if s in stock_lkas_hud})
 
@@ -167,14 +164,11 @@ def create_bsm_polling_status(lr_blindspot):
 
 
 def create_brake_hold_command(packer, frame, pre_collision_2, brake_hold_active):
-  # FIXED: Restored missing signal list
   signals =
   values = {s: pre_collision_2[s] for s in signals if s in pre_collision_2}
-
   if brake_hold_active:
     values = {
       "DSS1GDRV": 0x3FF,
       "PBRTRGR": frame % 730 < 727,
     }
-
   return packer.make_can_msg("PRE_COLLISION_2", 0, values)
