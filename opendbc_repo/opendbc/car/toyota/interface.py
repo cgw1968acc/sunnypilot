@@ -22,16 +22,13 @@ class CarInterface(CarInterfaceBase):
   def get_pid_accel_limits(CP, CP_SP, current_speed, cruise_speed):
     return CarControllerParams(CP).ACCEL_MIN, CarControllerParams(CP).ACCEL_MAX
 
-  # SUNNYPILOT MOD: Ensure any standard events are remapped to 5-unit jumps
   def update(self, c, can_parsers):
     ret, ret_sp = super().update(c, can_parsers)
-    
     for b in ret.buttonEvents:
       if b.type == structs.CarState.ButtonEvent.Type.accelCruise:
         b.type = structs.CarState.ButtonEvent.Type.longAccelCruise 
       elif b.type == structs.CarState.ButtonEvent.Type.decelCruise:
         b.type = structs.CarState.ButtonEvent.Type.longDecelCruise 
-        
     return ret, ret_sp
 
   @staticmethod
@@ -138,11 +135,11 @@ class CarInterface(CarInterfaceBase):
       ret.flags |= ToyotaFlagsSP.SMART_DSU.value
     if 0x2AA in fingerprint and candidate in NO_DSU_CAR:
       ret.flags |= ToyotaFlagsSP.RADAR_CAN_FILTER.value
-    if 0x23 in fingerprint and not stock_cp.flags & ToyotaFlags.SECOC:
+    if 0x23 in fingerprint and not stock_cp.flags & ToyotaFlags.SECOC.value:
       ret.flags |= ToyotaFlagsSP.ZSS.value
 
     if candidate == CAR.TOYOTA_PRIUS:
-      if ret.flags & ToyotaFlagsSP.ZSS:
+      if ret.flags & ToyotaFlagsSP.ZSS.value:
         stock_cp.steerRatio = 15.0
         stock_cp.mass = 3370.
         for fw in car_fw:
@@ -150,7 +147,7 @@ class CarInterface(CarInterfaceBase):
             stock_cp.steerActuatorDelay = 0.25
             CarInterfaceBase.configure_torque_tune(candidate, stock_cp.lateralTuning, steering_angle_deadzone_deg=0.0)
 
-    use_sdsu = bool(ret.flags & ToyotaFlagsSP.SMART_DSU)
+    use_sdsu = bool(ret.flags & ToyotaFlagsSP.SMART_DSU.value)
     stock_cp.minEnableSpeed = -1. if use_sdsu else stock_cp.minEnableSpeed
 
     if candidate in (RADAR_ACC_CAR | NO_DSU_CAR):
@@ -163,16 +160,16 @@ class CarInterface(CarInterfaceBase):
 
     stock_cp.openpilotLongitudinalControl = use_sdsu or \
       candidate in (TSS2_CAR - RADAR_ACC_CAR) or \
-      bool(stock_cp.flags & ToyotaFlags.DISABLE_RADAR)
+      bool(stock_cp.flags & ToyotaFlags.DISABLE_RADAR.value)
 
     ret.enableGasInterceptor = 0x201 in fingerprint and stock_cp.openpilotLongitudinalControl and \
-                               not stock_cp.flags & ToyotaFlags.SECOC
+                               not stock_cp.flags & ToyotaFlags.SECOC.value
 
     if ret.enableGasInterceptor:
       ret.safetyParam |= ToyotaSafetyFlagsSP.GAS_INTERCEPTOR
       stock_cp.minEnableSpeed = -1.
 
-    if ret.flags & ToyotaFlagsSP.STOCK_LONGITUDINAL:
+    if ret.flags & ToyotaFlagsSP.STOCK_LONGITUDINAL.value:
       stock_cp.alphaLongitudinalAvailable = False
       stock_cp.openpilotLongitudinalControl = False
 
@@ -193,4 +190,4 @@ class CarInterface(CarInterfaceBase):
   @staticmethod
   def deinit(CP, can_recv, can_send):
     communication_control = bytes()
-    CarInterface.init(CP, can_recv, can_send, communication_control)
+    CarInterface.init(CP, None, can_recv, can_send, communication_control)
