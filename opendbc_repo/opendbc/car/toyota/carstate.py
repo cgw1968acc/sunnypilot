@@ -234,10 +234,11 @@ class CarState(CarStateBase, CarStateExt):
       self.distance_button = cp.vl
       buttonEvents += create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
 
-    # Delete standard +/- 1 and replace with forced +/- 5 events
+    # Delete standard +/- 1 and replace with forced +/- 5 events from PCM_CRUISE bits
     try:
       res_plus = cp.vl
       set_minus = cp.vl
+      # Use longAccelCruise/longDecelCruise for EVERY tap
       buttonEvents.extend(create_button_events(res_plus, self.prev_res_plus, {1: ButtonType.longAccelCruise}))
       buttonEvents.extend(create_button_events(set_minus, self.prev_set_minus, {1: ButtonType.longDecelCruise}))
       self.prev_res_plus = res_plus
@@ -291,12 +292,8 @@ class CarState(CarStateBase, CarStateExt):
   def get_can_parsers(CP, CP_SP):
     pt_messages =
     if CP.flags & ToyotaFlags.SECOC.value:
-      pt_messages.append(("GEAR_PACKET_HYBRID", 1))
-      pt_messages.append(("SECOC_SYNCHRONIZATION", 10))
-      pt_messages.append(("GAS_PEDAL", 33))
-    
-    # Required for button states
-    pt_messages.append(("PCM_CRUISE", 33))
+      pt_messages.append(("GEAR_PACKET_HYBRID", 1.0))
+      pt_messages.append(("SECOC_SYNCHRONIZATION", 10.0))
 
     cam_messages =
 
