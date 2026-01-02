@@ -65,7 +65,7 @@ class CarState(CarStateBase, CarStateExt):
     self.accel_profile_init = False
     self.toyota_drive_mode = Params().get_bool('ToyotaDriveMode')
 
-    # SUNNYPILOT MOD: Prev button states for forced +/- 5
+    # SUNNYPILOT MOD: Track prev button states for forced +/- 5 logic
     self.prev_res_plus = False
     self.prev_set_minus = False
 
@@ -117,7 +117,7 @@ class CarState(CarStateBase, CarStateExt):
           self.eco_signal_seen = True
         except KeyError:
           eco_mode = 0
-          self.eco_signal_seen = False
+          self.sport_signal_seen = False
       else:
         sport_mode = cp.vl[sport_signal] if self.sport_signal_seen else 0
         eco_mode = cp.vl['ECON_ON'] if self.eco_signal_seen else 0
@@ -218,6 +218,7 @@ class CarState(CarStateBase, CarStateExt):
     if self.CP.carFingerprint not in UNSUPPORTED_DSU_CAR:
       self.pcm_follow_distance = cp.vl
 
+    # --- START SUNNYPILOT MOD: FORCED +/- 5 LOGIC ---
     buttonEvents =
     prev_distance_button = self.distance_button
     if self.CP.carFingerprint in TSS2_CAR:
@@ -233,20 +234,18 @@ class CarState(CarStateBase, CarStateExt):
       self.distance_button = cp.vl
       buttonEvents += create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
 
-    ret.buttonEvents = buttonEvents
-
-    # --- START SUNNYPILOT MOD: FORCED +/- 5 LOGIC ---
-    # Delete standard +/- 1 events and replace with forced +/- 5 events
+    # Delete standard +/- 1 and replace with forced +/- 5 events
     try:
       res_plus = cp.vl
       set_minus = cp.vl
-      ret.buttonEvents =
-      ret.buttonEvents.extend(create_button_events(res_plus, self.prev_res_plus, {1: ButtonType.longAccelCruise}))
-      ret.buttonEvents.extend(create_button_events(set_minus, self.prev_set_minus, {1: ButtonType.longDecelCruise}))
+      buttonEvents.extend(create_button_events(res_plus, self.prev_res_plus, {1: ButtonType.longAccelCruise}))
+      buttonEvents.extend(create_button_events(set_minus, self.prev_set_minus, {1: ButtonType.longDecelCruise}))
       self.prev_res_plus = res_plus
       self.prev_set_minus = set_minus
     except (KeyError, IndexError):
       pass
+    
+    ret.buttonEvents = buttonEvents
     # --- END SUNNYPILOT MOD ---
 
     if self.CP_SP.flags & ToyotaFlagsSP.SP_ENHANCED_BSM and self.frame > 199:
@@ -294,6 +293,10 @@ class CarState(CarStateBase, CarStateExt):
     if CP.flags & ToyotaFlags.SECOC.value:
       pt_messages.append(("GEAR_PACKET_HYBRID", 1))
       pt_messages.append(("SECOC_SYNCHRONIZATION", 10))
+      pt_messages.append(("GAS_PEDAL", 33))
+    
+    # Required for button states
+    pt_messages.append(("PCM_CRUISE", 33))
 
     cam_messages =
 
