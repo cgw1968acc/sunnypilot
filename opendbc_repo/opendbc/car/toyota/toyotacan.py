@@ -1,211 +1,196 @@
-from opendbc.car.structs import CarParams
-from opendbc.car.can_definitions import CanData
+from openpilot.common.params import Params
+from opendbc.car import Bus, structs, get_safety_config, uds
+from.carstate import CarState
+from.carcontroller import CarController
+from.radar_interface import RadarInterface
+from opendbc.car.toyota.values import Ecu, CAR, DBC, ToyotaFlags, CarControllerParams, TSS2_CAR, RADAR_ACC_CAR, NO_DSU_CAR, \
+                                  MIN_ACC_SPEED, EPS_SCALE, NO_STOP_TIMER_CAR, ANGLE_CONTROL_CAR, \
+                                  ToyotaSafetyFlags, UNSUPPORTED_DSU_CAR, SECOC_CAR
+from opendbc.car.disable_ecu import disable_ecu
+from opendbc.car.interfaces import CarInterfaceBase
+from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP, ToyotaSafetyFlagsSP
 
-SteerControlType = CarParams.SteerControlType
-
-
-def create_steer_command(packer, steer, steer_req):
-  """Creates a CAN message for the Toyota Steer Command."""
-
-  values = {
-    "STEER_REQUEST": steer_req,
-    "STEER_TORQUE_CMD": steer,
-    "SET_ME_1": 1,
-  }
-  return packer.make_can_msg("STEERING_LKA", 0, values)
+SteerControlType = structs.CarParams.SteerControlType
 
 
-def create_lta_steer_command(packer, steer_control_type, steer_angle, steer_req, frame, torque_wind_down):
-  """Creates a CAN message for the Toyota LTA Steer Command."""
+class CarInterface(CarInterfaceBase):
+  CarState = CarState
+  CarController = CarController
+  RadarInterface = RadarInterface
 
-  values = {
-    "COUNTER": frame + 128,
-    "SETME_X1": 1,  # suspected LTA feature availability
-    # 1 for TSS 2.5 cars, 3 for TSS 2.0. Send based on whether we're using LTA for lateral control
-    "SETME_X3": 1 if steer_control_type == SteerControlType.angle else 3,
-    "PERCENTAGE": 100,
-    "TORQUE_WIND_DOWN": torque_wind_down,
-    "ANGLE": 0,
-    "STEER_ANGLE_CMD": steer_angle,
-    "STEER_REQUEST": steer_req,
-    "STEER_REQUEST_2": steer_req,
-    "CLEAR_HOLD_STEERING_ALERT": 0,
-  }
-  return packer.make_can_msg("STEERING_LTA", 0, values)
+  @staticmethod
+  def get_pid_accel_limits(CP, CP_SP, current_speed, cruise_speed):
+    return CarControllerParams(CP).ACCEL_MIN, CarControllerParams(CP).ACCEL_MAX
 
+  # SUNNYPILOT MOD: Secondary event remapper for forced +/- 5 jumps
+  def update(self, c, can_parsers):
+    ret, ret_sp = super().update(c, can_parsers)
+    
+    for b in ret.buttonEvents:
+      if b.type == structs.CarState.ButtonEvent.Type.accelCruise:
+        b.type = structs.CarState.ButtonEvent.Type.longAccelCruise # Remap short to long
+      elif b.type == structs.CarState.ButtonEvent.Type.decelCruise:
+        b.type = structs.CarState.ButtonEvent.Type.longDecelCruise # Remap short to long
+        
+    return ret, ret_sp
 
-def create_lta_steer_command_2(packer, frame):
-  values = {
-    "COUNTER": frame + 128,
-  }
-  return packer.make_can_msg("STEERING_LTA_2", 0, values)
+  @staticmethod
+  def _get_params(ret: structs.CarParams, candidate, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
+    ret.brand = "toyota"
+    ret.safetyConfigs =
+    ret.safetyConfigs.safetyParam = EPS_SCALE[candidate]
 
+    if DBC[candidate] == "toyota_new_mc_pt_generated":
+      ret.safetyConfigs.safetyParam |= ToyotaSafetyFlags.ALT_BRAKE.value
 
-def create_accel_command(packer, accel, pcm_cancel, permit_braking, standstill_req, lead, acc_type, fcw_alert, distance):
-  # TODO: find the exact canceling bit that does not create a chime
-  values = {
-    "ACCEL_CMD": accel,
-    "ACC_TYPE": acc_type,
-    "DISTANCE": distance,
-    "MINI_CAR": lead,
-    "PERMIT_BRAKING": permit_braking,
-    "RELEASE_STANDSTILL": not standstill_req,
-    "CANCEL_REQ": pcm_cancel,
-    "ALLOW_LONG_PRESS": 1,
-    "ACC_CUT_IN": fcw_alert,  # only shown when ACC enabled
-  }
-  return packer.make_can_msg("ACC_CONTROL", 0, values)
+    if ret.flags & ToyotaFlags.SECOC.value:
+      ret.secOcRequired = True
+      ret.safetyConfigs.safetyParam |= ToyotaSafetyFlags.SECOC.value
+      ret.dashcamOnly = is_release
 
+    if candidate in ANGLE_CONTROL_CAR:
+      ret.steerControlType = SteerControlType.angle
+      ret.safetyConfigs.safetyParam |= ToyotaSafetyFlags.LTA.value
+      ret.steerActuatorDelay = 0.18
+      ret.steerLimitTimer = 0.8
+    else:
+      CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
+      ret.steerActuatorDelay = 0.12
+      ret.steerLimitTimer = 0.4
 
-def create_accel_command_2(packer, accel):
-  values = {
-    "ACCEL_CMD": accel,
-  }
-  return packer.make_can_msg("ACC_CONTROL_2", 0, values)
+    stop_and_go = candidate in TSS2_CAR
+    found_ecus = [fw.ecu for fw in car_fw]
+    if Ecu.hybrid in found_ecus:
+      ret.flags |= ToyotaFlags.HYBRID.value
 
+    if candidate == CAR.TOYOTA_PRIUS:
+      stop_and_go = True
+      for fw in car_fw:
+        if fw.ecu == "eps" and not fw.fwVersion == b'8965B47060\x00\x00\x00\x00\x00\x00':
+          ret.steerActuatorDelay = 0.25
+          CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning, steering_angle_deadzone_deg=0.2)
+    elif candidate in (CAR.LEXUS_RX, CAR.LEXUS_RX_TSS2):
+      stop_and_go = True
+      ret.wheelSpeedFactor = 1.035
+    elif candidate in (CAR.TOYOTA_AVALON, CAR.TOYOTA_AVALON_2019, CAR.TOYOTA_AVALON_TSS2):
+      stop_and_go = candidate!= CAR.TOYOTA_AVALON
+    elif candidate in (CAR.TOYOTA_RAV4_TSS2, CAR.TOYOTA_RAV4_TSS2_2022, CAR.TOYOTA_RAV4_TSS2_2023, CAR.TOYOTA_RAV4_PRIME, CAR.TOYOTA_SIENNA_4TH_GEN):
+      ret.lateralTuning.init('pid')
+      ret.lateralTuning.pid.kiBP = [0.0]
+      ret.lateralTuning.pid.kpBP = [0.0]
+      ret.lateralTuning.pid.kpV = [0.6]
+      ret.lateralTuning.pid.kiV = [0.1]
+      ret.lateralTuning.pid.kf = 0.00007818594
+      for fw in car_fw:
+        if fw.ecu == "eps" and (fw.fwVersion.startswith(b'\x02') or fw.fwVersion in):
+          ret.lateralTuning.pid.kpV = [0.15]
+          ret.lateralTuning.pid.kiV = [0.05]
+          ret.lateralTuning.pid.kf = 0.00004
+          break
+    elif candidate in (CAR.TOYOTA_CHR, CAR.TOYOTA_CAMRY, CAR.TOYOTA_SIENNA, CAR.LEXUS_CTH, CAR.LEXUS_NX):
+      stop_and_go = True
 
-def create_pcs_commands(packer, accel, active, mass):
-  values1 = {
-    "COUNTER": 0,
-    "FORCE": round(min(accel, 0) * mass * 2),
-    "STATE": 3 if active else 0,
-    "BRAKE_STATUS": 0,
-    "PRECOLLISION_ACTIVE": 1 if active else 0,
-  }
-  msg1 = packer.make_can_msg("PRE_COLLISION", 0, values1)
+    ret.centerToFront = ret.wheelbase * 0.44
+    ret.enableBsm = 0x3F6 in fingerprint and candidate in TSS2_CAR
+    ret.radarUnavailable = Bus.radar not in DBC[candidate] or candidate in (NO_DSU_CAR - TSS2_CAR)
 
-  values2 = {
-    "DSS1GDRV": min(accel, 0),     # accel
-    "PCSALM": 1 if active else 0,  # goes high same time as PRECOLLISION_ACTIVE
-    "IBTRGR": 1 if active else 0,  # unknown
-    "PBATRGR": 1 if active else 0, # noisy actuation bit?
-    "PREFILL": 1 if active else 0, # goes on and off before DSS1GDRV
-    "AVSTRGR": 1 if active else 0,
-  }
-  msg2 = packer.make_can_msg("PRE_COLLISION_2", 0, values2)
+    if candidate in (RADAR_ACC_CAR | NO_DSU_CAR):
+      ret.alphaLongitudinalAvailable = candidate in RADAR_ACC_CAR
+      if alpha_long and candidate in RADAR_ACC_CAR:
+        ret.flags |= ToyotaFlags.DISABLE_RADAR.value
 
-  return [msg1, msg2]
+    ret.openpilotLongitudinalControl = (candidate in (TSS2_CAR - RADAR_ACC_CAR) or
+                                        bool(ret.flags & ToyotaFlags.DISABLE_RADAR.value))
+    ret.autoResumeSng = ret.openpilotLongitudinalControl and candidate in NO_STOP_TIMER_CAR
 
+    if not ret.openpilotLongitudinalControl:
+      ret.safetyConfigs.safetyParam |= ToyotaSafetyFlags.STOCK_LONGITUDINAL.value
 
-def create_acc_cancel_command(packer):
-  values = {
-    "GAS_RELEASED": 0,
-    "CRUISE_ACTIVE": 0,
-    "ACC_BRAKING": 0,
-    "ACCEL_NET": 0,
-    "CRUISE_STATE": 0,
-    "CANCEL_REQ": 1,
-  }
-  return packer.make_can_msg("PCM_CRUISE", 0, values)
+    ret.minEnableSpeed = -1. if stop_and_go else MIN_ACC_SPEED
+    sp_tss2_long_tune = Params().get_bool("ToyotaTSS2Long")
 
+    if candidate in TSS2_CAR:
+      ret.flags |= ToyotaFlags.RAISED_ACCEL_LIMIT.value
+      ret.vEgoStopping = 0.25
+      ret.vEgoStarting = 0.01
+      ret.stoppingDecelRate = 0.03 if sp_tss2_long_tune else 0.3
+      if ret.flags & ToyotaFlags.HYBRID.value:
+        ret.longitudinalActuatorDelay = 0.05
 
-def create_fcw_command(packer, fcw):
-  values = {
-    "PCS_INDICATOR": 1,  # PCS turned off
-    "FCW": fcw,
-    "SET_ME_X20": 0x20,
-    "SET_ME_X10": 0x10,
-    "PCS_OFF": 1,
-    "PCS_SENSITIVITY": 0,
-  }
-  return packer.make_can_msg("PCS_HUD", 0, values)
+    return ret
 
+  @staticmethod
+  def _get_params_sp(stock_cp: structs.CarParams, ret: structs.CarParamsSP, candidate, fingerprint: dict[int, dict[int, int]],
+                      car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
+    if candidate in UNSUPPORTED_DSU_CAR:
+      ret.safetyParam |= ToyotaSafetyFlagsSP.UNSUPPORTED_DSU
 
-def create_ui_command(packer, steer, chime, left_line, right_line, left_lane_depart, right_lane_depart, enabled, stock_lkas_hud):
-  values = {
-    "TWO_BEEPS": chime,
-    "LDA_ALERT": steer,
-    "RIGHT_LINE": 3 if right_lane_depart else 1 if right_line else 2,
-    "LEFT_LINE": 3 if left_lane_depart else 1 if left_line else 2,
-    "BARRIERS": 1 if enabled else 0,
+    sp_toyota_auto_brake_hold = Params().get_bool("ToyotaAutoHold")
+    sp_toyota_enhanced_bsm = Params().get_bool("ToyotaEnhancedBsm")
+    if sp_toyota_enhanced_bsm and candidate in (TSS2_CAR - SECOC_CAR):
+      ret.flags |= ToyotaFlagsSP.SP_ENHANCED_BSM.value
+    if candidate == CAR.TOYOTA_PRIUS_TSS2:
+      ret.flags |= ToyotaFlagsSP.SP_NEED_DEBUG_BSM.value
+    if sp_toyota_auto_brake_hold and candidate in (TSS2_CAR - RADAR_ACC_CAR - SECOC_CAR):
+      ret.flags |= ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD.value
 
-    # static signals
-    "SET_ME_X02": 2,
-    "SET_ME_X01": 1,
-    "LKAS_STATUS": 1,
-    "REPEATED_BEEPS": 0,
-    "LANE_SWAY_FLD": 7,
-    "LANE_SWAY_BUZZER": 0,
-    "LANE_SWAY_WARNING": 0,
-    "LDA_FRONT_CAMERA_BLOCKED": 0,
-    "TAKE_CONTROL": 0,
-    "LANE_SWAY_SENSITIVITY": 2,
-    "LANE_SWAY_TOGGLE": 1,
-    "LDA_ON_MESSAGE": 0,
-    "LDA_MESSAGES": 0,
-    "LDA_SA_TOGGLE": 1,
-    "LDA_SENSITIVITY": 2,
-    "LDA_UNAVAILABLE": 0,
-    "LDA_MALFUNCTION": 0,
-    "LDA_UNAVAILABLE_QUIET": 0,
-    "ADJUSTING_CAMERA": 0,
-    "LDW_EXIST": 1,
-  }
+    if 0x2FF in fingerprint or (0x2AA in fingerprint and candidate in NO_DSU_CAR):
+      ret.flags |= ToyotaFlagsSP.SMART_DSU.value
+    if 0x2AA in fingerprint and candidate in NO_DSU_CAR:
+      ret.flags |= ToyotaFlagsSP.RADAR_CAN_FILTER.value
+    if 0x23 in fingerprint and not stock_cp.flags & ToyotaFlags.SECOC:
+      ret.flags |= ToyotaFlagsSP.ZSS.value
 
-  # lane sway functionality
-  # not all cars have LKAS_HUD — update with camera values if available
-  if len(stock_lkas_hud):
-    values.update({s: stock_lkas_hud[s] for s in [
-      "LANE_SWAY_FLD",
-      "LANE_SWAY_BUZZER",
-      "LANE_SWAY_WARNING",
-      "LANE_SWAY_SENSITIVITY",
-      "LANE_SWAY_TOGGLE",
-    ]})
+    if candidate == CAR.TOYOTA_PRIUS:
+      if ret.flags & ToyotaFlagsSP.ZSS:
+        stock_cp.steerRatio = 15.0
+        stock_cp.mass = 3370.
+        for fw in car_fw:
+          if fw.ecu == "eps" and not fw.fwVersion == b'8965B47060\x00\x00\x00\x00\x00\x00':
+            stock_cp.steerActuatorDelay = 0.25
+            CarInterfaceBase.configure_torque_tune(candidate, stock_cp.lateralTuning, steering_angle_deadzone_deg=0.0)
 
-  return packer.make_can_msg("LKAS_HUD", 0, values)
+    use_sdsu = bool(ret.flags & ToyotaFlagsSP.SMART_DSU)
+    stock_cp.minEnableSpeed = -1. if use_sdsu else stock_cp.minEnableSpeed
 
+    if candidate in (RADAR_ACC_CAR | NO_DSU_CAR):
+      stock_cp.alphaLongitudinalAvailable = use_sdsu or candidate in RADAR_ACC_CAR
+      if not use_sdsu:
+        if alpha_long and candidate in RADAR_ACC_CAR:
+          stock_cp.flags |= ToyotaFlags.DISABLE_RADAR.value
+      else:
+        use_sdsu = use_sdsu and alpha_long
 
-def toyota_checksum(address: int, sig, d: bytearray) -> int:
-  s = len(d)
-  addr = address
-  while addr:
-    s += addr & 0xFF
-    addr >>= 8
-  for i in range(len(d) - 1):
-    s += d[i]
-  return s & 0xFF
+    stock_cp.openpilotLongitudinalControl = use_sdsu or \
+      candidate in (TSS2_CAR - RADAR_ACC_CAR) or \
+      bool(stock_cp.flags & ToyotaFlags.DISABLE_RADAR)
 
-def create_set_bsm_debug_mode(lr_blindspot, enabled):
-  dat = b"\x02\x10\x60\x00\x00\x00\x00" if enabled else b"\x02\x10\x01\x00\x00\x00\x00"
-  dat = lr_blindspot + dat
+    ret.enableGasInterceptor = 0x201 in fingerprint and stock_cp.openpilotLongitudinalControl and \
+                               not stock_cp.flags & ToyotaFlags.SECOC
 
-  return CanData(0x750, dat, 0)
+    if ret.enableGasInterceptor:
+      ret.safetyParam |= ToyotaSafetyFlagsSP.GAS_INTERCEPTOR
+      stock_cp.minEnableSpeed = -1.
 
+    if ret.flags & ToyotaFlagsSP.STOCK_LONGITUDINAL:
+      stock_cp.alphaLongitudinalAvailable = False
+      stock_cp.openpilotLongitudinalControl = False
 
-def create_bsm_polling_status(lr_blindspot):
-  return CanData(0x750, lr_blindspot + b"\x02\x21\x69\x00\x00\x00\x00", 0)
+    if not stock_cp.openpilotLongitudinalControl:
+      stock_cp.safetyConfigs.safetyParam |= ToyotaSafetyFlags.STOCK_LONGITUDINAL.value
+    else:
+      stock_cp.safetyConfigs.safetyParam &= ~ToyotaSafetyFlags.STOCK_LONGITUDINAL.value
 
+    return ret
 
-# auto brake hold
-def create_brake_hold_command(packer, frame, pre_collision_2, brake_hold_active):
-  # forward PRE_COLLISION_2 when auto brake hold is not active
-  values = {s: pre_collision_2[s] for s in [
-    "DSS1GDRV",
-    "DS1STAT2",
-    "DS1STBK2",
-    "PCSWAR",
-    "PCSALM",
-    "PCSOPR",
-    "PCSABK",
-    "PBATRGR",
-    "PPTRGR",
-    "IBTRGR",
-    "CLEXTRGR",
-    "IRLT_REQ",
-    "BRKHLD",
-    "AVSTRGR",
-    "VGRSTRGR",
-    "PREFILL",
-    "PBRTRGR",
-    "PCSDIS",
-    "PBPREPMP",
-  ]}
+  @staticmethod
+  def init(CP, CP_SP, can_recv, can_send, communication_control=None):
+    if CP.flags & ToyotaFlags.DISABLE_RADAR.value:
+      if communication_control is None:
+        communication_control = bytes()
+      disable_ecu(can_recv, can_send, bus=0, addr=0x750, sub_addr=0xf, com_cont_req=communication_control)
 
-  if brake_hold_active:
-    values = {
-      "DSS1GDRV": 0x3FF,
-      "PBRTRGR": frame % 730 < 727,  # cut actuation for 3 frames
-    }
-
-  return packer.make_can_msg("PRE_COLLISION_2", 0, values)
+  @staticmethod
+  def deinit(CP, can_recv, can_send):
+    communication_control = bytes()
+    CarInterface.init(CP, can_recv, can_send, communication_control)
