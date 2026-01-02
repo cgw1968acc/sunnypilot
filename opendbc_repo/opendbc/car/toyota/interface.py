@@ -22,15 +22,15 @@ class CarInterface(CarInterfaceBase):
   def get_pid_accel_limits(CP, CP_SP, current_speed, cruise_speed):
     return CarControllerParams(CP).ACCEL_MIN, CarControllerParams(CP).ACCEL_MAX
 
-  # SUNNYPILOT MOD: Secondary event remapper for forced +/- 5 jumps
+  # SUNNYPILOT MOD: Ensure any standard events are remapped to 5-unit jumps
   def update(self, c, can_parsers):
     ret, ret_sp = super().update(c, can_parsers)
     
     for b in ret.buttonEvents:
       if b.type == structs.CarState.ButtonEvent.Type.accelCruise:
-        b.type = structs.CarState.ButtonEvent.Type.longAccelCruise # Remap short to long
+        b.type = structs.CarState.ButtonEvent.Type.longAccelCruise 
       elif b.type == structs.CarState.ButtonEvent.Type.decelCruise:
-        b.type = structs.CarState.ButtonEvent.Type.longDecelCruise # Remap short to long
+        b.type = structs.CarState.ButtonEvent.Type.longDecelCruise 
         
     return ret, ret_sp
 
