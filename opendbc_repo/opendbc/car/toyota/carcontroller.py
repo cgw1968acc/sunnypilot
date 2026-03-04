@@ -51,7 +51,7 @@ def get_long_tune(CP, params):
         kiV = [0.30, 0.20]
       else:
         # test
-        kiBP = [1.5,  3.0,  6.0,  14.]
+        kiBP = [2.0,  4.0,  6.0,  14.]
         kiV = [0.40, 0.50,  0.259, 0.25]
     else:
       kiBP = [2., 5.]
