@@ -26,7 +26,7 @@ MIN_ACCEL_PROFILES = {
   AccelPersonality.normal:    [-0.0023, -0.0700, -0.0070, -0.08, -0.24, -0.32, -1.25],
   AccelPersonality.sport:     [-0.0024, -0.0800, -0.0080, -0.09, -0.26, -0.34, -1.30],
 }
-MIN_ACCEL_BREAKPOINTS =       [1.5,     3.0,    5.0,     10.0,  16.0,  22.0,  40.0]
+MIN_ACCEL_BREAKPOINTS =       [2.0,     4.0,    5.0,     10.0,  16.0,  22.0,  40.0]
 
 ACCEL_ALPHA_BASE = 0.30   # responsive for small corrections
 ACCEL_ALPHA_MAX = 0.85    # smooth for big transitions
