@@ -61,11 +61,11 @@ MIN_X_LEAD_FACTOR = 0.5
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
-    return 0.7
+    return 1.0
   elif personality==log.LongitudinalPersonality.standard:
-    return 0.5
+    return 0.8
   elif personality==log.LongitudinalPersonality.aggressive:
-    return 0.3
+    return 0.6
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
