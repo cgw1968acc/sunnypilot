@@ -13,12 +13,12 @@ from openpilot.common.params import Params
 LongPersonality = log.LongitudinalPersonality
 
 # Follow distance profiles mapped to LongPersonality
-#FOLLOW_PROFILES = {
+FOLLOW_PROFILES = {
   #LongPersonality.relaxed:     [1.70, 1.70, 1.80],
   #LongPersonality.standard:    [1.38, 1.38, 1.52],
   #LongPersonality.aggressive:  [1.00, 1.00, 1.15],
 #}
-FOLLOW_BREAKPOINTS =           [0.0,  16.0, 40.0]
+#FOLLOW_BREAKPOINTS =           [0.0,  16.0, 40.0]
   LongPersonality.relaxed:     [1.70, 1.70, 1.75, 1.80, 1.84, 1.88, 1.90, 1.90],
   LongPersonality.standard:    [1.37, 1.37, 1.40, 1.44, 1.48, 1.50, 1.52, 1.52],
   LongPersonality.aggressive:  [1.00, 1.00, 1.03, 1.05, 1.08, 1.12, 1.15, 1.15],
