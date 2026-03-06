@@ -17,7 +17,7 @@ ACCEL_PERSONALITY_OPTIONS = [AccelPersonality.eco, AccelPersonality.normal, Acce
 MAX_ACCEL_PROFILES = {
   AccelPersonality.eco:       [1.85, 1.80, 1.54, 0.93, 0.71, 0.57, 0.33, 0.10, 0.08, 0.07],
   AccelPersonality.normal:    [2.00, 1.95, 1.60, 1.06, 0.81, 0.69, 0.41, 0.11, 0.09, 0.08],
-  AccelPersonality.sport:     [2.00, 2.00, 1.85, 1.39, 1.11, 0.82, 0.52, 0.12, 0.10, 0.09],
+  AccelPersonality.sport:     [2.00, 2.00, 1.85, 1.48, 1.20, 0.88, 0.52, 0.14, 0.11, 0.09],
 }
 MAX_ACCEL_BREAKPOINTS =       [0.0,  3.0,  5.0,  8.0,  12.0, 18.0, 24.0, 32.0, 42.0, 55.0]
 
