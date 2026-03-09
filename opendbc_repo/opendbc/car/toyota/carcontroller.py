@@ -41,12 +41,18 @@ MAX_USER_TORQUE = 500
 
 LEFT_BLINDSPOT = b"\x41"
 RIGHT_BLINDSPOT = b"\x42"
-
 def get_long_tune(CP, params):
   if CP.carFingerprint in TSS2_CAR:
     if Params().get_bool("ToyotaTSS2Long"):
+      if CP.carFingerprint == CAR.TOYOTA_RAV4_TSS2:
+        #optimal for rav4
+        kiBP = [0.,  2.0,  4.0,  6.0,   14.]
+        kiV = [0.33, 0.35, 0.35, 0.2533, 0.25]
+      else:
+        #kiBP = [0.,  4.0,  6.0,   9.0]
+        #kiV = [0.42, 0.38, 0.2526, 0.25]
       kiBP = [1.5,  3.0,  5.0,  9.0,  14.,  20.,  27.]
-      kiV =  [0.38, 0.36, 0.24, 0.22, 0.19, 0.17, 0.11]
+      kiV =  [0.38, 0.36, 0.24, 0.22, 0.19, 0.165, 0.10]
     else:
       kiBP = [2., 5.]
       kiV = [0.5, 0.25]
