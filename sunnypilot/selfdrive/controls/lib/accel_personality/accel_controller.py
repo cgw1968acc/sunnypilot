@@ -30,6 +30,7 @@ MIN_ACCEL_PROFILES = {
   AccelPersonality.sport:     [-0.30, -0.60, -0.40, -0.40, -1.20], #cross
 }
 MIN_ACCEL_BREAKPOINTS =       [0.0,   2.0,   5.0,   16.0,  40.0]
+#MIN_ACCEL_BREAKPOINTS =       [0.0,     1.0,      3.0,     6.0,     10.0,  16.0,  22.0] #corolla only
 
 ACCEL_ALPHA_BASE = 0.30   # responsive for small corrections
 ACCEL_ALPHA_MAX = 0.85    # smooth for big transitions
