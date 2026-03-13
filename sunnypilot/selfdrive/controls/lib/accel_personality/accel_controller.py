@@ -32,15 +32,15 @@ MIN_ACCEL_PROFILES = {
 MIN_ACCEL_BREAKPOINTS =       [0.0,   2.0,   5.0,   16.0,  40.0]
 #MIN_ACCEL_BREAKPOINTS =       [0.0,     1.0,      3.0,     6.0,     10.0,  16.0,  22.0] #corolla only
 
-ACCEL_ALPHA_BASE = 0.30   # responsive for small corrections
-ACCEL_ALPHA_MAX = 0.85    # smooth for big transitions
-ACCEL_ALPHA_SCALE = 0.8   # How fast alpha grows with error
+ACCEL_ALPHA_BASE = 0.80   # responsive for small corrections
+ACCEL_ALPHA_MAX = 0.95    # smooth for big transitions
+ACCEL_ALPHA_SCALE = 0.9   # How fast alpha grows with error
 
 DECEL_ALPHA_BASE = 0.35   # smooth even for small changes
 DECEL_ALPHA_MIN = 0.15    # responsive
 DECEL_ALPHA_SCALE = -1.5  # decel gets more responsive as error grows
 
-MAX_DECEL_INCREASE_RATE = 0.5  # slow brake onset for coast feel (m/s² per second)
+MAX_DECEL_INCREASE_RATE = 1.0  # slow brake onset for coast feel (m/s² per second)
 MAX_DECEL_DECREASE_RATE = 0.8  # faster brake release (m/s² per second)
 
 
