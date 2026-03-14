@@ -15,7 +15,7 @@ AccelPersonality = custom.LongitudinalPlanSP.AccelerationPersonality
 
 # Acceleration Profiles mapped to AccelPersonality (eco/normal/sport)
 MAX_ACCEL_PROFILES = {
-    AccelPersonality.eco:       [1.30, 1.25, 1.15, 0.69, 0.60, 0.49, 0.28, 0.107, 0.08, 0.06],
+    AccelPersonality.eco:       [1.65, 1.25, 1.15, 0.69, 0.60, 0.49, 0.28, 0.107, 0.08, 0.06],
     AccelPersonality.normal:    [1.99, 1.80, 1.55, 0.94, 0.74, 0.58, 0.34, 0.120, 0.09, 0.07],
     AccelPersonality.sport:     [2.00, 1.95, 1.80, 1.46, 1.20, 0.84, 0.54, 0.180, 0.10, 0.08],
 }
@@ -23,19 +23,11 @@ MAX_ACCEL_BREAKPOINTS =      [0.,   3.,   5.,   8.,   12.,  18.,  24.,  32.,  42
 
 # Braking profiles mapped to LongPersonality (relaxed/standard/aggressive)
 MIN_ACCEL_PROFILES = {
-    LongPersonality.relaxed:    [-0.002, -0.002, -0.009, -0.30, -1.3, -1.4],
-    LongPersonality.standard:   [-0.003, -0.003, -0.009, -0.34, -1.3, -1.4],
-    LongPersonality.aggressive: [-0.004, -0.004, -0.009, -0.37, -1.3, -1.4],
+  AccelPersonality.eco:       [-0.50, -0.50, -0.32, -0.32, -1.00], #cross
+  AccelPersonality.normal:    [-0.55, -0.55, -0.36, -0.36, -1.10], #cross
+  AccelPersonality.sport:     [-0.60, -0.60, -0.40, -0.40, -1.20], #cross
 }
-MIN_ACCEL_BREAKPOINTS =    [0.,     1.,     6,      12.,    14.,  25]
-
-# Follow distance profiles mapped to LongPersonality (relaxed/standard/aggressive)
-FOLLOW_PROFILES = {
-    LongPersonality.relaxed:    [1.70, 1.70, 1.75, 1.75, 1.80, 1.80, 1.80],
-    LongPersonality.standard:   [1.40, 1.40, 1.45, 1.45, 1.50, 1.50, 1.50],
-    LongPersonality.aggressive: [1.05, 1.05, 1.15, 1.15, 1.20, 1.20, 1.20],
-}
-FOLLOW_BREAKPOINTS =          [0.,   3.,    6.,  30.,  40.,  50.,  60.]
+MIN_ACCEL_BREAKPOINTS =       [0.0,   2.0,   5.0,   16.0,  40.0]
 
 class VibePersonalityController:
     """Controller for acceleration and distance personalities"""
