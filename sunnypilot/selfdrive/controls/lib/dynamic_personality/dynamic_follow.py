@@ -16,10 +16,10 @@ LongPersonality = log.LongitudinalPersonality
 FOLLOW_PROFILES = {
   LongPersonality.relaxed:    [1.75, 1.75, 1.75, 1.80, 2.00],
   LongPersonality.standard:   [1.45, 1.45, 1.45, 1.45, 1.55],
-  LongPersonality.aggressive: [1.00, 1.00, 1.00, 1.10, 1.20],
+  LongPersonality.aggressive: [1.00, 1.00, 1.15, 1.15, 1.20],
 }
 
-FOLLOW_BREAKPOINTS =          [0.,   10.,  20.,  30.,  40.,]
+FOLLOW_BREAKPOINTS =          [0.,   20.,  20.01, 30., 40.,]
 
   #LongPersonality.relaxed:     [1.85, 1.85, 1.88, 1.92, 1.95, 1.98, 2.00, 2.00],
   #LongPersonality.standard:    [1.45, 1.45, 1.48, 1.52, 1.55, 1.58, 1.60, 1.60],
