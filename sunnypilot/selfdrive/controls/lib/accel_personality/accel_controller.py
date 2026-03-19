@@ -27,7 +27,7 @@ MIN_ACCEL_PROFILES = {
   #AccelPersonality.sport:     [-0.0023, -0.2800, -0.0062, -0.0072, -0.18, -0.34, -0.86], #corolla only
   AccelPersonality.eco:       [-0.30, -0.30, -0.30, -0.30, -0.64], #cross
   AccelPersonality.normal:    [-0.48, -0.64, -0.38, -0.38, -1.10], #cross
-  AccelPersonality.sport:     [-0.48, -0.65, -0.39, -0.39, -1.20], #cross
+  AccelPersonality.sport:     [-0.48, -0.65, -0.80, -1.20, -1.20], #cross
 }
 MIN_ACCEL_BREAKPOINTS =       [0.0,   2.0,   5.0,   16.0,  40.0]
 #MIN_ACCEL_BREAKPOINTS =       [0.0,     1.0,      3.0,     6.0,     10.0,  16.0,  22.0] #corolla only
