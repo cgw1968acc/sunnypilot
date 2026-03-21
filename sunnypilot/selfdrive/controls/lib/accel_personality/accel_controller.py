@@ -36,8 +36,8 @@ ACCEL_ALPHA_BASE = 0.9   # responsive for small corrections
 ACCEL_ALPHA_MAX = 0.9    # smooth for big transitions
 ACCEL_ALPHA_SCALE = 0.9   # How fast alpha grows with error
 
-DECEL_ALPHA_BASE = 0.05   # smooth even for small changes
-DECEL_ALPHA_MIN = 0.05    # responsive
+DECEL_ALPHA_BASE = 0.5   # smooth even for small changes
+DECEL_ALPHA_MIN = 0.5    # responsive
 DECEL_ALPHA_SCALE = -1.5  # decel gets more responsive as error grows
 
 MAX_DECEL_INCREASE_RATE = 0.8  # slow brake onset for coast feel (m/s² per second)
