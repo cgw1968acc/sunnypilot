@@ -14,8 +14,8 @@ LongPersonality = log.LongitudinalPersonality
 
 # Follow distance profiles mapped to LongPersonality
 FOLLOW_PROFILES = {
-  LongPersonality.relaxed:    [1.30, 1.30, 1.75, 1.75, 1.80, 2.00],
-  LongPersonality.standard:   [1.15, 1.15, 1.45, 1.45, 1.45, 1.55],
+  LongPersonality.relaxed:    [1.35, 1.35, 1.75, 1.75, 1.80, 2.00],
+  LongPersonality.standard:   [1.25, 1.25, 1.45, 1.45, 1.45, 1.55],
   LongPersonality.aggressive: [0.90, 0.90, 1.00, 1.15, 1.15, 1.20],
 }
 
