@@ -32,9 +32,9 @@ MIN_ACCEL_PROFILES = {
 MIN_ACCEL_BREAKPOINTS =       [0.0,   2.0,   5.0,   16.0,  40.0]
 #MIN_ACCEL_BREAKPOINTS =       [0.0,     1.0,      3.0,     6.0,     10.0,  16.0,  22.0] #corolla only
 
-ACCEL_ALPHA_BASE = 0.1   # responsive for small corrections
-ACCEL_ALPHA_MAX = 0.1    # smooth for big transitions
-ACCEL_ALPHA_SCALE = 0.1   # How fast alpha grows with error
+ACCEL_ALPHA_BASE = 0.9   # responsive for small corrections
+ACCEL_ALPHA_MAX = 0.9    # smooth for big transitions
+ACCEL_ALPHA_SCALE = 0.9   # How fast alpha grows with error
 
 DECEL_ALPHA_BASE = 0.05   # smooth even for small changes
 DECEL_ALPHA_MIN = 0.05    # responsive
