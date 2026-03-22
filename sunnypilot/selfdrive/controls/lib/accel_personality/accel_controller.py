@@ -26,7 +26,7 @@ MIN_ACCEL_PROFILES = {
   #AccelPersonality.normal:    [-0.0022, -0.2600, -0.0061, -0.0071, -0.17, -0.32, -0.81], #corolla only
   #AccelPersonality.sport:     [-0.0023, -0.2800, -0.0062, -0.0072, -0.18, -0.34, -0.86], #corolla only
   AccelPersonality.eco:       [-0.30, -0.30, -0.30, -0.30, -0.64], #cross
-  AccelPersonality.normal:    [-0.48, -0.64, -0.38, -0.38, -1.10], #cross
+  AccelPersonality.normal:    [-0.58, -0.74, -0.50, -0.50, -1.10], #cross
   AccelPersonality.sport:     [-1.20, -1.20, -1.20, -1.20, -1.20], #cross
 }
 MIN_ACCEL_BREAKPOINTS =       [0.0,   2.0,   5.0,   16.0,  40.0]
@@ -36,8 +36,8 @@ ACCEL_ALPHA_BASE = 0.9   # responsive for small corrections
 ACCEL_ALPHA_MAX = 0.9    # smooth for big transitions
 ACCEL_ALPHA_SCALE = 0.9   # How fast alpha grows with error
 
-DECEL_ALPHA_BASE = 0.5   # smooth even for small changes
-DECEL_ALPHA_MIN = 0.5    # responsive
+DECEL_ALPHA_BASE = 0.7   # smooth even for small changes
+DECEL_ALPHA_MIN = 0.7    # responsive
 DECEL_ALPHA_SCALE = -1.5  # decel gets more responsive as error grows
 
 MAX_DECEL_INCREASE_RATE = 0.8  # slow brake onset for coast feel (m/s² per second)
