@@ -15,20 +15,22 @@ ACCEL_PERSONALITY_OPTIONS = [AccelPersonality.eco, AccelPersonality.normal, Acce
 
 # Acceleration Profiles
 MAX_ACCEL_PROFILES = {
-  AccelPersonality.eco:       [1.85, 1.65, 1.40, 0.98, 0.68, 0.56, 0.34, 0.09, 0.07],
-  AccelPersonality.normal:    [2.00, 2.00, 1.70, 1.18, 0.85, 0.68, 0.40, 0.12, 0.08],
-  AccelPersonality.sport:     [2.00, 2.00, 2.00, 1.60, 1.20, 0.95, 0.56, 0.16, 0.10],
+  AccelPersonality.eco:       [1.85, 1.60, 1.38, 0.92, 0.61, 0.52, 0.33, 0.11, 0.08],
+  AccelPersonality.normal:    [2.00, 1.99, 1.80, 1.27, 0.82, 0.73, 0.52, 0.23, 0.12],
+  AccelPersonality.sport:     [2.00, 2.00, 2.00, 1.86, 1.30, 1.00, 0.70, 0.40, 0.30],
 }
 MAX_ACCEL_BREAKPOINTS =       [0.0,  3.0,  5.0,  8.0,  12.0, 18.0, 24.0, 32.0, 42.0]
 
 # Decel profiles
-MIN_ACCEL_BREAKPOINTS =       [0.0,   1.0,   2.0,   4.0,   7.0,   11.0,  16.0,  22.0,  25.0]
+MIN_ACCEL_BREAKPOINTS =       [0.0,   2.0,   5.0,   16.0,  40.0]
 MIN_ACCEL_PROFILES = {
-  AccelPersonality.eco:       [-0.001,-0.001,-0.08, -0.18, -0.25, -0.30, -0.35, -0.40, -0.44],
-  AccelPersonality.normal:    [-0.001,-0.001,-0.10, -0.21, -0.29, -0.35, -0.41, -0.47, -0.51],
-  AccelPersonality.sport:     [-0.002,-0.002,-0.13, -0.25, -0.34, -0.41, -0.47, -0.53, -0.58],
+  AccelPersonality.eco:       [-0.30, -0.30, -0.30, -0.40, -0.64], #cross
+  AccelPersonality.normal:    [-0.58, -0.74, -0.50, -0.50, -1.10], #cross
+  AccelPersonality.sport:     [-1.20, -1.20, -1.20, -1.20, -1.20], #cross
 }
 
+
+# Decel 
 ACCEL_ALPHA_BASE = 0.75
 ACCEL_ALPHA_MAX  = 0.92
 ACCEL_ALPHA_SCALE = 0.9
