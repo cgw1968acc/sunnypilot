@@ -25,7 +25,7 @@ MAX_ACCEL_BREAKPOINTS =       [0.0,  3.0,  5.0,  8.0,  13.0, 17.0, 24.0, 32.0, 4
 MIN_ACCEL_BREAKPOINTS =       [0.0,   2.0,   5.0,   16.0,  40.0]
 MIN_ACCEL_PROFILES = {
   AccelPersonality.eco:       [-0.10, -0.10, -0.25, -0.40, -0.64], #cross
-  AccelPersonality.normal:    [-0.58, -0.74, -0.50, -0.50, -0.76], #cross
+  AccelPersonality.normal:    [-0.12, -0.12, -0.27, -0.42, -0.76], #cross
   AccelPersonality.sport:     [-1.20, -1.20, -1.20, -1.20, -1.20], #cross
 }
 
