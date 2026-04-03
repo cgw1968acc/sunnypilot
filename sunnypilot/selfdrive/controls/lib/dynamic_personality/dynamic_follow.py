@@ -16,7 +16,7 @@ FOLLOW_BREAKPOINTS =          [0.,   5.0,  5.01,  11., 30., 40.,]
 
 FOLLOW_PROFILES = {
   LongPersonality.relaxed:    [1.35, 1.35, 1.45, 1.45, 1.80, 2.00],
-  LongPersonality.standard:   [1.17, 1.17, 1.36, 1.36, 1.45, 1.55],
+  LongPersonality.standard:   [1.17, 1.17, 1.25, 1.25, 1.35, 1.45],
   LongPersonality.aggressive: [0.95, 0.95, 1.05, 1.05, 1.15, 1.20],
 }
 
