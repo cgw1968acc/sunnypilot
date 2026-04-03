@@ -12,12 +12,12 @@ from openpilot.common.params import Params
 
 LongPersonality = log.LongitudinalPersonality
 
-FOLLOW_BREAKPOINTS =          [0.,   3.,   6.,   10.,  15.,  20.,  27.,  35.,  40.]
+FOLLOW_BREAKPOINTS =          [0.,   4.0,  6.0,  11.,  18.,  30.,  40.,]
 
 FOLLOW_PROFILES = {
-  LongPersonality.relaxed:    [1.50, 1.55, 1.60, 1.65, 1.72, 1.80, 1.88, 1.95, 2.00],
-  LongPersonality.standard:   [1.20, 1.25, 1.30, 1.35, 1.42, 1.47, 1.52, 1.56, 1.60],
-  LongPersonality.aggressive: [1.00, 1.04, 1.08, 1.12, 1.16, 1.19, 1.22, 1.25, 1.28],
+  LongPersonality.relaxed:    [1.35, 1.35, 1.45, 1.45, 1.75, 1.75, 2.00],
+  LongPersonality.standard:   [1.17, 1.17, 1.25, 1.25, 1.35, 1.35, 1.45],
+  LongPersonality.aggressive: [0.95, 0.95, 1.05, 1.05, 1.15, 1.15, 1.20],
 }
 
 SMOOTHING_BASE            = 0.86
