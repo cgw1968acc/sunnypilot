@@ -54,7 +54,7 @@ def get_long_tune(CP, params):
       else:
         #optimal for corolla
         kiBP = [1.0,  2.0,  5.0,  9.0,  14.]#cross only
-        kiV =  [0.50, 0.48, 0.25, 0.22, 0.186]
+        kiV =  [0.50, 0.48, 0.25, 0.25, 0.20]
     else:
       kiBP = [2., 5.]
       kiV = [0.5, 0.25]
