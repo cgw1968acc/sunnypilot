@@ -22,15 +22,11 @@ MAX_ACCEL_PROFILES = {
 MAX_ACCEL_BREAKPOINTS =       [0.0,  3.0,  5.0,  8.0,  12.0, 18.0, 24.0, 32.0, 42.0]
 
 MIN_ACCEL_PROFILES = {
-  #AccelPersonality.eco:       [-0.0021, -0.2400, -0.0060, -0.0070, -0.16, -0.30, -0.76], #corolla only
-  #AccelPersonality.normal:    [-0.0022, -0.2600, -0.0061, -0.0071, -0.17, -0.32, -0.81], #corolla only
-  #AccelPersonality.sport:     [-0.0023, -0.2800, -0.0062, -0.0072, -0.18, -0.34, -0.86], #corolla only
-  AccelPersonality.eco:       [-0.30, -0.30, -0.30, -0.30, -0.64], #cross
+  AccelPersonality.eco:       [-0.45, -0.65, -0.45, -0.45, -0.64], #cross
   AccelPersonality.normal:    [-0.58, -0.74, -0.50, -0.50, -1.10], #cross
   AccelPersonality.sport:     [-1.20, -1.20, -1.20, -1.20, -1.20], #cross
 }
-MIN_ACCEL_BREAKPOINTS =       [0.0,   2.0,   5.0,   16.0,  40.0]
-#MIN_ACCEL_BREAKPOINTS =       [0.0,     1.0,      3.0,     6.0,     10.0,  16.0,  22.0] #corolla only
+MIN_ACCEL_BREAKPOINTS =       [1.0,   3.0,   5.0,   16.0,  40.0]
 
 ACCEL_ALPHA_BASE = 0.9   # responsive for small corrections
 ACCEL_ALPHA_MAX = 0.9    # smooth for big transitions
