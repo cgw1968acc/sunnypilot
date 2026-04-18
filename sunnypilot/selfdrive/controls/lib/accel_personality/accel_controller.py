@@ -15,7 +15,7 @@ ACCEL_PERSONALITY_OPTIONS = [AccelPersonality.eco, AccelPersonality.normal, Acce
 
 # Acceleration Profiles
 MAX_ACCEL_PROFILES = {
-  AccelPersonality.eco:       [2.00, 1.80, 1.38, 0.95, 0.66, 0.55, 0.33, 0.11, 0.08],
+  AccelPersonality.eco:       [1.90, 1.70, 1.38, 0.95, 0.66, 0.55, 0.33, 0.11, 0.08],
   AccelPersonality.normal:    [2.00, 1.99, 1.90, 1.40, 0.97, 0.73, 0.52, 0.23, 0.12],
   AccelPersonality.sport:     [2.00, 2.00, 2.00, 1.86, 1.40, 1.10, 0.74, 0.50, 0.40],
 }
