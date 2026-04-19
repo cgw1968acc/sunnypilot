@@ -29,15 +29,15 @@ MIN_ACCEL_PROFILES = {
 MIN_ACCEL_BREAKPOINTS =       [1.5,   3.0,   9.0,   16.0,  40.0]
 
 ACCEL_ALPHA_BASE = 0.9   # responsive for small corrections
-ACCEL_ALPHA_MAX = 0.5    # smooth for big transitions
+ACCEL_ALPHA_MAX = 0.55    # smooth for big transitions
 ACCEL_ALPHA_SCALE = 0.9   # How fast alpha grows with error
 
 DECEL_ALPHA_BASE = 0.7   # smooth even for small changes
 DECEL_ALPHA_MIN = 0.7    # responsive
 DECEL_ALPHA_SCALE = -1.2  # decel gets more responsive as error grows
 
-MAX_DECEL_INCREASE_RATE = 0.8  # slow brake onset for coast feel (m/s² per second)
-MAX_DECEL_DECREASE_RATE = 0.8  # faster brake release (m/s² per second)
+MAX_DECEL_INCREASE_RATE = 0.7  # slow brake onset for coast feel (m/s² per second)
+MAX_DECEL_DECREASE_RATE = 0.9  # faster brake release (m/s² per second)
 
 
 class AccelPersonalityController:
