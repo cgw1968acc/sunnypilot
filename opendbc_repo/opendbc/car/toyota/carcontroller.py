@@ -1,4 +1,4 @@
-import math
+小import math
 import numpy as np
 from openpilot.common.params import Params
 from opendbc.car import Bus, make_tester_present_msg, rate_limit, structs, ACCELERATION_DUE_TO_GRAVITY, DT_CTRL
@@ -50,7 +50,7 @@ def get_long_tune(CP, params):
         kiV = [0.32, 0.32, 0.33, 0.27, 0.25]
       else:
         kiBP = [1.5,  2.5,  5.0,  9.0,  27.]#cross only
-        kiV =  [0.5,  0.50, 0.30, 0.21, 0.1]
+        kiV =  [0.5,  0.50, 0.30, 0.22, 0.1]
         #kiBP = [0.,   2.0,  3.0,  5.0,  9.0,  14.,  20.,  27.]#corolla only
         #kiV =  [0.50, 0.50, 0.35, 0.23, 0.22, 0.20, 0.20, 0.20]
     else:
