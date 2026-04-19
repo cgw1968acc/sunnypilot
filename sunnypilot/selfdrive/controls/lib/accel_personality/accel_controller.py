@@ -29,7 +29,7 @@ MIN_ACCEL_PROFILES = {
 MIN_ACCEL_BREAKPOINTS =       [1.5,   3.0,   9.0,   16.0,  40.0]
 
 ACCEL_ALPHA_BASE = 0.8   # responsive for small corrections
-ACCEL_ALPHA_MAX = 0.52    # smooth for big transitions
+ACCEL_ALPHA_MAX = 0.48    # smooth for big transitions
 ACCEL_ALPHA_SCALE = 0.7   # How fast alpha grows with error
 
 DECEL_ALPHA_BASE = 0.7   # smooth even for small changes
