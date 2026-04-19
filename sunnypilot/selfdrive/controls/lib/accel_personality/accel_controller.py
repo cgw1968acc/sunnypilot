@@ -34,7 +34,7 @@ ACCEL_ALPHA_SCALE = 0.9   # How fast alpha grows with error
 
 DECEL_ALPHA_BASE = 0.7   # smooth even for small changes
 DECEL_ALPHA_MIN = 0.7    # responsive
-DECEL_ALPHA_SCALE = -1.5  # decel gets more responsive as error grows
+DECEL_ALPHA_SCALE = -1.2  # decel gets more responsive as error grows
 
 MAX_DECEL_INCREASE_RATE = 0.8  # slow brake onset for coast feel (m/s² per second)
 MAX_DECEL_DECREASE_RATE = 0.8  # faster brake release (m/s² per second)
