@@ -28,15 +28,15 @@ MIN_ACCEL_PROFILES = {
 }
 MIN_ACCEL_BREAKPOINTS =       [1.5,   3.0,   9.0,   16.0,  40.0]
 
-ACCEL_ALPHA_BASE = 0.7   # responsive for small corrections
+ACCEL_ALPHA_BASE = 0.75   # responsive for small corrections
 ACCEL_ALPHA_MAX = 0.45    # smooth for big transitions
-ACCEL_ALPHA_SCALE = 0.7   # How fast alpha grows with error
+ACCEL_ALPHA_SCALE = 0.75   # How fast alpha grows with error
 
 DECEL_ALPHA_BASE = 0.7   # smooth even for small changes
 DECEL_ALPHA_MIN = 0.7    # responsive
 DECEL_ALPHA_SCALE = -1.4  # decel gets more responsive as error grows
 
-MAX_DECEL_INCREASE_RATE = 0.75  # slow brake onset for coast feel (m/s² per second)
+MAX_DECEL_INCREASE_RATE = 0.78  # slow brake onset for coast feel (m/s² per second)
 MAX_DECEL_DECREASE_RATE = 0.9  # faster brake release (m/s² per second)
 
 
