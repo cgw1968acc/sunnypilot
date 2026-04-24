@@ -43,13 +43,13 @@ FULL_BRAKE_FLOOR_V = {
 }
 
 COAST_FLOOR = {
-  AccelPersonality.eco:    -0.02,
-  AccelPersonality.normal: -0.03,
-  AccelPersonality.sport:  -0.04,
+  AccelPersonality.eco:    -0.50,
+  AccelPersonality.normal: -0.75,
+  AccelPersonality.sport:  -1.00,
 }
 
 JERK_DECEL_BP    = [0.0,  8.0, 20.0, 35.0]  # m/s
-JERK_DECEL_ONSET = [0.18, 0.13, 0.09, 0.06]  # m/s³
+JERK_DECEL_ONSET = [0.80, 0.80, 0.80, 0.80]  # m/s³
 JERK_DECEL_EASE  = [0.40, 0.30, 0.20, 0.14]  # m/s³
 EASE_FEATHER     = 0.70
 
