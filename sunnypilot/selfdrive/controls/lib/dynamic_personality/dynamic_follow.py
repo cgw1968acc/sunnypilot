@@ -15,9 +15,9 @@ LongPersonality = log.LongitudinalPersonality
 FOLLOW_BREAKPOINTS = [0.,  4.0,  8.0,  14.,  22.,  32.,  40.]  # m/s
 
 FOLLOW_PROFILES = {
-  LongPersonality.relaxed:    [1.75, 1.80, 1.90, 1.95, 2.05, 1.95, 2.10],
-  LongPersonality.standard:   [1.45, 1.50, 1.58, 1.62, 1.70, 1.62, 1.72],
-  LongPersonality.aggressive: [1.20, 1.24, 1.30, 1.34, 1.40, 1.34, 1.42],
+  LongPersonality.relaxed:    [1.75, 1.75, 1.90, 1.90, 1.90, 1.95, 2.10],
+  LongPersonality.standard:   [1.45, 1.45, 1.62, 1.62, 1.62, 1.62, 1.72],
+  LongPersonality.aggressive: [1.20, 1.20, 1.30, 1.30, 1.30, 1.34, 1.42],
 }
 
 ALPHA_HOLD     = 0.95   # normal following — high inertia
