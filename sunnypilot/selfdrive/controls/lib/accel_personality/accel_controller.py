@@ -23,9 +23,9 @@ MAX_ACCEL_V = {
 
 JERK_ACCEL_BP = [0.0,  4.0,  12.0, 25.0, 40.0]  # m/s
 JERK_ACCEL_V  = {
-  AccelPersonality.eco:    [0.90, 0.75, 0.55, 0.40, 0.28],
-  AccelPersonality.normal: [1.10, 0.90, 0.65, 0.48, 0.32],
-  AccelPersonality.sport:  [1.50, 1.20, 0.85, 0.60, 0.40],
+  AccelPersonality.eco:    [0.30, 0.50, 0.70, 0.90, 1.00],
+  AccelPersonality.normal: [0.20, 0.40, 0.60, 0.80, 0.95],
+  AccelPersonality.sport:  [0.10, 0.30, 0.50, 0.70, 0.90],
 }
 
 COAST_WINDOW_BP = [0.0, 10.0, 20.0, 35.0]  # m/s
