@@ -16,8 +16,8 @@ ACCEL_PERSONALITY_OPTIONS = [AccelPersonality.eco, AccelPersonality.normal, Acce
 MAX_ACCEL_BP = [0.0, 4.0, 8.0, 12.0, 18.0, 25.0, 33.0, 40.0]  # m/s
 
 MAX_ACCEL_V = {
-  AccelPersonality.eco:    [2.00, 1.20, 0.90, 0.68, 0.46, 0.30, 0.16, 0.08],
-  AccelPersonality.normal: [2.00, 1.45, 1.10, 0.84, 0.60, 0.40, 0.22, 0.10],
+  AccelPersonality.eco:    [2.00, 1.30, 0.90, 0.68, 0.46, 0.30, 0.15, 0.07],
+  AccelPersonality.normal: [2.00, 1.50, 1.10, 0.84, 0.60, 0.40, 0.19, 0.09],
   AccelPersonality.sport:  [2.00, 1.75, 1.40, 1.10, 0.80, 0.56, 0.30, 0.14],
 }
 
