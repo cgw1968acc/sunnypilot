@@ -13,12 +13,12 @@ from openpilot.common.params import Params
 AccelPersonality = custom.LongitudinalPlanSP.AccelerationPersonality
 ACCEL_PERSONALITY_OPTIONS = [AccelPersonality.eco, AccelPersonality.normal, AccelPersonality.sport]
 
-MAX_ACCEL_BP =             [0.0, 4.0, 8.0, 40.0]  # m/s
+MAX_ACCEL_BP =             [0.0, 4.0, 8.0, 16., 40.0]  # m/s
 
 MAX_ACCEL_V = {
-  AccelPersonality.eco:    [2.00, 1.30, 0.60, 0.008],
-  AccelPersonality.normal: [2.00, 1.50, 0.80, 0.010],
-  AccelPersonality.sport:  [2.00, 1.75, 1.20, 0.050],
+  AccelPersonality.eco:    [2.00, 1.30, 0.90, 0.50, 0.008],
+  AccelPersonality.normal: [2.00, 1.50, 1.00, 0.70, 0.010],
+  AccelPersonality.sport:  [2.00, 1.80, 1.40, 1.20, 0.050],
 }
 
 JERK_ACCEL_BP = [0.0,  4.0,  12.0, 25.0, 40.0]  # m/s
