@@ -22,12 +22,12 @@ PERSONALITY_BASE = {
 PERSONALITY_FLOOR = {
   LongPersonality.relaxed:    1.5,
   LongPersonality.standard:   1.2,
-  LongPersonality.aggressive: 1.0,
+  LongPersonality.aggressive: 0.8,
 }
 PERSONALITY_CEILING = {
   LongPersonality.relaxed:    2.4,
   LongPersonality.standard:   2.0,
-  LongPersonality.aggressive: 1.6,
+  LongPersonality.aggressive: 1.2,
 }
 
 JERK_WINDOW_FRAMES = 400   # ~20s at DT_MDL=0.05
