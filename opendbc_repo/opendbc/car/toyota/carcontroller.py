@@ -38,7 +38,7 @@ MAX_USER_TORQUE = 500
 
 def get_long_tune(CP, params):
   if CP.carFingerprint in TSS2_CAR:
-    kiBP = [2.5, 5., 9., 14., 27.]
+    kiBP = [1.0, 5., 9., 14., 27.]
     kiV = [0.5, 0.23, 0.23, 0.23, 0.15]
   else:
     kiBP = [0., 5., 35.]
