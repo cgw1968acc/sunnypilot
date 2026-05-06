@@ -34,12 +34,12 @@ COAST_WINDOW_V  = [0.20, 0.40, 0.65, 1.10]  # m/s excess before braking starts
 EXCESS_SCALE_BP = [0.0, 10.0, 20.0, 35.0]  # m/s
 EXCESS_SCALE_V  = [0.8,  1.8,  3.5,  5.5]
 
-FULL_BRAKE_FLOOR_BP =      [0.0,    5.0,    10.0,   40.0]  # m/s
+FULL_BRAKE_FLOOR_BP =      [0.0,    5.0,    10.0,   16.,   40.0]  # m/s
 
 FULL_BRAKE_FLOOR_V = {
-  AccelPersonality.eco:    [-0.001, -0.003, -0.001, -0.42],
-  AccelPersonality.normal: [-0.002, -0.004, -0.002, -0.60],
-  AccelPersonality.sport:  [-0.003, -0.005, -0.003, -0.80],
+  AccelPersonality.eco:    [-0.001, -0.003, -0.001, -0.01, -0.42],
+  AccelPersonality.normal: [-0.002, -0.004, -0.002, -0.02, -0.60],
+  AccelPersonality.sport:  [-0.003, -0.005, -0.003, -0.03, -0.80],
 }
 
 COAST_FLOOR = {
