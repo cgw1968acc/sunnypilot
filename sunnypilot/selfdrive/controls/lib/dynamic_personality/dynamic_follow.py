@@ -22,7 +22,7 @@ PERSONALITY_BASE = {
 PERSONALITY_FLOOR = {
   LongPersonality.relaxed:    1.5,
   LongPersonality.standard:   1.2,
-  LongPersonality.aggressive: 0.8,
+  LongPersonality.aggressive: 1.0,
 }
 PERSONALITY_CEILING = {
   LongPersonality.relaxed:    2.4,
