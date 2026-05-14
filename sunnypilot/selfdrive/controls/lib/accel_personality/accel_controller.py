@@ -39,7 +39,7 @@ FULL_BRAKE_FLOOR_BP =      [2.0,    4.0,    8.0,   16.,   40.0]  # m/s
 FULL_BRAKE_FLOOR_V = {
   AccelPersonality.eco:    [-0.002, -0.4, -0.001, -0.01, -0.42],
   AccelPersonality.normal: [-0.003, -0.5, -0.002, -0.02, -0.60],
-  AccelPersonality.sport:  [-0.004, -0.6, -0.003, -0.03, -0.80],
+  AccelPersonality.sport:  [-0.060, -0.6, -0.003, -0.03, -0.80],
 }
 
 COAST_FLOOR = {
