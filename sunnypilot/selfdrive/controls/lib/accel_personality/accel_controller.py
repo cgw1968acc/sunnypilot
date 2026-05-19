@@ -17,15 +17,15 @@ MAX_ACCEL_BP =             [0.0, 4.0, 8.0, 16., 40.0]  # m/s
 
 MAX_ACCEL_V = {
   AccelPersonality.eco:    [1.30, 1.00, 0.45, 0.20, 0.06],
-  AccelPersonality.normal: [1.60, 1.30, 0.74, 0.33, 0.13],
+  AccelPersonality.normal: [1.60, 1.45, 0.86, 0.40, 0.13],
   AccelPersonality.sport:  [2.00, 1.75, 1.20, 0.70, 0.20],
 }
 
 JERK_ACCEL_BP = [0.0,  40.0]  # m/s
 JERK_ACCEL_V  = {
-  AccelPersonality.eco:    [1.00, 1.00],
-  AccelPersonality.normal: [1.00, 0.85],
-  AccelPersonality.sport:  [1.00, 0.50],
+  AccelPersonality.eco:    [0.70, 0.80],
+  AccelPersonality.normal: [0.60, 0.50],
+  AccelPersonality.sport:  [0.50, 0.30],
 }
 
 COAST_WINDOW_BP = [0.0, 10.0, 20.0, 35.0]  # m/s
