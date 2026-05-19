@@ -49,7 +49,7 @@ COAST_FLOOR = {
 }
 
 JERK_DECEL_BP    = [0.0,  35.0]  # m/s
-JERK_DECEL_ONSET = [0.10, 0.06]  # m/s³
+JERK_DECEL_ONSET = [0.06, 0.06]  # m/s³
 JERK_DECEL_EASE  = [0.40, 0.14]  # m/s³
 EASE_FEATHER     = 0.70
 
