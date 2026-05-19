@@ -49,9 +49,9 @@ COAST_FLOOR = {
 }
 
 JERK_DECEL_BP    = [0.0,  35.0]  # m/s
-JERK_DECEL_ONSET = [0.06, 0.06]  # m/s³
+JERK_DECEL_ONSET = [0.15, 0.06]  # m/s³
 JERK_DECEL_EASE  = [0.40, 0.14]  # m/s³
-EASE_FEATHER     = 0.70
+EASE_FEATHER     = 0.60
 
 _RAMP_OFF_START = 5.0   # m/s below cruise where ramp begins
 _MIN_MAX_GAP    = 0.05
