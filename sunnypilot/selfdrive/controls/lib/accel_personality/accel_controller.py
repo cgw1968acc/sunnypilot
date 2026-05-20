@@ -16,7 +16,7 @@ ACCEL_PERSONALITY_OPTIONS = [AccelPersonality.eco, AccelPersonality.normal, Acce
 MAX_ACCEL_BP =             [0.0, 4.0, 8.0, 16., 40.0]  # m/s
 
 MAX_ACCEL_V = {
-  AccelPersonality.eco:    [2.00, 1.80, 1.35, 0.50, 0.11],
+  AccelPersonality.eco:    [2.00, 1.70, 1.35, 0.50, 0.11],
   AccelPersonality.normal: [2.00, 1.85, 1.45, 0.65, 0.22],
   AccelPersonality.sport:  [2.00, 1.90, 1.65, 1.00, 0.33],
 }
@@ -37,9 +37,9 @@ EXCESS_SCALE_V  = [0.8,  1.8,  3.5,  5.5]
 FULL_BRAKE_FLOOR_BP =      [0.0,    5.0,    10.0,   13.0,   40.0]  # m/s
 
 FULL_BRAKE_FLOOR_V = {
-  AccelPersonality.eco:    [-0.001, -0.10, -0.008, -0.008, -0.42],
-  AccelPersonality.normal: [-0.002, -0.15, -0.010, -0.010, -0.60],
-  AccelPersonality.sport:  [-0.003, -0.20, -0.012, -0.012, -0.80],
+  AccelPersonality.eco:    [-0.008, -0.10, -0.008, -0.008, -0.42],
+  AccelPersonality.normal: [-0.009, -0.15, -0.010, -0.010, -0.60],
+  AccelPersonality.sport:  [-0.010, -0.20, -0.012, -0.012, -0.80],
 }
 
 COAST_FLOOR = {
