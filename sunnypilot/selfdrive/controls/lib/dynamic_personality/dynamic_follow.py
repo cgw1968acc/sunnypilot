@@ -31,7 +31,7 @@ PERSONALITY_CEILING = {
 }
 
 JERK_WINDOW_FRAMES = 400   # ~20s at DT_MDL=0.05
-JERK_DELTA_MAX     = 0.30  # sec added at max jerk volatility
+JERK_DELTA_MAX     = 0.10  # sec added at max jerk volatility
 JERK_SIGMA_SCALE   = 5.0   # m/s3 sigma to full delit ta
 
 CUTIN_DELTA        = 0.20  # sec added on cut-in event
