@@ -17,8 +17,8 @@ MAX_ACCEL_BP =             [0.0, 4.0, 8.0, 13., 16., 40.0]  # m/s
 
 MAX_ACCEL_V = {
   AccelPersonality.eco:    [1.50, 1.15, 0.54, 0.20, 0.15, 0.06],
-  AccelPersonality.normal: [1.80, 1.55, 0.93, 0.50, 0.40, 0.10],
-  AccelPersonality.sport:  [2.00, 1.75, 1.00, 0.60, 0.50, 0.13],
+  AccelPersonality.normal: [1.80, 1.55, 0.93, 0.50, 0.40, 0.13],
+  AccelPersonality.sport:  [2.00, 1.75, 1.20, 0.80, 0.60, 0.22],
 }
 
 JERK_ACCEL_BP = [0.0,  40.0]  # m/s
@@ -39,13 +39,13 @@ FULL_BRAKE_FLOOR_BP =      [2.0,    4.0,    8.0,   16.,   40.0]  # m/s
 FULL_BRAKE_FLOOR_V = {
   AccelPersonality.eco:    [-0.002, -0.45, -0.20, -0.01, -0.42],
   AccelPersonality.normal: [-0.002, -0.47, -0.25, -0.02, -0.60],
-  AccelPersonality.sport:  [-0.002, -0.50, -0.30 -0.03, -0.80],
+  AccelPersonality.sport:  [-0.002, -0.50, -0.30, -0.03, -0.80],
 }
 
 COAST_FLOOR = {
   AccelPersonality.eco:    -0.02,
-  AccelPersonality.normal: -1.00,
-  AccelPersonality.sport:  -2.00,
+  AccelPersonality.normal: -0.50,
+  AccelPersonality.sport:  -1.00,
 }
 
 JERK_DECEL_BP    = [0.0,  35.0]  # m/s
