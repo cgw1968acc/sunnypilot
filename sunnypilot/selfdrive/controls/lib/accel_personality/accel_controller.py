@@ -37,9 +37,9 @@ EXCESS_SCALE_V  = [0.8,  1.8,  3.5,  5.5]
 FULL_BRAKE_FLOOR_BP =      [2.0,    4.0,    8.0,   16.,   40.0]  # m/s
 
 FULL_BRAKE_FLOOR_V = {
-  AccelPersonality.eco:    [-0.002, -0.45, -0.20, -0.01, -0.42],
-  AccelPersonality.normal: [-0.002, -0.47, -0.25, -0.02, -0.60],
-  AccelPersonality.sport:  [-0.002, -0.50, -0.30, -0.03, -0.80],
+  AccelPersonality.eco:    [-0.002, -0.45, -0.30, -0.03, -0.42],
+  AccelPersonality.normal: [-0.002, -0.47, -0.32, -0.05, -0.60],
+  AccelPersonality.sport:  [-0.002, -0.50, -0.35, -0.07, -0.80],
 }
 
 COAST_FLOOR = {
