@@ -18,7 +18,7 @@ MAX_ACCEL_BP =             [0.0, 4.0, 8.0, 13., 16., 40.0]  # m/s
 MAX_ACCEL_V = {
   AccelPersonality.eco:    [1.50, 1.15, 0.54, 0.20, 0.15, 0.06],
   AccelPersonality.normal: [1.80, 1.55, 0.93, 0.50, 0.40, 0.13],
-  AccelPersonality.sport:  [2.00, 1.75, 1.05, 0.70, 0.60, 0.18],
+  AccelPersonality.sport:  [2.00, 1.75, 1.00, 0.60, 0.50, 0.15],
 }
 
 JERK_ACCEL_BP = [0.0,  40.0]  # m/s
