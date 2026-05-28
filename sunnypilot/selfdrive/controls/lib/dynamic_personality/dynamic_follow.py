@@ -20,8 +20,8 @@ PERSONALITY_OPTIONS = [LongPersonality.relaxed, LongPersonality.standard, LongPe
 
 
 PERSONALITY_BASE  = {LongPersonality.relaxed: 1.85, LongPersonality.standard: 1.55, LongPersonality.aggressive: 1.30}
-PERSONALITY_FLOOR = {LongPersonality.relaxed: 1.65, LongPersonality.standard: 1.35, LongPersonality.aggressive: 1.10}
-PERSONALITY_CEIL  = {LongPersonality.relaxed: 2.50, LongPersonality.standard: 2.10, LongPersonality.aggressive: 1.65}
+PERSONALITY_FLOOR = {LongPersonality.relaxed: 1.65, LongPersonality.standard: 1.35, LongPersonality.aggressive: 0.95}
+PERSONALITY_CEIL  = {LongPersonality.relaxed: 2.50, LongPersonality.standard: 2.10, LongPersonality.aggressive: 1.40}
 
 JERK_WINDOW_FRAMES = 400
 JERK_DELTA_MAX     = 0.16
