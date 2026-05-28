@@ -16,7 +16,7 @@ ACCEL_PERSONALITY_OPTIONS = [AccelPersonality.eco, AccelPersonality.normal, Acce
 
 A_MAX_BP = [0.0, 4.0, 8.0, 16.0, 40.0]
 A_MAX_V = {
-  AccelPersonality.eco:    [1.20, 1.40, 1.20, 0.40, 0.08],
+  AccelPersonality.eco:    [1.40, 1.40, 1.20, 0.40, 0.08],
   AccelPersonality.normal: [1.80, 1.80, 1.35, 0.50, 0.15],
   AccelPersonality.sport:  [2.20, 2.20, 1.60, 0.70, 0.25],
 }
@@ -30,9 +30,9 @@ COAST_DRAG_V = {
 
 A_MIN_FLOOR_BP = [0.0, 5.0, 15.0, 40.0]
 A_MIN_FLOOR_V = {
-  AccelPersonality.eco:    [-0.20, -0.35, -0.55, -0.50],
-  AccelPersonality.normal: [-0.25, -0.45, -0.75, -0.65],
-  AccelPersonality.sport:  [-0.35, -0.65, -1.00, -0.95],
+  AccelPersonality.eco:    [-0.01, -0.35, -0.55, -0.50],
+  AccelPersonality.normal: [-0.02, -0.45, -0.75, -0.65],
+  AccelPersonality.sport:  [-0.03, -0.65, -1.00, -0.95],
 }
 
 DEFICIT_TO_FLOOR = 8.5
