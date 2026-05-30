@@ -30,9 +30,9 @@ COAST_DRAG_V = {
 
 A_MIN_FLOOR_BP =      [2.0,    4.0,    8.0,   16.,   40.0]  # m/s
 A_MIN_FLOOR_V = {
-  AccelPersonality.eco:    [-0.002, -0.45, -0.30, -0.03, -0.42],
-  AccelPersonality.normal: [-0.002, -0.47, -0.32, -0.05, -0.60],
-  AccelPersonality.sport:  [-0.002, -0.50, -0.35, -0.07, -0.80],
+  AccelPersonality.eco:    [-0.002, -0.45, -0.20, -0.03, -0.42],
+  AccelPersonality.normal: [-0.002, -0.47, -0.24, -0.05, -0.60],
+  AccelPersonality.sport:  [-0.002, -0.50, -0.28, -0.07, -0.80],
 }
 
 DEFICIT_TO_FLOOR = 8.5
