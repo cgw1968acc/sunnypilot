@@ -43,9 +43,9 @@ BRAKE_RELEASE_JERK = 2.0
 ACCEL_RISE_JERK = {ECO: 0.7, NORMAL: 1.2, SPORT: 1.6}
 
 SMOOTH_DECEL_LOOKAHEAD_T = 3.0
-MIN_SMOOTH_BRAKE_NEED = 0.2
-HARD_BRAKE_TARGET_ACCEL = -1.5
-HARD_BRAKE_NEED = 2.6
+MIN_SMOOTH_BRAKE_NEED = 0.1
+HARD_BRAKE_TARGET_ACCEL = -1.2
+HARD_BRAKE_NEED = 2.0
 
 # Below this ego speed the shaper stands down (full stock decel). Softening the creep-to-stop makes the
 # car brake less -> coast farther -> halt too close to a stopped lead (~1.3 m). Stock decel below this
