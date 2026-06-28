@@ -20,11 +20,11 @@ PERSONALITY_MAX = max(AccelerationPersonality.schema.enumerants.values())
 # is independent of braking (which is the lower clip + the convex/SMOOTH_DECEL shaper) -- tuning it does
 # NOT change the gentle-brake goals. ECO launch (v=0) matches stock + stock rise rate so take-off from
 # a stop is prompt (no honking); only the 25/40 m/s cruise points stay gentle.
-A_CRUISE_MAX_BP = [0., 14., 25., 40.]
+A_CRUISE_MAX_BP = [0., 14., 22., 40.]
 STOCK_A_CRUISE_MAX_V = [1.7, 0.73, 0.2, 0.08]
 STOCK_RISE_RATE = 0.05
 A_CRUISE_MAX_V = {
-  ECO:    [1.60, 0.15, 0.08, 0.04],   # stock launch (v=0), gentle cruise (25/40)
+  ECO:    [1.60, 0.15, 0.07, 0.04],   # stock launch (v=0), gentle cruise (25/40)
   NORMAL: STOCK_A_CRUISE_MAX_V,
   SPORT:  [2.00, 1.30, 0.60, 0.25],
 }
