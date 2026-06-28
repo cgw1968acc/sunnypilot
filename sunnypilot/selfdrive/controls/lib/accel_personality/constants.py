@@ -24,7 +24,7 @@ A_CRUISE_MAX_BP = [0., 14., 25., 40.]
 STOCK_A_CRUISE_MAX_V = [1.7, 0.73, 0.2, 0.08]
 STOCK_RISE_RATE = 0.05
 A_CRUISE_MAX_V = {
-  ECO:    [1.60, 0.23, 0.08, 0.04],   # stock launch (v=0), gentle cruise (25/40)
+  ECO:    [1.60, 0.20, 0.08, 0.04],   # stock launch (v=0), gentle cruise (25/40)
   NORMAL: STOCK_A_CRUISE_MAX_V,
   SPORT:  [2.00, 1.30, 0.60, 0.25],
 }
