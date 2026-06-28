@@ -43,9 +43,9 @@ BRAKE_RELEASE_JERK = 2.0
 ACCEL_RISE_JERK = {ECO: 0.7, NORMAL: 1.2, SPORT: 1.6}
 
 SMOOTH_DECEL_LOOKAHEAD_T = 3.0
-MIN_SMOOTH_BRAKE_NEED = 0.05
-HARD_BRAKE_TARGET_ACCEL = -1.2
-HARD_BRAKE_NEED = 2.0
+MIN_SMOOTH_BRAKE_NEED = 0.1
+HARD_BRAKE_TARGET_ACCEL = -1.3
+HARD_BRAKE_NEED = 2.2
 
 # Below this ego speed the shaper stands down (full stock decel). Softening the creep-to-stop makes the
 # car brake less -> coast farther -> halt too close to a stopped lead (~1.3 m). Stock decel below this
@@ -83,7 +83,7 @@ ONSET_HANDBACK_JERK = {ECO: 2.2, SPORT: 3.0}  # m/s^3  gap-close rate (lowered: 
 # PREDICTIVE brake_need gate declines to start a gentle bite when a firmer brake is seen within 3s, so
 # we don't soften ahead of one; (2) the fast hand-back (ONSET_HANDBACK_JERK) closes any open soft gap
 # before the plan reaches firm braking. Together: 0 firm-band ([-1.5,-1.0]) lag on the verified windows.
-SOFT_ONSET_MAX_BRAKE_NEED = 0.5               # do NOT soften if a firmer brake is predicted within 3s
+SOFT_ONSET_MAX_BRAKE_NEED = 0.7               # do NOT soften if a firmer brake is predicted within 3s
 SOFT_ONSET_MAX_INSTANT_ACCEL = -0.7           # m/s^2  stop softening (fast hand-back) once raw is this deep
 # Sticky re-arm: once an onset goes firm (instantaneously too deep) it latches OFF; require this many
 # consecutive released/flat frames before a NEW soft window may open, so lead/SnG jitter cannot re-arm
