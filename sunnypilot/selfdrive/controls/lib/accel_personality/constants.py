@@ -33,7 +33,7 @@ RISE_RATE = {ECO: 0.05, NORMAL: STOCK_RISE_RATE, SPORT: 0.06}   # ECO rise = sto
 # Early soft braking: predicted brake need (m/s^2) -> early decel target (m/s^2).
 SMOOTH_DECEL_BP = [0.0, 0.4, 0.8, 1.2, 1.6, 2.0, 2.4]
 SMOOTH_DECEL_V = {
-  ECO:    [0.00, -0.02, -0.05, -0.10, -0.25, -0.40, -0.60],
+  ECO:    [0.00, -0.02, -0.05, -0.10, -0.20, -0.30, -0.40],
   #ECO:    [0.00, -0.08, -0.20, -0.30, -0.40, -0.70, -0.80],
   NORMAL: [0.00, -0.13, -0.30, -0.55, -0.84, -1.12, -1.40],
   SPORT:  [0.00, -0.17, -0.40, -0.72, -1.05, -1.35, -1.65],
@@ -42,7 +42,7 @@ BRAKE_DEEPENING_JERK = {ECO: 0.5, NORMAL: 0.8, SPORT: 1.0}
 BRAKE_RELEASE_JERK = 2.0
 ACCEL_RISE_JERK = {ECO: 0.7, NORMAL: 1.2, SPORT: 1.6}
 
-SMOOTH_DECEL_LOOKAHEAD_T = 3.0
+SMOOTH_DECEL_LOOKAHEAD_T = 2.6
 MIN_SMOOTH_BRAKE_NEED = 0.1
 HARD_BRAKE_TARGET_ACCEL = -1.3
 HARD_BRAKE_NEED = 2.2
