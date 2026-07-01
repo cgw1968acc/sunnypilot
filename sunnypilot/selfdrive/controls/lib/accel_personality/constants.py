@@ -24,7 +24,7 @@ A_CRUISE_MAX_BP = [0., 14., 22., 40.]
 STOCK_A_CRUISE_MAX_V = [1.8, 0.8, 0.3, 0.2]
 STOCK_RISE_RATE = 0.05
 A_CRUISE_MAX_V = {
-  ECO:    [1.60, 0.15, 0.13, 0.10],   # stock launch (v=0), gentle cruise (25/40)
+  ECO:    [1.60, 0.15, 0.15, 0.15],   # stock launch (v=0), gentle cruise (25/40)
   NORMAL: STOCK_A_CRUISE_MAX_V,
   SPORT:  [2.00, 1.30, 0.60, 0.25],
 }
@@ -33,7 +33,7 @@ RISE_RATE = {ECO: 0.05, NORMAL: STOCK_RISE_RATE, SPORT: 0.06}   # ECO rise = sto
 # Early soft braking: predicted brake need (m/s^2) -> early decel target (m/s^2).
 SMOOTH_DECEL_BP = [0.0, 0.4, 0.8, 1.2, 1.6, 2.0, 2.4]
 SMOOTH_DECEL_V = {
-  ECO:    [0.00, -0.02, -0.05, -0.10, -0.20, -0.30, -0.40],
+  ECO:    [0.00, -0.02, -0.05, -0.15, -0.20, -0.35, -0.40],
   #ECO:    [0.00, -0.08, -0.20, -0.30, -0.40, -0.70, -0.80],
   NORMAL: [0.00, -0.13, -0.30, -0.55, -0.84, -1.12, -1.40],
   SPORT:  [0.00, -0.17, -0.40, -0.72, -1.05, -1.35, -1.65],
