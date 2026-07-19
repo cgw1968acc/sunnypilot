@@ -26,9 +26,9 @@ A_CRUISE_MAX_BP = [0., 10., 25., 40.]              # m/s (matches upstream A_CRU
 STOCK_A_CRUISE_MAX_V = [1.6, 1.2, 0.8, 0.6]        # upstream A_CRUISE_MAX_VALS
 STOCK_RISE_RATE = 0.05                             # upstream ceiling open-rate (m/s^2 per cycle)
 A_CRUISE_MAX_V = {
-  ECO:    [0.40, 0.30, 0.10, 0.05],   # responsive off the line, LAZY at highway speed (mileage)
-  NORMAL: [1.70, 0.90, 0.40, 0.20],   # brisk launch, balanced cruise
-  SPORT:  [2.00, 1.70, 1.20, 0.90],   # strong launch (ACCEL_MAX caps the 0 m/s knot), assertive cruise
+  ECO:    [0.40, 0.30, 0.10, 0.03],   # responsive off the line, LAZY at highway speed (mileage)
+  NORMAL: [1.70, 0.80, 0.30, 0.10],   # brisk launch, balanced cruise
+  SPORT:  [2.00, 1.70, 1.00, 0.30],   # strong launch (ACCEL_MAX caps the 0 m/s knot), assertive cruise
 }
 # Ceiling open-rate (m/s^2 per cycle): fast near v=0 so launch isn't delayed, tapers by v=5.
 RISE_RATE_BP = [0., 5.]                            # m/s
