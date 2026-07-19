@@ -48,7 +48,7 @@ def get_long_tune(CP, params):
     if Params().get_bool("ToyotaTSS2Long"):
       #kiBP= [0.1,   2.0,  5.0,   12.,  27.,  36.]
       #kiV  = [0.33, 0.48, 0.2445, 0.16, 0.095, 0.08]
-      kiBP= [0.04,  5.0,   27.,  36.]
+      kiBP= [0.2,  5.0,   27.,  36.]
       kiV  = [0.50, 0.235, 0.10, 0.09]
     else:
       kiBP = [2., 5.]
