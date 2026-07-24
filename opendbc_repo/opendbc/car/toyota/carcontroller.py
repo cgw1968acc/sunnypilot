@@ -93,7 +93,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD:
       self.brake_hold_active: bool = False
-      self._brake_hold_counter: int = 0
+      self._brake_hold_counter: int = 0.4
       self._brake_hold_reset: bool = False
       self._prev_brake_pressed: bool = False
 
