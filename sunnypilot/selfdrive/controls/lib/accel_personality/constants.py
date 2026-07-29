@@ -22,7 +22,7 @@ PROFILE_CONFIGS = {
 ACCEL_PROFILE_MAX_BP = [0.0, 3.0, 10.0, 25.0, 40.0]
 ACCEL_PROFILE_MAX_V = {
   AccelProfile.eco:    [1.45, 1.00, 0.20, 0.07, 0.06], 
-  AccelProfile.normal: [1.85, 1.80, 0.80, 0.26, 0.13],  
+  AccelProfile.normal: [1.85, 1.80, 0.80, 0.25, 0.12],  
   AccelProfile.sport:  [2.00, 2.00, 1.40, 0.60, 0.40],
 }
 
