@@ -12,7 +12,7 @@ from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 GearShifter = structs.CarState.GearShifter
 
 # frames of confirmed hold-eligible standstill required before engaging
-BRAKE_HOLD_ALLOWED_TIMER = 100
+BRAKE_HOLD_ALLOWED_TIMER = 200
 
 DISALLOWED_GEARS = (GearShifter.park, GearShifter.reverse)
 
