@@ -44,12 +44,12 @@ class CarInterface(CarInterfaceBase):
       ret.safetyConfigs[0].safetyParam |= ToyotaSafetyFlags.LTA.value
 
       # LTA control can be more delayed and winds up more often
-      ret.steerActuatorDelay = 0.50
+      ret.steerActuatorDelay = 0.60
       ret.steerLimitTimer = 3.0
     else:
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
-      ret.steerActuatorDelay = 0.50  # Default delay, Prius has larger delay
+      ret.steerActuatorDelay = 0.60  # Default delay, Prius has larger delay
       ret.steerLimitTimer = 3.0
 
     stop_and_go = candidate in TSS2_CAR
@@ -65,7 +65,7 @@ class CarInterface(CarInterfaceBase):
       # Only give steer angle deadzone to for bad angle sensor prius
       for fw in car_fw:
         if fw.ecu == "eps" and not fw.fwVersion == b'8965B47060\x00\x00\x00\x00\x00\x00':
-          ret.steerActuatorDelay = 0.50
+          ret.steerActuatorDelay = 0.60
           CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning, steering_angle_deadzone_deg=0.2)
 
     elif candidate in (CAR.LEXUS_RX, CAR.LEXUS_RX_TSS2):
