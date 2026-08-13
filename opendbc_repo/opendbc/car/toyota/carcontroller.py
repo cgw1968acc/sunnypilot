@@ -44,7 +44,7 @@ def get_long_tune(CP, params):
   if CP.carFingerprint in TSS2_CAR:
     if Params().get_bool("ToyotaTSS2Long"):
       kiBP=  [0.0,   0.08,   1.8,   5.0,  12.,  36.]
-      kiV  = [0.508,  0.508, 0.503,  0.245, 0.25, 0.20]
+      kiV  = [0.52,  0.52, 0.505,  0.245, 0.25, 0.20]
     else:
       kiBP = [2., 5.]
       kiV = [0.5, 0.25]
