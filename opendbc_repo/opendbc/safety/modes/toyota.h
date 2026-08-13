@@ -602,6 +602,11 @@ static bool toyota_fwd_hook(int bus_num, int addr) {
     bool is_aeb_msg = (addr == 0x344);
     block_msg = (is_aeb_msg && (alternative_experience & ALT_EXP_ALLOW_AEB) && !vehicle_moving && !gas_pressed && acc_main_on &&
                  !toyota_cruise_engaged);
+
+    // Block the camera's own stock ACC_CONTROL from reaching the PCM when openpilot has
+    // longitudinal control, so only openpilot's ALLOW_LONG_PRESS override takes effect.
+    bool is_acc_control_msg = (addr == 0x343);
+    block_msg = block_msg || (is_acc_control_msg && !toyota_stock_longitudinal);
   }
 
   return block_msg;
