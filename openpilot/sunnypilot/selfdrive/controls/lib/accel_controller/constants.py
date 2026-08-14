@@ -16,7 +16,7 @@ COMFORT_DECEL = {
 
 ACCEL_PROFILE_MAX_BP = [0.0, 3.0, 10.0, 25.0, 40.0]
 ACCEL_PROFILE_MAX_V = {
-  AccelProfile.eco: [1.60, 1.10, 0.13, 0.10, 0.09],
+  AccelProfile.eco: [1.60, 1.10, 0.14, 0.10, 0.09],
   AccelProfile.normal: [1.80, 1.50, 0.94, 0.43, 0.25],
   AccelProfile.sport: [2.00, 1.90, 1.15, 0.68, 0.42],
 }
