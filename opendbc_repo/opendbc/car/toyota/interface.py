@@ -44,12 +44,12 @@ class CarInterface(CarInterfaceBase):
 
       # LTA control can be more delayed and winds up more often
       ret.steerActuatorDelay = 1.0
-      ret.steerLimitTimer = 1.6
+      ret.steerLimitTimer = 1.0
     else:
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
       ret.steerActuatorDelay = 1.0  # Default delay, Prius has larger delay
-      ret.steerLimitTimer = 1.6
+      ret.steerLimitTimer = 1.0
 
     stop_and_go = candidate in TSS2_CAR
 
