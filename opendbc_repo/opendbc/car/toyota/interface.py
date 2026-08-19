@@ -42,13 +42,13 @@ class CarInterface(CarInterfaceBase):
       ret.safetyConfigs[0].safetyParam |= ToyotaSafetyFlags.LTA.value
 
       # LTA control can be more delayed and winds up more often
-      ret.steerActuatorDelay = 0.18
-      ret.steerLimitTimer = 0.8
+      ret.steerActuatorDelay = 1.1
+      ret.steerLimitTimer = 1.0
     else:
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
-      ret.steerActuatorDelay = 0.12  # Default delay, Prius has larger delay
-      ret.steerLimitTimer = 0.4
+      ret.steerActuatorDelay = 1.1  # Default delay, Prius has larger delay
+      ret.steerLimitTimer = 1.0
 
     stop_and_go = bool(ret.flags & ToyotaFlags.TSS2)
 
