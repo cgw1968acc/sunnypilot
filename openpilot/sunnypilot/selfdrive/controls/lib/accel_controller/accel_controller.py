@@ -22,8 +22,8 @@ MAX_ACCEL_PROFILES = {
 MAX_ACCEL_BREAKPOINTS = [0., 3., 5., 8., 12., 18., 24., 32., 42., 55.]
 
 MIN_ACCEL_PROFILES = {
-  AccelProfile.eco:    [-0.60, -1.2],
-  AccelProfile.normal: [-0.70, -1.3],
+  AccelProfile.eco:    [-0.20, -1.2],
+  AccelProfile.normal: [-0.50, -1.3],
   AccelProfile.sport:  [-0.80, -1.4],
 }
 MIN_ACCEL_BREAKPOINTS = [0., 25.]
