@@ -29,7 +29,7 @@ MIN_ACCEL_PROFILES = {
 MIN_ACCEL_BREAKPOINTS = [0., 20.]
 
 ACCEL_SMOOTH_ALPHA = 0.90
-DECEL_SMOOTH_ALPHA = 0.35
+DECEL_SMOOTH_ALPHA = 0.40
 
 class AccelController:
   def __init__(self):
