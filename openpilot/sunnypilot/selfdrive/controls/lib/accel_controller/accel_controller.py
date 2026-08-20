@@ -26,7 +26,7 @@ MIN_ACCEL_PROFILES = {
   AccelProfile.normal: [-1.10, -1.3],
   AccelProfile.sport:  [-1.20, -1.4],
 }
-MIN_ACCEL_BREAKPOINTS = [0., 25.]
+MIN_ACCEL_BREAKPOINTS = [0., 20.]
 
 ACCEL_SMOOTH_ALPHA = 0.90
 DECEL_SMOOTH_ALPHA = 0.35
