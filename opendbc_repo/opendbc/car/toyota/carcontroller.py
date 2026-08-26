@@ -44,7 +44,7 @@ def get_long_tune(CP, CP_SP, params):
   if CP.flags & ToyotaFlags.TSS2:
     if CP_SP.flags & ToyotaFlagsSP.TSS2_LONG_TUNING:
       kiBP = [0.0,  0.1,  2.0,  5.0,  36.]
-      kiV  = [0.53, 0.54, 0.50, 0.27, 0.24]
+      kiV  = [0.53, 0.55, 0.50, 0.27, 0.24]
     else:
       kiBP = [2., 5.]
       kiV = [0.5, 0.25]
