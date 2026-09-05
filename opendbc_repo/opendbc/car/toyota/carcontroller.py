@@ -43,7 +43,7 @@ CRUISE_CANCEL_DELAY_FRAMES = 10
 def get_long_tune(CP, CP_SP, params):
   if CP.flags & ToyotaFlags.TSS2:
     if CP_SP.flags & ToyotaFlagsSP.TSS2_LONG_TUNING:
-      kiBP = [0.0,  0.1,  2.0,  5.0,  8.33]
+      kiBP = [0.0,  0.1,  2.0,  5.0,  12]
       kiV  = [0.50, 0.55, 0.55, 0.32, 0.25]
     else:
       kiBP = [2., 5.]
