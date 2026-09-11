@@ -15,7 +15,7 @@ AccelProfile = custom.LongitudinalPlanSP.AccelController.Profile
 
 MAX_ACCEL_BREAKPOINTS = [0., 3., 12,  24., 36.]  # m/s
 MAX_ACCEL_PROFILES = {
-  AccelProfile.eco:    [1.75, 1.38, 0.30, 0.11, 0.10],
+  AccelProfile.eco:    [1.75, 1.38, 0.35, 0.13, 0.10],
   AccelProfile.normal: [1.85, 1.60, 0.50, 0.20, 0.15],
   AccelProfile.sport:  [2.00, 2.00, 1.20, 0.50, 0.30],
 }
