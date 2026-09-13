@@ -197,6 +197,12 @@ class CarInterface(CarInterfaceBase):
     else:
       stock_cp.safetyConfigs[0].safetyParam &= ~ToyotaSafetyFlags.STOCK_LONGITUDINAL.value
 
+    # Track the cruise set speed internally instead of mirroring PCM_CRUISE_2->SET_SPEED. The PCM still owns
+    # engagement (pcmCruise stays True), it only stops owning the target speed. Depends on the set speed buttons
+    # synthesized from PCM_CRUISE->CRUISE_STATE in carstate.py, so keep the two conditions in sync.
+    if candidate == CAR.TOYOTA_COROLLA_TSS2 and stock_cp.openpilotLongitudinalControl:
+      ret.pcmCruiseSpeed = False
+
     return ret
 
   @staticmethod

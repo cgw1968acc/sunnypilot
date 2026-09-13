@@ -263,9 +263,13 @@ class HudRenderer(Widget):
       rl.draw_texture_ex(self._txt_exclamation_point, rl.Vector2(exclamation_pos_x, exclamation_pos_y), 0.0, 1.0, rl.WHITE)
 
   def _draw_set_speed(self, rect: rl.Rectangle) -> None:
-    """Draw the MAX speed indicator box."""
-    alpha = self._set_speed_alpha_filter.update(0 < rl.get_time() - self._set_speed_changed_time < SET_SPEED_PERSISTENCE and
-                                                self._can_draw_top_icons and self._engaged)
+    """Draw the MAX speed indicator box.
+
+    When openpilot owns the set speed (software cruise), the target can diverge from the instrument
+    cluster, so keep the box up for the whole engagement instead of fading it out SET_SPEED_PERSISTENCE
+    seconds after the last change, so the software set speed stays readable alongside the current speed.
+    """
+    alpha = self._set_speed_alpha_filter.update(self._can_draw_top_icons and self._engaged and self.is_cruise_set)
     if alpha < 1e-2:
       return
 
