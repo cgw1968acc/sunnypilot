@@ -16,8 +16,8 @@ AccelProfile = custom.LongitudinalPlanSP.AccelController.Profile
 MAX_ACCEL_BREAKPOINTS = [0., 3., 12,  24., 36.]  # m/s
 MAX_ACCEL_PROFILES = {
   AccelProfile.eco:    [1.75, 1.38, 0.35, 0.13, 0.10],
-  AccelProfile.normal: [1.85, 1.60, 0.50, 0.20, 0.15],
-  AccelProfile.sport:  [2.00, 2.00, 1.20, 0.50, 0.30],
+  AccelProfile.normal: [1.85, 1.60, 0.50, 0.32, 0.25],
+  AccelProfile.sport:  [2.00, 2.00, 1.20, 0.70, 0.50],
 }
 CRUISE_DECEL_RESPONSE_TIME = {  # seconds
   AccelProfile.eco: 4.0,
