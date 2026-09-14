@@ -10,6 +10,7 @@ from opendbc.car.interfaces import CarStateBase
 from opendbc.car.toyota.values import ToyotaFlags, CAR, DBC, STEER_THRESHOLD, NO_STOP_TIMER_CAR, \
                                                   TSS2_CAR, EPS_SCALE
 from opendbc.sunnypilot.car.toyota.carstate_ext import CarStateExt
+from opendbc.sunnypilot.car.toyota.cruise_switch_mirror import CruiseSwitchRaw
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarState
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
@@ -95,6 +96,7 @@ class CarState(CarStateBase, CarStateExt):
     self.lkas_button = 0
     self.distance_button = 0
     self.cruise_button = CruiseButton.none
+    self.cruise_switch = CruiseSwitchRaw()  # raw 0x361 frames, filled by CarInterface.update before parsing
 
     self.pcm_follow_distance = 0
 

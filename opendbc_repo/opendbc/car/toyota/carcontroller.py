@@ -12,6 +12,7 @@ from opendbc.car.toyota.values import CAR, NO_STOP_TIMER_CAR, TSS2_CAR, \
                                         CarControllerParams, ToyotaFlags
 from opendbc.can import CANPacker
 from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController
+from opendbc.sunnypilot.car.toyota.cruise_switch_mirror import CruiseSwitchMirrorCarController
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
@@ -91,6 +92,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     self.enhanced_bsm = EnhancedBsmCarController(CP, CP_SP)
     self.auto_brake_hold = AutoBrakeHoldCarController(CP, CP_SP)
+    self.cruise_switch_mirror = CruiseSwitchMirrorCarController(CP, CP_SP)
 
     self._auto_lock_speed = 0.0
 
@@ -341,6 +343,10 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     if self.enhanced_bsm.enabled:
       can_sends.extend(self.enhanced_bsm.update(CS, self.frame))
+
+    # one-shot cruise switch burst experiment (option1b_findings14 stage 2); sends nothing unless triggered on the device
+    if self.cruise_switch_mirror.enabled:
+      can_sends.extend(self.cruise_switch_mirror.update(CS, self.frame, CC.enabled and CS.out.cruiseState.enabled))
 
     new_actuators = actuators.as_builder()
     new_actuators.torque = apply_torque / self.params.STEER_MAX

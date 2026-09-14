@@ -18,6 +18,12 @@ class CarInterface(CarInterfaceBase):
 
   DRIVABLE_GEARS = (structs.CarState.GearShifter.sport,)
 
+  def update(self, can_packets):
+    # the cruise switch mirror needs the genuine 0x361 frame byte for byte, which the CAN parser does not expose
+    if not self.CP_SP.pcmCruiseSpeed:
+      self.CS.cruise_switch.update(can_packets)
+    return super().update(can_packets)
+
   @staticmethod
   def get_pid_accel_limits(CP, CP_SP, current_speed, cruise_speed):
     return CarControllerParams(CP).ACCEL_MIN, CarControllerParams(CP).ACCEL_MAX
