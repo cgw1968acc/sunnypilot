@@ -50,21 +50,16 @@ TEMP_STEER_FAULTS = (0, 9, 11, 21, 25)
 PERM_STEER_FAULTS = (3, 17)
 
 
-# PCM_CRUISE->CRUISE_STATE is a 4 bit field that multiplexes cruise engage state, standstill, the pre-standstill
-# timer, non-adaptive (plain cruise control) mode and set speed button clicks into a single signal. Only 9 and 10
-# are set speed clicks while adaptive cruise is engaged; 5 and 6 are the non-adaptive equivalents and must never be
-# mapped to set speed buttons, since states 1-6 already disengage openpilot via cruiseState.nonAdaptive ->
-# wrongCruiseMode. Values 12-15 are undefined in the DBC. Everything that is not 9 or 10 normalizes to unpressed.
+# Toyota has no dedicated cruise button message on the powertrain bus, but CLUTCH (0x361) byte 0 carries the raw
+# stalk switch state: bit 5 RES/+, bit 4 SET/-, bit 3 CANCEL, held for the real ~0.5 s of a physical short press.
+# PCM_CRUISE->CRUISE_STATE 9/10 ("click up/down") must NOT be used as the button source: it reflects the PCM
+# accelerating/decelerating towards its own set speed and persists for seconds whenever the car is above or below
+# that number, which openpilot then mistakes for a long press (option1b_findings14 section 12).
 class CruiseButton:
   none = 0
   plus = 1
   minus = 2
 
-
-CRUISE_STATE_TO_BUTTON = {
-  9: CruiseButton.plus,    # "adaptive click up"
-  10: CruiseButton.minus,  # "adaptive click down"
-}
 
 CRUISE_BUTTONS_DICT = {
   CruiseButton.plus: ButtonType.accelCruise,
@@ -302,8 +297,8 @@ class CarState(CarStateBase, CarStateExt):
 
       buttonEvents += create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
 
-    # Toyota has no cruise button message on the powertrain bus, so synthesize set speed button events from the
-    # click states the PCM reports in CRUISE_STATE. Only needed when openpilot tracks the set speed itself.
+    # set speed button events from the raw stalk switch bits on CLUTCH. Only needed when openpilot tracks the set
+    # speed itself, and CLUTCH is only registered with the parser in that case.
     if not self.CP_SP.pcmCruiseSpeed:
       buttonEvents += self.update_cruise_button_events(cp)
 
@@ -322,17 +317,19 @@ class CarState(CarStateBase, CarStateExt):
     return ret, ret_sp
 
   def update_cruise_button_events(self, cp) -> list[structs.CarState.ButtonEvent]:
-    """Derive accelCruise/decelCruise events from PCM_CRUISE->CRUISE_STATE set speed click states.
+    """Derive accelCruise/decelCruise events from the raw RES/SET stalk bits in CLUTCH (0x361).
 
-    The raw state is normalized to a dedicated button code before edge detection so that unrelated states
-    (off, standstill, the 3 second timer, non-adaptive mode and the undefined values) can never be mistaken
-    for a set speed press. Every sample received this cycle is walked in order so that a press and its
-    release landing in the same 100Hz iteration still produce both edges.
+    Every sample received this cycle is walked in order so that a press and its release landing in the same
+    100 Hz iteration still produce both edges. RES and SET asserted together is physically impossible and is
+    treated as unpressed. CANCEL is left to the PCM (it disengages cruise on its own).
     """
     events: list[structs.CarState.ButtonEvent] = []
 
-    for cruise_state in cp.vl_all["PCM_CRUISE"]["CRUISE_STATE"]:
-      cruise_button = CRUISE_STATE_TO_BUTTON.get(int(cruise_state), CruiseButton.none)
+    for res, set_ in zip(cp.vl_all["CLUTCH"]["CRUISE_BTN_RES"], cp.vl_all["CLUTCH"]["CRUISE_BTN_SET"], strict=True):
+      if bool(res) != bool(set_):
+        cruise_button = CruiseButton.plus if res else CruiseButton.minus
+      else:
+        cruise_button = CruiseButton.none
       events += create_button_events(cruise_button, self.cruise_button, CRUISE_BUTTONS_DICT,
                                      unpressed_btn=CruiseButton.none)
       self.cruise_button = cruise_button
@@ -343,9 +340,13 @@ class CarState(CarStateBase, CarStateExt):
   def get_can_parsers(CP, CP_SP):
     pt_messages = [
       ("BLINKERS_STATE", float('nan')),
-      # registered up front so vl_all is populated from the first update; update() reads CRUISE_STATE from it
       ("PCM_CRUISE", 0),
     ]
+
+    # raw cruise stalk bits for the software set speed (0x361 runs at ~15.5 Hz on the Corolla Cross TSS2). Only
+    # registered when needed so cars without this message are not affected by the frequency check.
+    if not CP_SP.pcmCruiseSpeed:
+      pt_messages.append(("CLUTCH", 15))
 
     cam_messages = [
       ("RSA1", 0),
