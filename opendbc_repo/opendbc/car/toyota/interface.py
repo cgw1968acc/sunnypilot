@@ -1,4 +1,5 @@
 from opendbc.car import Bus, structs, get_safety_config, uds
+from opendbc.car.carlog import carlog
 from opendbc.car.toyota.carstate import CarState
 from opendbc.car.toyota.carcontroller import CarController
 from opendbc.car.toyota.radar_interface import RadarInterface
@@ -19,9 +20,14 @@ class CarInterface(CarInterfaceBase):
   DRIVABLE_GEARS = (structs.CarState.GearShifter.sport,)
 
   def update(self, can_packets):
-    # the cruise switch mirror needs the genuine 0x361 frame byte for byte, which the CAN parser does not expose
-    if not self.CP_SP.pcmCruiseSpeed:
-      self.CS.cruise_switch.update(can_packets)
+    # the cruise switch mirror needs the genuine 0x361 frame byte for byte, which the CAN parser does not expose.
+    # Experimental path: never let it take card down, a failure here only disables the mirror.
+    if not self.CP_SP.pcmCruiseSpeed and self.CS.cruise_switch is not None:
+      try:
+        self.CS.cruise_switch.update(can_packets)
+      except Exception as e:  # noqa: BLE001
+        carlog.error(f"cruise switch raw capture disabled: {e!r}")
+        self.CS.cruise_switch = None
     return super().update(can_packets)
 
   @staticmethod

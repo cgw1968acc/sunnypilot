@@ -61,10 +61,11 @@ class CruiseSwitchRaw:
     self.seq = 0  # increments on every genuine frame, lets the controller detect a new one
 
   def update(self, can_packets: list[tuple[int, list[CanData]]]) -> None:
+    # card hands over plain (address, dat, src) tuples (pandad_api_impl.can_capnp_to_list), tests use CanData; both unpack
     for _, msgs in can_packets:
-      for msg in msgs:
-        if msg.src == CRUISE_SWITCH_BUS and msg.address == CRUISE_SWITCH_ADDR and len(msg.dat) == CRUISE_SWITCH_LEN:
-          self.frames.append(bytes(msg.dat))
+      for address, dat, src in msgs:
+        if src == CRUISE_SWITCH_BUS and address == CRUISE_SWITCH_ADDR and len(dat) == CRUISE_SWITCH_LEN:
+          self.frames.append(bytes(dat))
           self.seq += 1
 
   @property
@@ -148,7 +149,9 @@ class CruiseSwitchMirrorCarController:
     if not self.enabled:
       return []
 
-    raw: CruiseSwitchRaw = CS.cruise_switch
+    raw: CruiseSwitchRaw | None = CS.cruise_switch
+    if raw is None:  # capture was disabled by CarInterface after an error, the experiment cannot run
+      return []
 
     if not self.armed:
       if frame % TRIGGER_POLL_FRAMES == 0:

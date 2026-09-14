@@ -36,7 +36,8 @@ class Harness:
     self.sent = []  # (frame, CanData)
 
   def rx(self, dat=None, src=0):
-    self.CS.cruise_switch.update([(0, [CanData(0x361, dat or self.genuine, src)])])
+    # card delivers plain (address, dat, src) tuples, not CanData; exercise that shape in the harness
+    self.CS.cruise_switch.update([(0, [(0x361, dat or self.genuine, src)])])
 
   def run(self, ticks, engaged=True, genuine_from=None):
     for _ in range(ticks):
@@ -161,6 +162,15 @@ class TestCruiseSwitchMirror(unittest.TestCase):
     raw.update([(0, [CanData(0x361, GENUINE_IDLE, 0)])])
     self.assertEqual(raw.seq, 1)
     self.assertEqual(raw.latest, GENUINE_IDLE)
+
+  def test_accepts_plain_tuples_and_can_data(self):
+    raw = csm.CruiseSwitchRaw()
+    raw.update([(0, [(0x361, GENUINE_IDLE, 0)]), (1, [CanData(0x361, GENUINE_IDLE, 0)])])
+    self.assertEqual(raw.seq, 2)
+    # bytearray payloads (capnp readers) are normalized to bytes
+    raw.update([(2, [(0x361, bytearray(GENUINE_IDLE), 0)])])
+    self.assertEqual(raw.latest, GENUINE_IDLE)
+    self.assertIsInstance(raw.latest, bytes)
 
 
 if __name__ == "__main__":
