@@ -110,6 +110,16 @@ class TestCruiseSwitchMirror(unittest.TestCase):
     self.assertEqual(len(h.sent), csm.BURST_FRAMES)
     self.assertTrue(all(msg.dat[0] == GENUINE_IDLE[0] | csm.BTN_SET for _, msg in h.sent))
 
+  def test_long_press_variant_sends_24_frames(self):
+    h = Harness(self.ctrl)
+    h.run(60)
+    self.trigger("res_long")
+    h.run(400)
+    self.assertEqual(len(h.sent), csm.LONG_PRESS_FRAMES)
+    self.assertTrue(all(msg.dat == GENUINE_PRESSED for _, msg in h.sent))
+    self.assertEqual(h.sent[-1][0] - h.sent[0][0], (csm.LONG_PRESS_FRAMES - 1) * h.period)  # ~1.5 s on the bus
+    self.assertIn("done: 24 res_long frames sent", self.result())
+
   def test_unknown_button_is_ignored(self):
     h = Harness(self.ctrl)
     h.run(60)

@@ -33,18 +33,27 @@ BTN_CANCEL = 0x08
 BTN_SET = 0x10
 BTN_RES = 0x20
 PRESS_MASK = BTN_CANCEL | BTN_SET | BTN_RES
-BUTTONS = {"res": BTN_RES, "set": BTN_SET}
 
-# findings9: a physical press holds the bit for 450-520 ms = 7-8 consecutive genuine frames at 64.5 ms
-BURST_FRAMES = 8
+# findings9: a physical short press holds the bit for 450-520 ms = 7-8 consecutive genuine frames at 64.5 ms.
+# The PCM steps its set speed by 1 on a short press and by 5 on a factory long press (road test 2026-09-14), so a
+# "long" variant holds the bit for ~1.5 s (24 genuine frames) to find out whether a mirrored long press is honoured.
+SHORT_PRESS_FRAMES = 8
+LONG_PRESS_FRAMES = 24
+BUTTONS = {
+  "res": (BTN_RES, SHORT_PRESS_FRAMES),
+  "set": (BTN_SET, SHORT_PRESS_FRAMES),
+  "res_long": (BTN_RES, LONG_PRESS_FRAMES),
+  "set_long": (BTN_SET, LONG_PRESS_FRAMES),
+}
+BURST_FRAMES = SHORT_PRESS_FRAMES  # default, kept for the tests
 # 100 Hz control frames after a genuine frame before the mirrored one goes out, ~30 ms = mid gap (findings10)
 SEND_DELAY_FRAMES = 3
 # the genuine template must be at most this old when the mirrored frame is sent (< 20 ms, findings8 freshness gate)
 TEMPLATE_MAX_AGE_FRAMES = SEND_DELAY_FRAMES
 # the last N genuine frames must carry an identical byte 0 (findings8 stability gate)
 STABLE_FRAMES = 8
-# give up if a burst has not completed within this many control frames (2 s)
-BURST_TIMEOUT_FRAMES = 200
+# give up if a burst has not completed within this many control frames (4 s, a long press needs ~1.6 s)
+BURST_TIMEOUT_FRAMES = 400
 # how often the trigger file is polled while idle
 TRIGGER_POLL_FRAMES = 100
 
@@ -87,6 +96,7 @@ class CruiseSwitchMirrorCarController:
     self.armed = False
     self.button = 0
     self.button_name = ""
+    self.burst_frames = BURST_FRAMES
     self.armed_frame = 0
     self.sent = 0
     self.last_seq = 0
@@ -112,11 +122,11 @@ class CruiseSwitchMirrorCarController:
       return
 
     if name not in BUTTONS:
-      self._write_result(f"ignored trigger, unknown button {name!r} (use res or set)")
+      self._write_result(f"ignored trigger, unknown button {name!r} (use one of {', '.join(BUTTONS)})")
       return
 
     self.button_name = name
-    self.button = BUTTONS[name]
+    self.button, self.burst_frames = BUTTONS[name]
 
   def _arm(self, frame: int, raw: "CruiseSwitchRaw") -> None:
     self.armed = True
@@ -195,10 +205,10 @@ class CruiseSwitchMirrorCarController:
     assert out[0] == (template[0] | self.button) and out != template and len(out) == CRUISE_SWITCH_LEN
 
     self.sent += 1
-    self.log.append(f"frame {frame}: sent {out.hex()} (template {template.hex()}) {self.sent}/{BURST_FRAMES}")
+    self.log.append(f"frame {frame}: sent {out.hex()} (template {template.hex()}) {self.sent}/{self.burst_frames}")
     can_sends = [CanData(CRUISE_SWITCH_ADDR, out, CRUISE_SWITCH_BUS)]
 
-    if self.sent >= BURST_FRAMES:
+    if self.sent >= self.burst_frames:
       self._finish(f"done: {self.sent} {self.button_name} frames sent, check 0x1D3 SET_SPEED / cluster")
 
     return can_sends
