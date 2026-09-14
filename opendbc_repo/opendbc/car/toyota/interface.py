@@ -202,6 +202,10 @@ class CarInterface(CarInterfaceBase):
     # synthesized from PCM_CRUISE->CRUISE_STATE in carstate.py, so keep the two conditions in sync.
     if candidate == CAR.TOYOTA_COROLLA_TSS2 and stock_cp.openpilotLongitudinalControl:
       ret.pcmCruiseSpeed = False
+      # Let the panda pass mirrored cruise switch presses (0x361) so openpilot can move the PCM's own set speed to
+      # match its software set speed and keep the instrument cluster in sync. Nothing is sent until the car
+      # controller uses it; this only widens the TX allowlist (RES/SET gated on controls allowed in safety).
+      ret.safetyParam |= ToyotaSafetyFlagsSP.CRUISE_SWITCH_TX
 
     return ret
 

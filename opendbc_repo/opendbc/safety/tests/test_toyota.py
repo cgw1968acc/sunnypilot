@@ -20,6 +20,7 @@ TOYOTA_COMMON_LONG_TX_MSGS = [[0x283, 0], [0x2E6, 0], [0x2E7, 0], [0x33E, 0], [0
                               [0x411, 0],  # PCS_HUD
                               [0x750, 0]]  # radar diagnostic address
 GAS_INTERCEPTOR_TX_MSGS = [[0x200, 0]]
+TOYOTA_CRUISE_SWITCH_TX_MSGS = [[0x361, 0]]  # SP: mirrored cruise switch presses (PCM set speed sync)
 
 UNSUPPORTED_DSU = [
   {"SAFETY_PARAM_SP": ToyotaSafetyFlagsSP.DEFAULT},
@@ -242,6 +243,49 @@ class TestToyotaSafetyTorqueGasInterceptor(TestToyotaSafetyGasInterceptorBase, T
       raise unittest.SkipTest
 
 
+class TestToyotaCruiseSwitchBase(TestToyotaSafetyBase):
+  """
+    SP: ToyotaSafetyFlagsSP.CRUISE_SWITCH_TX widens the openpilot longitudinal allowlist with the cruise switch
+    message (0x361) so openpilot can mirror the driver's set speed presses to the PCM. RES/SET presses are only
+    allowed while controls are allowed, CANCEL is always allowed, and idle or RES+SET frames are never allowed.
+  """
+
+  TX_MSGS = TOYOTA_COMMON_TX_MSGS + TOYOTA_COMMON_LONG_TX_MSGS + TOYOTA_CRUISE_SWITCH_TX_MSGS
+
+  def _cruise_switch_msg(self, res: int = 0, set_: int = 0, cancel: int = 0, main_on: int = 1, engaged: int = 1):
+    byte0 = (res << 5) | (set_ << 4) | (cancel << 3) | (main_on << 2) | (engaged << 1)
+    return libsafety_py.make_CANPacket(0x361, 0, bytes([byte0, 0, 0, 0, 0, 0, 0, 0]))
+
+  def test_cruise_switch_tx(self):
+    for controls_allowed in (True, False):
+      self.safety.set_controls_allowed(controls_allowed)
+      for engaged in (0, 1):
+        # cancel is always allowed, an idle mirror frame never is
+        self.assertTrue(self._tx(self._cruise_switch_msg(cancel=1, engaged=engaged)))
+        self.assertFalse(self._tx(self._cruise_switch_msg(engaged=engaged)))
+        # set speed presses only while controls are allowed, never both at once
+        self.assertEqual(controls_allowed, self._tx(self._cruise_switch_msg(res=1, engaged=engaged)))
+        self.assertEqual(controls_allowed, self._tx(self._cruise_switch_msg(set_=1, engaged=engaged)))
+        self.assertFalse(self._tx(self._cruise_switch_msg(res=1, set_=1, engaged=engaged)))
+
+  def test_cruise_switch_tx_wrong_bus_or_len(self):
+    self.safety.set_controls_allowed(True)
+    for bus in (1, 2):
+      self.assertFalse(self._tx(libsafety_py.make_CANPacket(0x361, bus, bytes([0x26, 0, 0, 0, 0, 0, 0, 0]))))
+    self.assertFalse(self._tx(libsafety_py.make_CANPacket(0x361, 0, bytes([0x26, 0, 0, 0, 0, 0, 0]))))
+
+
+@parameterized_class(UNSUPPORTED_DSU)
+class TestToyotaCruiseSwitchTorque(TestToyotaCruiseSwitchBase, TestToyotaSafetyTorque):
+
+  def setUp(self):
+    self.packer = CANPackerSafety("toyota_nodsu_pt_generated")
+    self.safety = libsafety_py.libsafety
+    self.safety.set_current_safety_param_sp(self.SAFETY_PARAM_SP | ToyotaSafetyFlagsSP.CRUISE_SWITCH_TX)
+    self.safety.set_safety_hooks(CarParams.SafetyModel.toyota, self.EPS_SCALE)
+    self.safety.init_tests()
+
+
 class TestToyotaSafetyAngle(TestToyotaSafetyBase, common.AngleSteeringSafetyTest):
 
   # Angle control limits
@@ -448,6 +492,22 @@ class TestToyotaStockLongitudinalAngle(TestToyotaStockLongitudinalBase, TestToyo
     self.safety.set_safety_hooks(CarParams.SafetyModel.toyota,
                                  self.EPS_SCALE | ToyotaSafetyFlags.STOCK_LONGITUDINAL | ToyotaSafetyFlags.LTA)
     self.safety.init_tests()
+
+
+class TestToyotaCruiseSwitchStockLongitudinal(TestToyotaStockLongitudinalBase, TestToyotaSafetyTorque):
+  """SP: the cruise switch flag must be ignored when openpilot is not controlling longitudinal, 0x361 stays blocked."""
+
+  def setUp(self):
+    self.packer = CANPackerSafety("toyota_nodsu_pt_generated")
+    self.safety = libsafety_py.libsafety
+    self.safety.set_current_safety_param_sp(ToyotaSafetyFlagsSP.CRUISE_SWITCH_TX)
+    self.safety.set_safety_hooks(CarParams.SafetyModel.toyota, self.EPS_SCALE | ToyotaSafetyFlags.STOCK_LONGITUDINAL)
+    self.safety.init_tests()
+
+  def test_cruise_switch_blocked(self):
+    self.safety.set_controls_allowed(True)
+    for byte0 in (0x26, 0x16, 0x0e):
+      self.assertFalse(self._tx(libsafety_py.make_CANPacket(0x361, 0, bytes([byte0, 0, 0, 0, 0, 0, 0, 0]))))
 
 
 class TestToyotaSecOcSafetyBase(TestToyotaSafetyBase):

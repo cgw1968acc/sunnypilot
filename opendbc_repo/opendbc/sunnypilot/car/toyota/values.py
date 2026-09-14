@@ -24,3 +24,4 @@ class ToyotaSafetyFlagsSP:
   DEFAULT = 0
   UNSUPPORTED_DSU = 1
   GAS_INTERCEPTOR = 2
+  CRUISE_SWITCH_TX = 4  # allow mirrored cruise switch presses (0x361) so openpilot can move the PCM set speed
