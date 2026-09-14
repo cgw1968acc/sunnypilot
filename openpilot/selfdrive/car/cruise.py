@@ -20,6 +20,11 @@ ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
 CRUISE_LONG_PRESS = 50
 TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 65
+# Toyota software set speed: the PCM will not hold the car more than roughly 8 kph above its OWN set speed even while
+# openpilot commands positive acceleration. It cuts throttle somewhere above +11 and only resumes below about +7.5,
+# which turns a larger gap into a speed oscillation (option1b_findings14 section 8). The planner target is therefore
+# capped at the PCM set speed plus this headroom; the driver's target itself is kept for the HUD and the buttons.
+TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 5.
 CRUISE_NEAREST_FUNC = {
   ButtonType.accelCruise: math.ceil,
   ButtonType.decelCruise: math.floor,
@@ -36,6 +41,7 @@ class VCruiseHelper(VCruiseHelperSP):
     self.CP = CP
     self.v_cruise_kph = V_CRUISE_UNSET
     self.v_cruise_cluster_kph = V_CRUISE_UNSET
+    self.v_cruise_planner_kph = V_CRUISE_UNSET  # what the longitudinal planner tracks, see update_v_cruise_planner
     self.v_cruise_kph_last = 0
     self.button_timers = {ButtonType.decelCruise: 0, ButtonType.accelCruise: 0}
     self.button_change_states = {btn: {"standstill": False, "enabled": False} for btn in self.button_timers}
@@ -106,6 +112,17 @@ class VCruiseHelper(VCruiseHelperSP):
 
     if not self.CP.pcmCruise or not self.CP_SP.pcmCruiseSpeed:
       self.update_button_timers(CS, enabled)
+
+    self.update_v_cruise_planner(CS)
+
+  def update_v_cruise_planner(self, CS) -> None:
+    """Planner target. Equal to the driver's target except on Toyota software set speed, where it is capped at the
+    PCM's own set speed plus TOYOTA_PCM_SET_SPEED_HEADROOM_KPH so the car never enters the PCM's throttle cut band."""
+    self.v_cruise_planner_kph = self.v_cruise_kph
+
+    if self.software_pcm_cruise_speed and self.software_pcm_cruise_initialized and CS.cruiseState.speed > 0:
+      pcm_set_kph = CS.cruiseState.speed * CV.MS_TO_KPH
+      self.v_cruise_planner_kph = min(self.v_cruise_kph, round(pcm_set_kph + TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, 1))
 
   def _update_v_cruise_non_pcm(self, CS, enabled, is_metric):
     # handle button presses. TODO: this should be in state_control, but a decelCruise press
