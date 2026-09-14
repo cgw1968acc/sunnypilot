@@ -19,12 +19,18 @@ IMPERIAL_INCREMENT = round(CV.MPH_TO_KPH, 1)  # round here to avoid rounding err
 ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
 CRUISE_LONG_PRESS = 50
-TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 65
+# Toyota software set speed. A physical short press is 450-520 ms on the bus (findings9); the PCM itself treats a
+# longer hold as a long press and steps its own set speed by 5 per repeat. Err on the long side: if the PCM sees a
+# long press and we see a short one both step by 5, the other way round we merely resync to the PCM's +1.
+TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 100
 # Toyota software set speed: the PCM will not hold the car more than roughly 8 kph above its OWN set speed even while
 # openpilot commands positive acceleration. It cuts throttle somewhere above +11 and only resumes below about +7.5,
-# which turns a larger gap into a speed oscillation (option1b_findings14 section 8). The planner target is therefore
-# capped at the PCM set speed plus this headroom; the driver's target itself is kept for the HUD and the buttons.
+# which turns a larger gap into a speed oscillation (option1b_findings14 section 8). The driver's target is therefore
+# capped at the PCM set speed plus this headroom, so the HUD never shows a number the car cannot reach.
 TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 5.
+# During a long press the PCM steps its own set speed by 5 at its own repeat rate, which differs from ours. Follow the
+# PCM's number for the whole hold and this long after the release instead of stepping independently (findings14 §11).
+TOYOTA_PCM_FOLLOW_AFTER_LONG_PRESS_FRAMES = 100
 CRUISE_NEAREST_FUNC = {
   ButtonType.accelCruise: math.ceil,
   ButtonType.decelCruise: math.floor,
@@ -41,7 +47,8 @@ class VCruiseHelper(VCruiseHelperSP):
     self.CP = CP
     self.v_cruise_kph = V_CRUISE_UNSET
     self.v_cruise_cluster_kph = V_CRUISE_UNSET
-    self.v_cruise_planner_kph = V_CRUISE_UNSET  # what the longitudinal planner tracks, see update_v_cruise_planner
+    self.v_cruise_planner_kph = V_CRUISE_UNSET  # what the longitudinal planner tracks, see apply_toyota_pcm_set_speed_constraints
+    self.pcm_follow_frames = 0  # > 0 while a Toyota long press makes the PCM's own set speed authoritative
     self.v_cruise_kph_last = 0
     self.button_timers = {ButtonType.decelCruise: 0, ButtonType.accelCruise: 0}
     self.button_change_states = {btn: {"standstill": False, "enabled": False} for btn in self.button_timers}
@@ -113,16 +120,32 @@ class VCruiseHelper(VCruiseHelperSP):
     if not self.CP.pcmCruise or not self.CP_SP.pcmCruiseSpeed:
       self.update_button_timers(CS, enabled)
 
-    self.update_v_cruise_planner(CS)
+    self.apply_toyota_pcm_set_speed_constraints(CS)
 
-  def update_v_cruise_planner(self, CS) -> None:
-    """Planner target. Equal to the driver's target except on Toyota software set speed, where it is capped at the
-    PCM's own set speed plus TOYOTA_PCM_SET_SPEED_HEADROOM_KPH so the car never enters the PCM's throttle cut band."""
+  def apply_toyota_pcm_set_speed_constraints(self, CS) -> None:
+    """Toyota software set speed only. Two facts about the PCM shape what openpilot may target (findings14 §8-11):
+    1. it will not hold the car more than ~8 kph above its own set speed, so the target is capped at PCM + headroom;
+    2. on a long press it steps its own set speed by 5 at its own repeat rate, so while (and shortly after) a long
+       press the PCM's number is authoritative and both openpilot targets follow it instead of stepping on their own.
+    The planner target equals the driver's target after these constraints. Other brands and PCM mirroring are untouched."""
     self.v_cruise_planner_kph = self.v_cruise_kph
 
-    if self.software_pcm_cruise_speed and self.software_pcm_cruise_initialized and CS.cruiseState.speed > 0:
-      pcm_set_kph = CS.cruiseState.speed * CV.MS_TO_KPH
-      self.v_cruise_planner_kph = min(self.v_cruise_kph, round(pcm_set_kph + TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, 1))
+    if not (self.software_pcm_cruise_speed and self.software_pcm_cruise_initialized and CS.cruiseState.speed > 0):
+      self.pcm_follow_frames = 0
+      return
+
+    pcm_kph = round(CS.cruiseState.speed * CV.MS_TO_KPH, 1)
+    pcm_cluster_kph = round(CS.cruiseState.speedCluster * CV.MS_TO_KPH, 1) if CS.cruiseState.speedCluster > 0 else pcm_kph
+    # the cluster shows the PCM's number with a fixed calibration offset on Toyota; keep openpilot's pair the same way
+    cluster_offset_kph = pcm_cluster_kph - pcm_kph
+
+    if self.pcm_follow_frames > 0:
+      self.pcm_follow_frames -= 1
+      self.v_cruise_kph = pcm_kph
+
+    self.v_cruise_kph = min(self.v_cruise_kph, round(pcm_kph + TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, 1))
+    self.v_cruise_cluster_kph = round(self.v_cruise_kph + cluster_offset_kph, 1)
+    self.v_cruise_planner_kph = self.v_cruise_kph
 
   def _update_v_cruise_non_pcm(self, CS, enabled, is_metric):
     # handle button presses. TODO: this should be in state_control, but a decelCruise press
@@ -134,6 +157,12 @@ class VCruiseHelper(VCruiseHelperSP):
     button_type = None
 
     v_cruise_delta = 1. if is_metric else IMPERIAL_INCREMENT
+
+    # Toyota software set speed: a long press is the PCM's business (it steps its own number by 5 per repeat). Do not
+    # step independently, just open the follow window; apply_toyota_pcm_set_speed_constraints copies the PCM's number.
+    if self.software_pcm_cruise_speed and any(timer > self.cruise_long_press_frames for timer in self.button_timers.values()):
+      self.pcm_follow_frames = TOYOTA_PCM_FOLLOW_AFTER_LONG_PRESS_FRAMES
+      return
 
     for b in CS.buttonEvents:
       if b.type.raw in self.button_timers and not b.pressed:
