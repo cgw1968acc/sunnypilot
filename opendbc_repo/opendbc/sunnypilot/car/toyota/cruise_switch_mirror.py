@@ -60,6 +60,13 @@ TRIGGER_POLL_FRAMES = 100
 TRIGGER_FILE = "/data/cruise_switch_burst"
 RESULT_FILE = "/data/cruise_switch_burst.result"
 
+# "auto" mode: arm before the drive, the burst fires by itself once cruise has been engaged this long, the car is at
+# least this fast and no stalk button has been touched for this long. Everything is recorded in the rlog, so a solo
+# driver never has to touch a device while moving.
+AUTO_ENGAGED_FRAMES = 2000      # 20 s of continuous engagement
+AUTO_MIN_SPEED_KPH = 40.
+AUTO_NO_PRESS_FRAMES = 500      # 5 s since the last physical press
+
 
 class CruiseSwitchRaw:
   """Latest genuine 0x361 frames, captured from the raw CAN packets before parsing (bus 0 only, so openpilot's own
@@ -94,6 +101,9 @@ class CruiseSwitchMirrorCarController:
     self.result_file = RESULT_FILE
 
     self.armed = False
+    self.auto_wait = False          # armed, waiting for the auto conditions before the burst starts
+    self.engaged_since_frame: int | None = None
+    self.last_press_frame = -10**9
     self.button = 0
     self.button_name = ""
     self.burst_frames = BURST_FRAMES
@@ -116,17 +126,19 @@ class CruiseSwitchMirrorCarController:
       if not os.path.exists(self.trigger_file):
         return
       with open(self.trigger_file) as f:
-        name = f.read().strip().lower() or "res"
+        words = f.read().strip().lower().split()
       os.remove(self.trigger_file)
     except OSError:
       return
 
+    name = words[0] if words else "res"
     if name not in BUTTONS:
-      self._write_result(f"ignored trigger, unknown button {name!r} (use one of {', '.join(BUTTONS)})")
+      self._write_result(f"ignored trigger, unknown button {name!r} (use one of {', '.join(BUTTONS)}, optionally followed by 'auto')")
       return
 
     self.button_name = name
     self.button, self.burst_frames = BUTTONS[name]
+    self.auto_wait = "auto" in words[1:]
 
   def _arm(self, frame: int, raw: "CruiseSwitchRaw") -> None:
     self.armed = True
@@ -135,7 +147,8 @@ class CruiseSwitchMirrorCarController:
     self.send_frame = None
     self.template = None
     self.last_seq = raw.seq  # only genuine frames received after arming may become templates
-    self.log = [f"armed {self.button_name} burst at frame {frame}"]
+    mode = "auto (fires after %d s engaged, >= %.0f km/h, %d s without a press)" % (AUTO_ENGAGED_FRAMES // 100, AUTO_MIN_SPEED_KPH, AUTO_NO_PRESS_FRAMES // 100) if self.auto_wait else "immediate"
+    self.log = [f"armed {self.button_name} burst at frame {frame}, {mode}"]
     carlog.warning(f"cruise switch mirror: {self.log[-1]}")
 
   def _finish(self, reason: str) -> None:
@@ -143,6 +156,7 @@ class CruiseSwitchMirrorCarController:
     carlog.warning(f"cruise switch mirror: {reason}")
     self._write_result("\n".join(self.log))
     self.armed = False
+    self.auto_wait = False
     self.button = 0
     self.button_name = ""
 
@@ -170,6 +184,26 @@ class CruiseSwitchMirrorCarController:
           self._arm(frame, raw)
       if not self.armed:
         return []
+
+    # auto mode: hold until the conditions are met, then start the burst from a fresh template
+    if self.auto_wait:
+      if not cruise_engaged:
+        self.engaged_since_frame = None
+      elif self.engaged_since_frame is None:
+        self.engaged_since_frame = frame
+      if raw.latest is not None and raw.latest[0] & PRESS_MASK:
+        self.last_press_frame = frame
+      v_ego_kph = CS.out.vEgo * 3.6
+      ready = (self.engaged_since_frame is not None and frame - self.engaged_since_frame >= AUTO_ENGAGED_FRAMES
+               and frame - self.last_press_frame >= AUTO_NO_PRESS_FRAMES and v_ego_kph >= AUTO_MIN_SPEED_KPH)
+      if not ready:
+        return []
+      self.auto_wait = False
+      self.armed_frame = frame
+      self.last_seq = raw.seq
+      self.send_frame = None
+      self.log.append(f"auto conditions met at frame {frame}: engaged {(frame - self.engaged_since_frame) / 100:.0f} s, vEgo {v_ego_kph:.0f} km/h")
+      carlog.warning(f"cruise switch mirror: {self.log[-1]}")
 
     # abort conditions checked on every frame while armed
     if not cruise_engaged:

@@ -120,6 +120,47 @@ class TestCruiseSwitchMirror(unittest.TestCase):
     self.assertEqual(h.sent[-1][0] - h.sent[0][0], (csm.LONG_PRESS_FRAMES - 1) * h.period)  # ~1.5 s on the bus
     self.assertIn("done: 24 res_long frames sent", self.result())
 
+  def test_auto_mode_waits_for_engaged_speed_and_quiet_stalk(self):
+    h = Harness(self.ctrl)
+    h.CS.out.vEgo = 60 / 3.6
+    h.run(60)
+    self.trigger("res_long auto")
+    # trigger consumed at frame 100, then nothing while cruise is not engaged
+    h.run(400, engaged=False)
+    self.assertEqual(h.sent, [])
+    self.assertFalse(os.path.exists(self.ctrl.trigger_file))
+    self.assertTrue(self.ctrl.armed and self.ctrl.auto_wait)
+    # engaged but too slow: still waiting
+    h.CS.out.vEgo = 30 / 3.6
+    h.run(csm.AUTO_ENGAGED_FRAMES + 300)
+    self.assertEqual(h.sent, [])
+    # fast enough: fires once the 20 s of engagement are counted from... they already are, so it fires now
+    h.CS.out.vEgo = 60 / 3.6
+    h.run(400)
+    self.assertEqual(len(h.sent), csm.LONG_PRESS_FRAMES)
+    self.assertIn("auto conditions met", self.result())
+    self.assertIn("done: 24 res_long frames sent", self.result())
+    self.assertFalse(self.ctrl.armed)
+
+  def test_auto_mode_holds_while_driver_recently_pressed(self):
+    h = Harness(self.ctrl)
+    h.CS.out.vEgo = 60 / 3.6
+    h.run(60)
+    self.trigger("set auto")
+    h.run(csm.AUTO_ENGAGED_FRAMES - 300)  # engaged, but not yet long enough
+    self.assertEqual(h.sent, [])
+    # a physical press on the stalk resets the quiet timer: nothing may fire within 5 s of it, even once the
+    # engagement time is reached
+    h.genuine = GENUINE_PRESSED
+    h.run(30)
+    h.genuine = GENUINE_IDLE
+    h.run(csm.AUTO_NO_PRESS_FRAMES - 100)
+    self.assertEqual(h.sent, [])
+    self.assertTrue(self.ctrl.auto_wait)
+    h.run(400)
+    self.assertEqual(len(h.sent), csm.SHORT_PRESS_FRAMES)
+    self.assertIn("done: 8 set frames sent", self.result())
+
   def test_unknown_button_is_ignored(self):
     h = Harness(self.ctrl)
     h.run(60)
