@@ -16,6 +16,7 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
+from openpilot.sunnypilot.selfdrive.controls.lib.soft_start.soft_start import CruiseSoftStart, soft_start_up_jerk, apply_cruise_jerk_limits
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
@@ -36,7 +37,7 @@ def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
 
 def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle,
-                      max_accel_override=None):
+                      max_accel_override=None, soft_start_t=None):
   if max_accel_override is not None:
     max_accel = max_accel_override
   else:
@@ -52,8 +53,10 @@ def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, 
       max_accel = min(max_accel, coast_limit)
 
   target_accel = np.clip(v_cruise - v_ego, A_CRUISE_MIN, max_accel)
-  j_cruise = np.interp(v_ego, A_CRUISE_MAX_BP, J_CRUISE_VALS)
-  target_accel = float(np.clip(target_accel, a_cruise_prev - j_cruise * dt, a_cruise_prev + j_cruise * dt))
+  j_cruise = float(np.interp(v_ego, A_CRUISE_MAX_BP, J_CRUISE_VALS))
+  # sunnypilot: gentle build-up when starting to accelerate from a steady cruise (soft_start.py)
+  j_up = soft_start_up_jerk(soft_start_t, j_cruise)
+  target_accel = apply_cruise_jerk_limits(float(target_accel), a_cruise_prev, j_cruise, j_up, dt)
 
   return target_accel
 
@@ -69,6 +72,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
+    self.soft_start = CruiseSoftStart(self.dt)
     self.output_a_target = init_a
     self.output_should_stop = False
 
@@ -109,6 +113,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       self.v_desired_filter.x = v_ego
       self.output_a_target = np.clip(sm['carState'].aEgo, ACCEL_MIN, ACCEL_MAX)
       self.a_cruise = self.output_a_target
+      self.soft_start.reset()
 
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
@@ -148,10 +153,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     max_accel_override = self.get_max_accel_override(v_ego)
     v_cruise = self.get_cruise_target_override(v_ego, v_cruise, force_decel)
     a_cruise_prev = self.a_cruise
+    soft_start_t = self.soft_start.update(a_cruise_prev)
     gated_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego, a_cruise_prev, steer_angle_without_offset,
-                                    self.CP, self.dt, accel_coast, self.allow_throttle, max_accel_override)
+                                    self.CP, self.dt, accel_coast, self.allow_throttle, max_accel_override, soft_start_t)
     ungated_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego, a_cruise_prev, steer_angle_without_offset,
-                                      self.CP, self.dt, accel_coast, True, max_accel_override)
+                                      self.CP, self.dt, accel_coast, True, max_accel_override, soft_start_t)
     self.a_cruise = self.arbitrate_cruise_candidate(
       sm, gated_cruise, ungated_cruise, output_a_target_mpc, self.mpc.source,
       allow_throttle=self.allow_throttle, e2e=is_e2e, force_decel=force_decel,
