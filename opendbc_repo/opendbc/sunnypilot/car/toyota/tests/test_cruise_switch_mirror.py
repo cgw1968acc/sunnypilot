@@ -161,6 +161,30 @@ class TestCruiseSwitchMirror(unittest.TestCase):
     self.assertEqual(len(h.sent), csm.SHORT_PRESS_FRAMES)
     self.assertIn("done: 8 set frames sent", self.result())
 
+  def test_dense_variant_sends_every_20ms_for_1_5s(self):
+    h = Harness(self.ctrl, period=6)
+    h.run(60)
+    self.trigger("res_dense")
+    h.run(400)
+    self.assertEqual(len(h.sent), csm.DENSE_LONG_FRAMES)
+    self.assertTrue(all(msg.dat == GENUINE_PRESSED for _, msg in h.sent))
+    gaps = {b - a for (a, _), (b, _) in zip(h.sent, h.sent[1:])}
+    self.assertEqual(gaps, {csm.DENSE_PERIOD_FRAMES})
+    self.assertAlmostEqual((h.sent[-1][0] - h.sent[0][0]) / 100, 1.48, places=2)
+    self.assertIn("done: 75 res_dense frames sent", self.result())
+
+  def test_dense_variant_aborts_when_genuine_stream_stops(self):
+    h = Harness(self.ctrl, period=6)
+    h.run(60)
+    self.trigger("set_dense")
+    h.run(50)  # armed at 100, a few frames out
+    n = len(h.sent)
+    self.assertGreater(n, 0)
+    h.period = 10**9
+    h.run(60)
+    self.assertLess(len(h.sent) - n, 8)  # at most the frames within the 12-frame template age
+    self.assertIn("abort: stale template", self.result())
+
   def test_unknown_button_is_ignored(self):
     h = Harness(self.ctrl)
     h.run(60)

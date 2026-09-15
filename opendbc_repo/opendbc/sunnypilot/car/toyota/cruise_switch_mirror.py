@@ -39,11 +39,18 @@ PRESS_MASK = BTN_CANCEL | BTN_SET | BTN_RES
 # "long" variant holds the bit for ~1.5 s (24 genuine frames) to find out whether a mirrored long press is honoured.
 SHORT_PRESS_FRAMES = 8
 LONG_PRESS_FRAMES = 24
+# "dense" variants (findings10 strategy b, findings14 §13): the one-per-gap burst leaves the receiver an alternating
+# pressed/released stream, which any consecutive-sample debounce rejects. Dense mode sends a mirrored frame every
+# DENSE_PERIOD_FRAMES control frames (20 ms) for the same wall time, so 3 pressed frames land between two genuine ones.
+DENSE_PERIOD_FRAMES = 2
+DENSE_LONG_FRAMES = 75   # ~1.5 s at 50 Hz
 BUTTONS = {
-  "res": (BTN_RES, SHORT_PRESS_FRAMES),
-  "set": (BTN_SET, SHORT_PRESS_FRAMES),
-  "res_long": (BTN_RES, LONG_PRESS_FRAMES),
-  "set_long": (BTN_SET, LONG_PRESS_FRAMES),
+  "res": (BTN_RES, SHORT_PRESS_FRAMES, False),
+  "set": (BTN_SET, SHORT_PRESS_FRAMES, False),
+  "res_long": (BTN_RES, LONG_PRESS_FRAMES, False),
+  "set_long": (BTN_SET, LONG_PRESS_FRAMES, False),
+  "res_dense": (BTN_RES, DENSE_LONG_FRAMES, True),
+  "set_dense": (BTN_SET, DENSE_LONG_FRAMES, True),
 }
 BURST_FRAMES = SHORT_PRESS_FRAMES  # default, kept for the tests
 # 100 Hz control frames after a genuine frame before the mirrored one goes out, ~30 ms = mid gap (findings10)
@@ -107,6 +114,7 @@ class CruiseSwitchMirrorCarController:
     self.button = 0
     self.button_name = ""
     self.burst_frames = BURST_FRAMES
+    self.dense = False
     self.armed_frame = 0
     self.sent = 0
     self.last_seq = 0
@@ -137,7 +145,7 @@ class CruiseSwitchMirrorCarController:
       return
 
     self.button_name = name
-    self.button, self.burst_frames = BUTTONS[name]
+    self.button, self.burst_frames, self.dense = BUTTONS[name]
     self.auto_wait = "auto" in words[1:]
 
   def _arm(self, frame: int, raw: "CruiseSwitchRaw") -> None:
@@ -213,19 +221,26 @@ class CruiseSwitchMirrorCarController:
       self._finish(f"abort: timeout after {self.sent} frames")
       return []
 
-    # a new genuine frame schedules exactly one mirrored frame SEND_DELAY_FRAMES later
+    # a new genuine frame becomes the template; in normal mode it also schedules exactly one mirrored frame
+    # SEND_DELAY_FRAMES later, in dense mode frames go out every DENSE_PERIOD_FRAMES regardless of genuine timing
     if raw.seq != self.last_seq:
       self.last_seq = raw.seq
       self.template = raw.latest
       self.template_frame = frame
       self.send_frame = frame + SEND_DELAY_FRAMES
 
-    if self.send_frame is None or frame != self.send_frame:
-      return []
-    self.send_frame = None
+    if self.dense:
+      if self.template is None or (frame - self.armed_frame) % DENSE_PERIOD_FRAMES != 0:
+        return []
+      max_age = 12  # a genuine frame arrives every ~6.5 control frames, never mirror one older than two periods
+    else:
+      if self.send_frame is None or frame != self.send_frame:
+        return []
+      self.send_frame = None
+      max_age = TEMPLATE_MAX_AGE_FRAMES
 
     template = self.template
-    if template is None or frame - self.template_frame > TEMPLATE_MAX_AGE_FRAMES:
+    if template is None or frame - self.template_frame > max_age:
       self._finish(f"abort: stale template after {self.sent} frames")
       return []
     if not raw.stable:
