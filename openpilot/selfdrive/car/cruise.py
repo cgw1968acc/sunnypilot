@@ -49,6 +49,11 @@ class VCruiseHelper(VCruiseHelperSP):
     self.v_cruise_kph = V_CRUISE_UNSET
     self.v_cruise_cluster_kph = V_CRUISE_UNSET
     self.v_cruise_planner_kph = V_CRUISE_UNSET  # what the longitudinal planner tracks, see apply_toyota_pcm_set_speed_constraints
+    # Toyota software set speed: remember how cruise was (re)engaged so a RES resume keeps openpilot's own target
+    self._toyota_frame = 0
+    self._toyota_last_press: tuple[int | None, int] = (None, -10**9)
+    self._toyota_engaged_prev = False
+    self._toyota_engaged_by_set = True
     self.v_cruise_kph_last = 0
     self.button_timers = {ButtonType.decelCruise: 0, ButtonType.accelCruise: 0}
     self.button_change_states = {btn: {"standstill": False, "enabled": False} for btn in self.button_timers}
@@ -87,13 +92,18 @@ class VCruiseHelper(VCruiseHelperSP):
     self.get_minimum_set_speed(is_metric)
 
     _enabled = self.update_enabled_state(CS, enabled)
+    hold_own_target = self._toyota_hold_own_target(CS, _enabled)
 
     if CS.cruiseState.available:
       software_pcm_enabled = not self.CP_SP.pcmCruiseSpeed and _enabled
       if self.software_pcm_cruise_speed:
         software_pcm_enabled = software_pcm_enabled and self.software_pcm_cruise_initialized
 
-      if not self.CP.pcmCruise or software_pcm_enabled:
+      if hold_own_target:
+        # Toyota software set speed, cruise cancelled or resumed with RES: keep openpilot's own target instead of
+        # mirroring the PCM's number, which is the parked ceiling (e.g. 120) and must never become the target
+        pass
+      elif not self.CP.pcmCruise or software_pcm_enabled:
         # if stock cruise is completely disabled, then we can use our own set speed logic
         self._update_v_cruise_non_pcm(CS, _enabled, is_metric)
         v_cruise_kph_before_sla = self.v_cruise_kph
@@ -121,6 +131,31 @@ class VCruiseHelper(VCruiseHelperSP):
       self.update_button_timers(CS, enabled)
 
     self.apply_toyota_pcm_set_speed_constraints(CS)
+
+  def _toyota_hold_own_target(self, CS, _enabled: bool) -> bool:
+    """Toyota software set speed only. While cruise is cancelled (brake, CANCEL) and through a RES resume, openpilot's
+    own target is kept. Only a fresh SET (or an engagement we did not see a RES press for) mirrors the PCM, whose
+    number then equals the current speed. Never holds before the target is initialized."""
+    if not (self.software_pcm_cruise_speed and self.software_pcm_cruise_initialized):
+      return False
+
+    self._toyota_frame += 1
+    for b in CS.buttonEvents:
+      if b.pressed and b.type in (ButtonType.accelCruise, ButtonType.decelCruise):
+        self._toyota_last_press = (b.type.raw, self._toyota_frame)
+
+    engaged = CS.cruiseState.enabled
+    if engaged and not self._toyota_engaged_prev:
+      press_type, press_frame = self._toyota_last_press
+      resumed_with_res = press_type == ButtonType.accelCruise and self._toyota_frame - press_frame < 150
+      self._toyota_engaged_by_set = not resumed_with_res
+    self._toyota_engaged_prev = engaged
+
+    if _enabled:
+      return False  # the software set speed branch owns the target
+    if not engaged:
+      return True   # cancelled: hold
+    return not self._toyota_engaged_by_set  # engagement transition frames: hold after RES, mirror after SET
 
   def apply_toyota_pcm_set_speed_constraints(self, CS) -> None:
     """Toyota software set speed only. The PCM will not hold the car more than ~8 kph above its own set speed
