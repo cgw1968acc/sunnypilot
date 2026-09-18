@@ -27,6 +27,7 @@ class FontSizes:
   speed_unit: int = 66
   max_speed: int = 36
   set_speed: int = 112
+  pcm_ceiling: int = 30
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,7 @@ class HudRenderer(Widget):
     self.is_cruise_set: bool = False
     self.is_cruise_available: bool = True
     self.set_speed: float = SET_SPEED_NA
+    self.pcm_ceiling: float = 0.0  # kph, the PCM's own set speed when openpilot owns the target (Toyota software set speed)
     self._set_speed_changed_time: float = 0
     self.speed: float = 0.0
     self.v_ego_cluster_seen: bool = False
@@ -170,12 +172,28 @@ class HudRenderer(Widget):
     self.set_speed = set_speed
     self.is_cruise_set = 0 < self.set_speed < SET_SPEED_NA
     self.is_cruise_available = self.set_speed != -1
+    self.pcm_ceiling = self._get_pcm_ceiling(car_state)
 
     v_ego_cluster = car_state.vEgoCluster
     self.v_ego_cluster_seen = self.v_ego_cluster_seen or v_ego_cluster != 0.0
     v_ego = v_ego_cluster if self.v_ego_cluster_seen else car_state.vEgo
     speed_conversion = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
     self.speed = max(0.0, v_ego * speed_conversion)
+
+  @staticmethod
+  def _get_pcm_ceiling(car_state) -> float:
+    """The PCM's own set speed in kph, shown as the cluster shows it, when openpilot owns the cruise target.
+
+    On the Toyota software set speed the PCM number is only a ceiling that the driver parks high with a long press;
+    the cluster's readout is the one the driver has always watched while parking it, so mirror the cluster value.
+    Returns 0 when the car does not run that mode or the PCM has no set speed.
+    """
+    CP, CP_SP = ui_state.CP, getattr(ui_state, "CP_SP", None)
+    if CP is None or CP_SP is None or not CP.pcmCruise or CP_SP.pcmCruiseSpeed:
+      return 0.0
+    cruise = car_state.cruiseState
+    v = cruise.speedCluster if cruise.speedCluster > 0 else cruise.speed
+    return v * CV.MS_TO_KPH if v > 0 else 0.0
 
   def _render(self, rect: rl.Rectangle) -> None:
     """Render HUD elements to the screen."""
@@ -307,6 +325,19 @@ class HudRenderer(Widget):
       0,
       max_color,
     )
+
+    # PCM ceiling under MAX: the number the driver parks with a long press, read from the C4 instead of the cluster
+    if self.pcm_ceiling > 0:
+      ceiling = self.pcm_ceiling if ui_state.is_metric else self.pcm_ceiling * KM_TO_MILE
+      ceiling_color = rl.Color(255, 255, 255, int(255 * 0.7 * alpha))
+      rl.draw_text_ex(
+        self._font_medium,
+        f"PCM {round(ceiling)}",
+        rl.Vector2(x + 25, y + FONT_SIZES.set_speed + FONT_SIZES.max_speed + 2),
+        FONT_SIZES.pcm_ceiling,
+        0,
+        ceiling_color,
+      )
 
   def _draw_current_speed(self, rect: rl.Rectangle) -> None:
     """Draw the current vehicle speed and unit."""
