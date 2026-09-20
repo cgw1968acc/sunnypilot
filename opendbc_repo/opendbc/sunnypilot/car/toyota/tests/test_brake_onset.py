@@ -27,17 +27,20 @@ class TestBrakeOnset:
   def test_step_brake_eases_in_over_the_first_third_of_a_second(self):
     out = run([-1.5] * 40)
     assert at(out, 0.09) > -0.05  # first 0.1 s: barely anything
-    assert at(out, 0.21) > -0.20  # 0.2 s: still light
-    assert -0.50 < at(out, 0.30) < -0.25  # 0.3 s: clearly building
-    assert at(out, 0.45) < -0.8  # 0.45 s: on the stock ramp
-    assert np.isclose(at(out, 0.66), -1.5, atol=1e-6)  # settled a third of a second after the stock ramp would
+    assert -0.25 < at(out, 0.21) < -0.10  # 0.2 s: blending in
+    assert -0.60 < at(out, 0.30) < -0.40  # 0.3 s: at the stock rate now
+    assert at(out, 0.45) < -1.0  # 0.45 s: on the stock ramp
+    assert np.isclose(at(out, 0.57), -1.5, atol=1e-6)  # settled ~0.2 s after the stock ramp would
 
   def test_jerk_follows_the_schedule_and_never_exceeds_stock(self):
     out = run([-1.9] * 60, a0=1.0)  # large step, still above the hard-brake bypass
     jerks = np.diff(np.concatenate([[1.0], out])) / DT
     assert jerks.min() >= -STOCK_J - 1e-6
     assert jerks[0] >= -ONSET_J_DOWN[0] - 1e-6
-    assert jerks[int(0.15 / DT)] >= -ONSET_J_DOWN[2] - 1e-6
+    assert jerks[int(0.09 / DT)] >= -ONSET_J_DOWN[1] - 1e-6
+    # the blend is one straight ramp: jerk keeps growing monotonically until the stock limit
+    ramp = -jerks[int(0.1 / DT):int(0.3 / DT)]
+    assert np.all(np.diff(ramp) >= -1e-6)
 
   def test_lead_switch_during_a_settled_brake_gets_the_same_soft_onset(self):
     reqs = [-0.6] * 40 + [-1.8] * 40
@@ -45,7 +48,7 @@ class TestBrakeOnset:
     t_switch = 40 * DT
     assert np.isclose(at(out, t_switch), -0.6, atol=1e-6)
     assert at(out, t_switch + 0.09) > -0.6 - 0.05
-    assert at(out, t_switch + 0.21) > -0.6 - 0.20
+    assert at(out, t_switch + 0.21) > -0.6 - 0.25
     assert np.isclose(out[-1], -1.8, atol=1e-6)
 
   def test_hard_brake_request_bypasses_the_schedule(self):

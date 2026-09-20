@@ -8,15 +8,17 @@ Brake onset shaping for the Toyota PCM acceleration command. The stock controlle
 ACCEL_WINDDOWN_LIMIT (4 m/s^3) from the first frame, so a new brake request goes from nothing to -1.2 m/s^2 in
 0.3 s. On a light car with a sharp brake actuator (Corolla hybrid) that first 0.3 s feels like a stab, far from how
 a driver eases onto the pedal. Here the downward jerk follows a schedule that restarts whenever the request starts
-falling faster than the gentlest rate: almost nothing in the first 0.1 s, building through 0.2-0.3 s, and back to
-the stock limit after ONSET_T_BP[-1]. Because the schedule keys off the *request*, a lead switch to a closer car
+falling faster than the gentlest rate: almost nothing in the first 0.1 s, then one straight ramp of the jerk limit
+up to the stock value at ONSET_T_BP[-1], so the soft start blends into the normal brake without a second bend
+(road test 2026-09-20: a two-stage schedule that stayed light until 0.2 s felt disconnected from the brake that
+followed). Because the schedule keys off the *request*, a lead switch to a closer car
 during a steady brake gets the same soft onset on top of the brake already applied. Hard braking requests and FCW
 bypass the schedule entirely, and the upward (release) limit is not touched.
 """
 import numpy as np
 
-ONSET_T_BP = [0.0, 0.1, 0.2, 0.3, 0.45]  # s since the request began falling faster than ONSET_J_DOWN[0]
-ONSET_J_DOWN = [0.4, 0.6, 1.5, 3.0, 4.0]  # m/s^3 downward jerk limit; last value equals the stock limit
+ONSET_T_BP = [0.0, 0.1, 0.3]  # s since the request began falling faster than ONSET_J_DOWN[0]
+ONSET_J_DOWN = [0.4, 0.5, 4.0]  # m/s^3 downward jerk limit: very light for 0.1 s, then one straight blend to the stock limit
 HARD_BRAKE_ACCEL = -2.0  # m/s^2, requests below this are urgent and get the stock limit straight away
 
 
