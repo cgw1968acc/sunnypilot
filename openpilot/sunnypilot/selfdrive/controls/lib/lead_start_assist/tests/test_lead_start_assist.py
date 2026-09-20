@@ -95,7 +95,7 @@ class TestLeadStartAssist(unittest.TestCase):
     assist = LeadStartAssist(DT)
     self.assertIsNone(settle(assist, d_rel=20.0))
     self.assertFalse(assist.armed)
-    self.assertIsNone(settle(assist, d_rel=2.0))
+    self.assertIsNone(settle(assist, d_rel=1.5))
     self.assertFalse(assist.armed)
 
   def test_new_closer_lead_needs_to_settle_again(self):

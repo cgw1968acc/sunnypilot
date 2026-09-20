@@ -19,7 +19,7 @@ import numpy as np
 
 V_EGO_STOPPED = 0.3  # m/s, ego counts as stopped below this while arming
 V_EGO_HANDOFF = 1.2  # m/s, once ego rolls faster than this the MPC has clearly taken over
-LEAD_D_MIN = 2.5  # m, closest lead the assist will ever push towards
+LEAD_D_MIN = 2.0  # m, closest lead the assist will ever push towards (stops land at STOP_GAP = 3.0 m)
 LEAD_D_MAX = 12.0  # m, farthest lead that counts as "the car we are queued behind"
 LEAD_V_STATIONARY = 0.2  # m/s, lead speed below which it counts as stopped while arming
 ARM_TIME = 0.2  # s, both cars stopped for this long before the assist is armed
@@ -27,7 +27,7 @@ LEAD_JUMP = 1.0  # m, a gap that closes this much in one frame is a different ca
 LEAD_V_GO = 0.25  # m/s, raw lead speed that counts as "it is moving" (radar noise floor at a stop is < 0.1, rlog 2026-09-20)
 LEAD_D_GO = 0.3  # m, gap growth since the stop that counts as "it is moving"
 GO_CONFIRM_TIME = 0.1  # s, either departure signal must hold this long (2 planner frames)
-GAP_MIN_ACTIVE = 3.0  # m, release the floor if the gap gets this small
+GAP_MIN_ACTIVE = 2.3  # m, release the floor if the gap gets this small
 LEAD_CLOSING_V_REL = -0.25  # m/s, release the floor once the lead is clearly slower than ego (gap shrinking)
 ACTIVE_T_BP = [0.0, 0.5]  # s since the departure was seen
 ACTIVE_A_V = [0.45, 0.65]  # m/s^2 floor on the planner's acceleration target; the PCM took ~0.5 s to roll once the request passed 0.3
