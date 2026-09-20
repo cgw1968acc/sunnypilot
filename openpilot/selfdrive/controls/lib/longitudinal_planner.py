@@ -169,14 +169,13 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     lead_one = sm['radarState'].leadOne
     long_allowed = (not long_control_off and not force_decel and not sm['carState'].brakePressed and
                     not sm['carState'].gasPressed)
-    a_stop_gap = None
+    stop_gap_out = None
     if self.mpc.source == LongitudinalPlanSource.lead0:
-      a_stop_gap = self.stop_gap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, output_a_target_mpc)
+      stop_gap_out = self.stop_gap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, output_a_target_mpc)
     else:
       self.stop_gap.reset()
-    if a_stop_gap is not None:
-      output_a_target_mpc = a_stop_gap
-      output_should_stop_mpc = should_stop(v_ego, output_a_target_mpc)
+    if stop_gap_out is not None:
+      output_a_target_mpc, output_should_stop_mpc = stop_gap_out
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop)]
