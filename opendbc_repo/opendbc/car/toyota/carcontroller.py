@@ -12,6 +12,7 @@ from opendbc.car.toyota.values import CAR, NO_STOP_TIMER_CAR, TSS2_CAR, \
                                         CarControllerParams, ToyotaFlags
 from opendbc.can import CANPacker
 from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController
+from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
@@ -84,6 +85,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     self.accel = 0
     self.prev_accel = 0
+    self.brake_onset = BrakeOnsetShaper(DT_CTRL * 3, -ACCEL_WINDDOWN_LIMIT / (DT_CTRL * 3))
     # *** end long control state ***
 
     self.packer = CANPacker(dbc_names[Bus.pt])
@@ -235,10 +237,15 @@ class CarController(CarControllerBase, GasInterceptorCarController):
           else:
             self.distance_button = 0
 
-        # internal PCM gas command can get stuck unwinding from negative accel so we apply a generous rate limit
+        # internal PCM gas command can get stuck unwinding from negative accel so we apply a generous rate limit.
+        # the downward step follows the brake onset schedule so a new brake request eases in like a driver's foot
         pcm_accel_cmd = actuators.accel
         if CC.longActive:
-          pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, ACCEL_WINDDOWN_LIMIT, ACCEL_WINDUP_LIMIT)
+          winddown_step = self.brake_onset.down_step(pcm_accel_cmd, self.prev_accel,
+                                                     bypass=self.brake_onset.is_urgent(pcm_accel_cmd, fcw_alert))
+          pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, winddown_step, ACCEL_WINDUP_LIMIT)
+        else:
+          self.brake_onset.reset()
         self.prev_accel = pcm_accel_cmd
 
         # calculate amount of acceleration PCM should apply to reach target, given pitch.

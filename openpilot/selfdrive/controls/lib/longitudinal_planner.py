@@ -16,6 +16,7 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
+from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
@@ -66,6 +67,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.fcw = False
     self.dt = dt
     self.allow_throttle = True
+    self.lead_start_assist = LeadStartAssist(self.dt)
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -109,6 +111,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       self.v_desired_filter.x = v_ego
       self.output_a_target = np.clip(sm['carState'].aEgo, ACCEL_MIN, ACCEL_MAX)
       self.a_cruise = self.output_a_target
+      self.lead_start_assist.reset()
 
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
@@ -165,6 +168,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
     self.output_should_stop = any(should_stop for _, _, should_stop in candidates)
+
+    # Lead start assist: when stopped behind a lead that starts to move, put a floor under the target right away
+    # instead of waiting for the lead MPC to close the gap. Never while the driver or e2e is asking for a stop.
+    lead_one = sm['radarState'].leadOne
+    assist_allowed = (not long_control_off and not force_decel and not sm['carState'].brakePressed and
+                      not sm['carState'].gasPressed and not (is_e2e and output_should_stop_e2e))
+    a_start = self.lead_start_assist.update(assist_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, lead_one.vRel)
+    if a_start is not None and a_start > output_a_target:
+      output_a_target = a_start
+      self.output_should_stop = False
     self.output_a_target = np.clip(output_a_target, ACCEL_MIN, ACCEL_MAX)
     self.accel_controller_active = self.is_accel_controller_active(force_decel)
 
