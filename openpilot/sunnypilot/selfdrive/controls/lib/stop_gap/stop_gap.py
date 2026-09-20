@@ -18,7 +18,7 @@ STOP_GAP with the closing speed bled off gently instead of overshooting and slam
 It only ever adds braking: the returned target is min(this demand, the MPC's own target), so it can tighten a stop
 but never brakes less than the MPC for a genuinely decelerating lead, and it hands back (returns None) the moment
 the lead is opening faster than ego (a real pull-away, left to the MPC and the lead start assist). At and below
-V_HOLD near the point it holds A_HOLD, which becomes the standstill parking brake; the release from the MPC's
+the release from the MPC's
 target at engage is rate limited so taking over never lets the brake go with a jolt.
 """
 import numpy as np
@@ -29,10 +29,8 @@ S_ENGAGE = 9.0  # m, distance to the stop point below which it engages
 CREEP_LEAD_V = 2.0  # m/s, lead speed below which the governor manages the follow (above this the MPC does)
 LEAD_STOPPED_V = 0.25  # m/s, lead speed below which it counts as fully stopped (min brake + parking hold apply)
 HANDBACK_V_REL = 0.2  # m/s, lead opening faster than ego by this much is a pull-away: hand back to the MPC
-A_MIN = 0.2  # m/s^2, least deceleration demanded while closing on a stopped lead (so it actually reaches the stop)
+A_MIN = 0.12  # m/s^2, least deceleration while closing on a stopped lead: gentle, so the last metres glide in
 A_NEG_MAX = -2.0  # m/s^2, hardest braking the governor asks for (a cut-in closer than that is the MPC's problem)
-A_HOLD = 0.4  # m/s^2, brake below V_HOLD and past the point; the hybrid creeps off again with less
-V_HOLD = 0.5  # m/s
 S_MIN = 0.1  # m, floor on the distance used in v_close^2 / (2 s)
 TAU_CLOSE = 0.6  # s, how quickly the closing-speed error is turned into deceleration when not on the stopping curve
 RELEASE_RATE = 1.0  # m/s^3, fastest the demand may get lighter, from the MPC's target at engage
@@ -72,13 +70,12 @@ class StopGapGovernor:
     if s <= 0.0:
       decel = -A_NEG_MAX  # past the point: brake firmly, MPC clamp below still applies
     else:
+      # deceleration that zeroes the closing speed at the point; it tapers to a light glide as v and s shrink,
+      # like easing off the pedal for the last metre. The firm standstill hold is longcontrol + stopAccel, not here.
       decel = v_close ** 2 / (2.0 * max(s, S_MIN))
       floor = A_MIN if lead_stopped else 0.0
       decel = float(np.clip(decel, floor, -A_NEG_MAX))
     a = -decel
-
-    if lead_stopped and (v_ego < V_HOLD or s <= 0.0):
-      a = min(a, -A_HOLD)
 
     a = min(a, float(a_current))                       # never brake less than the MPC
     a = min(a, self.a_prev + RELEASE_RATE * self.dt)   # and never let go with a jolt
