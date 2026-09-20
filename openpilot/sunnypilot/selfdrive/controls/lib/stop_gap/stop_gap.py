@@ -15,9 +15,11 @@ ends exactly STOP_GAP metres from the lead:
 
 where s is the distance still to travel. a_nom is fixed when the governor engages: the constant deceleration that
 stops ego at the point from where it is right then (at least A_NOM, at most A_NOM_MAX), so engaging never steps the
-brake. The profile's own deceleration is fed forward and a velocity loop corrects the rest. A small positive target
-is allowed only within S_POS_MAX of the stop point while still rolling, so a stop that landed long is corrected by
-rolling on, never by restarting and never on the approach.
+brake. The profile's own deceleration is fed forward and a slow velocity loop corrects the rest, but the loop may
+only ease the brake down to RELEASE_FRACTION of the feed-forward, never to zero and never positive: on the hybrid a
+zero request releases the brakes and creep pushes the car, and with the PCM's low-speed overshoot that turned into
+a stop-and-go cycle on the first road test (2026-09-20). The target is therefore always a brake that only gets
+lighter as the stop point nears. A stop that lands long stays long.
 """
 import math
 import numpy as np
@@ -29,11 +31,9 @@ LEAD_STOPPED_V = 0.25  # m/s, lead speed below which it counts as stopped (match
 A_NOM = 0.8  # m/s^2, least deceleration of the constant-decel part of the profile
 A_NOM_MAX = 1.5  # m/s^2, most the profile is steepened to for an ego that arrives fast; beyond that the MPC's brake stays
 V_TAPER = 0.5  # m/s, speed at which the profile switches from constant deceleration to the linear taper
-TAU_V = 0.5  # s, velocity loop time constant
-A_POS_MAX = 0.2  # m/s^2, most the governor may ask for while rolling towards the stop point
-S_POS_MAX = 2.0  # m, positive targets only this close to the stop point (a stop that landed long), never on the approach
+TAU_V = 0.8  # s, velocity loop time constant
+RELEASE_FRACTION = 0.25  # the loop may lighten the brake to this fraction of the profile's own deceleration, no further
 A_NEG_MAX = -2.0  # m/s^2, hardest braking the governor asks for (a cut-in closer than that is the MPC's problem)
-V_ROLLING = 0.1  # m/s, below this ego counts as stopped and only zero or negative targets are given
 DISENGAGE_MARGIN = 1.0  # hysteresis on V_ENGAGE and S_ENGAGE once engaged
 
 
@@ -51,13 +51,15 @@ def v_max_profile(s: float, a_nom: float = A_NOM) -> float:
   return math.sqrt(V_TAPER ** 2 + 2.0 * a_nom * (s - s_taper))
 
 
-def a_profile(s: float, v: float, a_nom: float = A_NOM) -> float:
+def a_profile(s: float, a_nom: float = A_NOM) -> float:
   """Deceleration the profile itself carries at this point: fed forward so the velocity loop only corrects errors."""
   if s <= 0.0:
     return 0.0
   s_taper = taper_distance(a_nom)
   if s <= s_taper:
-    return -(V_TAPER / s_taper) * v
+    # the taper's deceleration as a function of position (what tracking v_max = V_TAPER * s / s_taper implies), so the
+    # feed-forward stays continuous at the taper boundary whatever the actual speed is
+    return -a_nom * s / s_taper
   return -a_nom
 
 
@@ -88,6 +90,6 @@ class StopGapGovernor:
       self.a_nom = float(np.clip(v_ego ** 2 / (2.0 * max(s, 0.1)), A_NOM, A_NOM_MAX))
       self.engaged = True
 
-    a = a_profile(s, v_ego, self.a_nom) + (v_max_profile(s, self.a_nom) - v_ego) / TAU_V
-    a_pos = A_POS_MAX if (v_ego > V_ROLLING and s < S_POS_MAX) else 0.0
-    return float(np.clip(a, A_NEG_MAX, a_pos))
+    a_ff = a_profile(s, self.a_nom)
+    a = a_ff + (v_max_profile(s, self.a_nom) - v_ego) / TAU_V
+    return float(np.clip(a, A_NEG_MAX, RELEASE_FRACTION * a_ff))

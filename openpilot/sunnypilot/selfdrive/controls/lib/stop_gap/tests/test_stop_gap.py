@@ -1,7 +1,7 @@
 import unittest
 
-from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import (StopGapGovernor, STOP_GAP, A_POS_MAX, A_NEG_MAX,
-                                                                          V_ENGAGE, S_ENGAGE)
+from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import (StopGapGovernor, STOP_GAP, A_NEG_MAX, V_ENGAGE, S_ENGAGE,
+                                                                          RELEASE_FRACTION, a_profile)
 
 DT = 0.05
 
@@ -37,11 +37,12 @@ class TestStopGapGovernor(unittest.TestCase):
     self.assertLessEqual(max(targets), 0.0)  # never accelerates on the approach
     self.assertGreater(min(targets), -1.2)  # and no sharp catch-up braking
 
-  def test_stops_at_the_gap_when_the_mpc_would_have_stopped_long(self):
-    # ego already slow with 1.3 m to spare: rolls on to the stop point instead of stopping at 4.8 m
-    v, gap, _, _ = approach(0.6, 4.3, mpc=lambda v, gap: -1.5)
+  def test_slow_arrival_is_not_pushed_on_and_never_released_to_zero(self):
+    # ego already slow with 1.3 m to spare: the brake only gets lighter, it never lets go and never pushes
+    v, gap, _, targets = approach(0.6, 4.3, mpc=lambda v, gap: -1.5)
     self.assertEqual(v, 0.0)
-    self.assertAlmostEqual(gap, STOP_GAP + 0.1, delta=0.15)
+    self.assertLess(max(targets), 0.0)
+    self.assertLess(gap, 4.3)
 
   def test_stops_at_the_gap_when_arriving_fast(self):
     v, gap, _, targets = approach(3.0, 7.5)
@@ -51,18 +52,25 @@ class TestStopGapGovernor(unittest.TestCase):
 
   def test_deceleration_tapers_out_at_the_end(self):
     gov = StopGapGovernor()
-    # crawling in with 0.3 m to go at the profile speed: barely any braking asked for
-    a = gov.update(True, 0.36, True, STOP_GAP + 0.3, 0.0)
-    self.assertGreater(a, -0.5)
+    # crawling in with 0.1 m to go near the profile speed: only a light brake left, and still a brake
+    a = gov.update(True, 0.15, True, STOP_GAP + 0.1, 0.0)
+    self.assertGreater(a, -0.4)
     self.assertLess(a, 0.0)
 
-  def test_never_positive_when_stopped(self):
+  def test_never_positive_and_never_lighter_than_half_the_profile(self):
     gov = StopGapGovernor()
-    self.assertLessEqual(gov.update(True, 0.0, True, STOP_GAP + 1.0, 0.0), 0.0)
-    self.assertLessEqual(gov.update(True, 0.05, True, STOP_GAP + 1.0, 0.0), 0.0)
-    self.assertLessEqual(gov.update(True, 0.5, True, STOP_GAP + 2.0, 0.0), 0.0)  # positive only close to the stop point
-    self.assertLessEqual(gov.update(True, 0.3, True, STOP_GAP + 1.0, 0.0), A_POS_MAX)
-    self.assertGreater(gov.update(True, 0.3, True, STOP_GAP + 1.0, 0.0), 0.0)
+    for v, gap in ((0.0, STOP_GAP + 1.0), (0.05, STOP_GAP + 1.0), (0.3, STOP_GAP + 1.0), (0.5, STOP_GAP + 2.0), (0.2, STOP_GAP + 5.0)):
+      gov.reset()
+      a = gov.update(True, v, True, gap, 0.0)
+      self.assertLessEqual(a, RELEASE_FRACTION * a_profile(gap - STOP_GAP, gov.a_nom) + 1e-9)
+      self.assertLessEqual(a, 0.0)
+
+  def test_brake_only_eases_as_the_stop_nears(self):
+    # a car braked harder than the profile (PCM overshoot) gets a lighter brake, monotonically, not a release
+    _, _, _, targets = approach(1.2, 5.0, lag=0.3)
+    self.assertLess(max(targets), 0.0)
+    steps = [b - a for a, b in zip(targets, targets[1:], strict=False)]
+    self.assertLess(max(steps), 0.1)  # no sudden release, per 50 ms frame
 
   def test_brakes_when_past_the_stop_point(self):
     gov = StopGapGovernor()
