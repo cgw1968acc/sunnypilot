@@ -125,7 +125,7 @@ class CarInterface(CarInterfaceBase):
         # longcontrol's stopping state ramps the brake to stopAccel and holds it. -0.02 is too light to resist the
         # hybrid's creep torque, so the car rolls on after stopping; a firmer hold clamps it. The ramp
         # (STOPPING_DECEL_RATE) makes the firming gentle, like re-pressing the pedal once stopped.
-        ret.stopAccel = -0.30
+        ret.stopAccel = -0.45
 
     return ret
 

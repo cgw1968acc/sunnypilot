@@ -2,11 +2,10 @@ import unittest
 
 import numpy as np
 
-from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import (StopGapGovernor, STOP_GAP, A_NEG_MAX, V_ENGAGE, S_ENGAGE,
-                                                                          A_MIN, CREEP_LEAD_V, RELEASE_RATE)
+from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import (StopGapGovernor, STOP_GAP, A_NEG_MAX, V_ENGAGE, A_MIN, CREEP_LEAD_V, RELEASE_RATE)
 
 DT = 0.05
-STOP_ACCEL = -0.30          # hybrid stopAccel (Toyota interface)
+STOP_ACCEL = -0.45          # hybrid stopAccel (Toyota interface)
 STOPPING_DECEL_RATE = 0.3   # longcontrol ramp toward stopAccel
 
 
@@ -101,14 +100,14 @@ class TestStopGapGovernor(unittest.TestCase):
 
   def test_only_ever_adds_braking_relative_to_the_mpc(self):
     gov = StopGapGovernor(DT)
-    a = gov.update(True, 0.5, True, STOP_GAP + 5.0, 0.0, -0.6)
+    a = gov.update(True, 0.5, True, STOP_GAP + 2.5, 0.0, -0.6)   # inside the (speed-scaled) engage window
     self.assertLessEqual(a, -0.6 + 1e-9)
-    self.assertIsNone(gov.update(True, 0.5, True, STOP_GAP + 11.0, 0.0, -0.6))
+    self.assertIsNone(gov.update(True, 0.5, True, STOP_GAP + 11.0, 0.0, -0.6))  # far out at low speed: MPC keeps control
 
   def test_release_from_the_mpc_is_rate_limited(self):
     gov = StopGapGovernor(DT)
-    gov.update(True, 0.4, True, STOP_GAP + 6.0, 0.0, -0.9)
-    a1 = gov.update(True, 0.4, True, STOP_GAP + 6.0, 0.0, -0.1)
+    gov.update(True, 0.4, True, STOP_GAP + 2.5, 0.0, -0.9)
+    a1 = gov.update(True, 0.4, True, STOP_GAP + 2.5, 0.0, -0.1)
     self.assertAlmostEqual(a1, -0.9 + RELEASE_RATE * DT, places=6)
 
   def test_glide_floor_keeps_a_light_brake_near_the_stop(self):
@@ -124,11 +123,16 @@ class TestStopGapGovernor(unittest.TestCase):
 
   def test_engage_window_with_hysteresis(self):
     gov = StopGapGovernor(DT)
-    self.assertIsNone(gov.update(True, V_ENGAGE + 0.5, True, STOP_GAP + 5.0, 0.0, -0.5))
-    self.assertIsNone(gov.update(True, 2.0, True, STOP_GAP + S_ENGAGE + 0.5, 0.0, -0.5))
-    self.assertIsNotNone(gov.update(True, 2.0, True, STOP_GAP + 5.0, 0.0, -0.5))
-    self.assertIsNotNone(gov.update(True, V_ENGAGE + 0.5, True, STOP_GAP + 5.0, 0.0, -0.5))
+    # too fast (above V_ENGAGE): MPC keeps control
     self.assertIsNone(gov.update(True, V_ENGAGE + 1.5, True, STOP_GAP + 5.0, 0.0, -0.5))
+    # at 2 m/s a stop is due within ~5 m: engages
+    self.assertIsNotNone(gov.update(True, 2.0, True, STOP_GAP + 4.0, 0.0, -0.5))
+    # at 6 m/s it engages much earlier (a comfortable stop needs ~18 m)
+    gov.reset()
+    self.assertIsNotNone(gov.update(True, 6.0, True, STOP_GAP + 18.0, 0.0, -0.5))
+    # but not from 45 m out at 6 m/s (no braking due yet)
+    gov.reset()
+    self.assertIsNone(gov.update(True, 6.0, True, STOP_GAP + 45.0, 0.0, -0.5))
 
 
 if __name__ == "__main__":
