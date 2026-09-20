@@ -69,7 +69,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.dt = dt
     self.allow_throttle = True
     self.lead_start_assist = LeadStartAssist(self.dt)
-    self.stop_gap = StopGapGovernor()
+    self.stop_gap = StopGapGovernor(self.dt)
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -171,7 +171,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                     not sm['carState'].gasPressed)
     a_stop_gap = None
     if self.mpc.source == LongitudinalPlanSource.lead0:
-      a_stop_gap = self.stop_gap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead)
+      a_stop_gap = self.stop_gap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, output_a_target_mpc)
     else:
       self.stop_gap.reset()
     if a_stop_gap is not None:
