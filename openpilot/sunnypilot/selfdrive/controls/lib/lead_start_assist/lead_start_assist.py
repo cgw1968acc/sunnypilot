@@ -25,7 +25,9 @@ LEAD_V_STATIONARY = 0.2  # m/s, lead speed below which it counts as stopped whil
 ARM_TIME = 0.2  # s, both cars stopped for this long before the assist is armed
 LEAD_JUMP = 1.0  # m, a gap that closes this much in one frame is a different car (cut-in), start over
 LEAD_V_GO = 0.25  # m/s, raw lead speed that counts as "it is moving" (radar noise floor at a stop is < 0.1, rlog 2026-09-20)
-LEAD_D_GO = 0.3  # m, gap growth since the stop that counts as "it is moving"
+LEAD_D_GO = 0.5  # m, gap growth since the stop that counts as "it is moving"
+LEAD_V_CONFIRM = 0.15  # m/s, gap growth only counts as a departure when the lead speed also shows motion,
+                       # so a stationary lead's radar drift or an ego roll-back can never relaunch the car
 GO_CONFIRM_TIME = 0.1  # s, either departure signal must hold this long (2 planner frames)
 GAP_MIN_ACTIVE = 2.3  # m, release the floor if the gap gets this small
 LEAD_CLOSING_V_REL = -0.25  # m/s, release the floor once the lead is clearly slower than ego (gap shrinking)
@@ -89,7 +91,8 @@ class LeadStartAssist:
     # armed: both cars have been stopped together, watch for the lead to leave
     self.d_stop = min(self.d_stop, d_rel)
     self.t_lead_moving = self.t_lead_moving + self.dt if v_lead >= LEAD_V_GO else 0.0
-    self.t_gap_growing = self.t_gap_growing + self.dt if d_rel - self.d_stop >= LEAD_D_GO else 0.0
+    gap_departure = (d_rel - self.d_stop >= LEAD_D_GO) and (v_lead >= LEAD_V_CONFIRM)
+    self.t_gap_growing = self.t_gap_growing + self.dt if gap_departure else 0.0
     if max(self.t_lead_moving, self.t_gap_growing) >= GO_CONFIRM_TIME - 1e-6:
       self.t_active = 0.0
       return ACTIVE_A_V[0]

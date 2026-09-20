@@ -29,11 +29,18 @@ class TestLeadStartAssist(unittest.TestCase):
     self.assertAlmostEqual(out, ACTIVE_A_V[0])
     self.assertTrue(assist.active)
 
-  def test_gap_growth_triggers_even_when_lead_speed_reads_low(self):
+  def test_gap_growth_needs_real_lead_motion_to_trigger(self):
+    # gap opens by 0.5 m but the lead speed reads ~0 (radar drift / ego roll-back): must NOT relaunch
     assist = LeadStartAssist(DT)
     settle(assist, d_rel=5.5)
-    self.assertIsNone(assist.update(True, 0.0, True, 5.85, 0.2, 0.2))
-    self.assertAlmostEqual(assist.update(True, 0.0, True, 5.9, 0.2, 0.2), ACTIVE_A_V[0])
+    self.assertIsNone(assist.update(True, 0.0, True, 6.05, 0.05, 0.05))
+    self.assertIsNone(assist.update(True, 0.0, True, 6.10, 0.05, 0.05))
+    self.assertFalse(assist.active)
+    # same gap opening but the lead is actually moving: trigger
+    assist = LeadStartAssist(DT)
+    settle(assist, d_rel=5.5)
+    self.assertIsNone(assist.update(True, 0.0, True, 6.05, 0.2, 0.2))
+    self.assertAlmostEqual(assist.update(True, 0.0, True, 6.10, 0.2, 0.2), ACTIVE_A_V[0])
 
   def test_radar_jitter_does_not_trigger(self):
     assist = LeadStartAssist(DT)
