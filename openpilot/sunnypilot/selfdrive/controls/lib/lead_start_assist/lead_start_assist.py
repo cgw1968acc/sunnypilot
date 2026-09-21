@@ -28,11 +28,12 @@ LEAD_V_GO = 0.25  # m/s, raw lead speed that counts as "it is moving" (radar noi
 LEAD_D_GO = 0.5  # m, gap growth since the stop that counts as "it is moving"
 LEAD_V_CONFIRM = 0.15  # m/s, gap growth only counts as a departure when the lead speed also shows motion,
                        # so a stationary lead's radar drift or an ego roll-back can never relaunch the car
-GO_CONFIRM_TIME = 0.1  # s, either departure signal must hold this long (2 planner frames)
+GO_CONFIRM_TIME = 0.25  # s, the departure signal must hold this long so a 1-2 frame radar-speed spike on a
+                        # STILL lead (noise, ~0.25 m/s) does not trigger a push into it (rlog 2026-09-20 t=340.8)
 GAP_MIN_ACTIVE = 2.3  # m, release the floor if the gap gets this small
 LEAD_CLOSING_V_REL = -0.25  # m/s, release the floor once the lead is clearly slower than ego (gap shrinking)
 ACTIVE_T_BP = [0.0, 0.5]  # s since the departure was seen
-ACTIVE_A_V = [0.45, 0.65]  # m/s^2 floor on the planner's acceleration target; the PCM took ~0.5 s to roll once the request passed 0.3
+ACTIVE_A_V = [0.35, 0.5]  # m/s^2 floor on the planner's acceleration target: gentle follow-away, not a lurch
 ACTIVE_TIMEOUT = 3.0  # s, hand back to the MPC no matter what after this long
 
 
@@ -67,8 +68,10 @@ class LeadStartAssist:
 
     if self.t_active is not None:
       self.t_active += self.dt
+      # release if rolling, timed out, gap too small, the lead is slower than ego (gap closing), or the gap has
+      # actually shrunk since arming (we are pushing INTO a lead that did not really depart)
       if (v_ego > V_EGO_HANDOFF or self.t_active > ACTIVE_TIMEOUT or
-          d_rel < GAP_MIN_ACTIVE or v_rel < LEAD_CLOSING_V_REL):
+          d_rel < GAP_MIN_ACTIVE or v_rel < LEAD_CLOSING_V_REL or d_rel < self.d_stop - 0.3):
         self.reset()
         return None
       return float(np.interp(self.t_active, ACTIVE_T_BP, ACTIVE_A_V))
