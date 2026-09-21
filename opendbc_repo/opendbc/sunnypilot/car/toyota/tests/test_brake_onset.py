@@ -26,11 +26,11 @@ def at(out, t):
 class TestBrakeOnset:
   def test_step_brake_eases_in_over_the_first_third_of_a_second(self):
     out = run([-1.5] * 40)
-    assert at(out, 0.09) > -0.05  # first 0.1 s: barely anything
-    assert -0.25 < at(out, 0.21) < -0.10  # 0.2 s: blending in
-    assert -0.60 < at(out, 0.30) < -0.40  # 0.3 s: at the stock rate now
-    assert at(out, 0.45) < -1.0  # 0.45 s: on the stock ramp
-    assert np.isclose(at(out, 0.57), -1.5, atol=1e-6)  # settled ~0.2 s after the stock ramp would
+    assert at(out, 0.09) > -0.06  # first 0.15 s: barely anything
+    assert at(out, 0.21) > -0.12  # 0.2 s: still very light
+    assert -0.45 < at(out, 0.36) < -0.15  # ~0.35 s: building
+    assert at(out, 0.60) < -1.0  # on the stock ramp now
+    assert np.isclose(at(out, 0.75), -1.5, atol=1e-6)  # settled
 
   def test_jerk_follows_the_schedule_and_never_exceeds_stock(self):
     out = run([-1.9] * 60, a0=1.0)  # large step, still above the hard-brake bypass
@@ -65,7 +65,7 @@ class TestBrakeOnset:
     assert np.isclose(out[0], -1.5 + UP_STEP, atol=1e-6)
 
   def test_gentle_request_passes_straight_through(self):
-    reqs = list(np.linspace(0.0, -0.3, 40))  # ~0.25 m/s^3, below the gentlest onset limit
+    reqs = list(np.linspace(0.0, -0.2, 40))  # ~0.17 m/s^3, below the gentlest onset limit (0.25)
     out = run(reqs)
     assert np.allclose(out, reqs, atol=1e-9)
 

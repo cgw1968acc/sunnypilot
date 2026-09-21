@@ -122,10 +122,11 @@ class CarInterface(CarInterfaceBase):
       # Hybrids have much quicker longitudinal actuator response
       if ret.flags & ToyotaFlags.HYBRID.value:
         ret.longitudinalActuatorDelay = 0.05
-        # longcontrol's stopping state ramps the brake to stopAccel and holds it. -0.02 is too light to resist the
-        # hybrid's creep torque, so the car rolls on after stopping; a firmer hold clamps it. The ramp
-        # (STOPPING_DECEL_RATE) makes the firming gentle, like re-pressing the pedal once stopped.
-        ret.stopAccel = -0.45
+        # longcontrol's stopping state ramps the brake to stopAccel and holds it. -0.02 is far too light to resist
+        # the hybrid's creep torque, so the car rolls on after stopping; a firm hold clamps it dead. The ramp
+        # (STOPPING_DECEL_RATE 0.3 m/s^2/s) firms in gently over ~3 s from the light glide, like re-pressing the pedal
+        # once stopped, so the approach stays soft while the final hold is firm.
+        ret.stopAccel = -1.0
 
     return ret
 

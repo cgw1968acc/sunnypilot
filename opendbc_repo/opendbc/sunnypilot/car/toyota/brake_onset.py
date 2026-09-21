@@ -17,8 +17,8 @@ bypass the schedule entirely, and the upward (release) limit is not touched.
 """
 import numpy as np
 
-ONSET_T_BP = [0.0, 0.1, 0.3]  # s since the request began falling faster than ONSET_J_DOWN[0]
-ONSET_J_DOWN = [0.4, 0.5, 4.0]  # m/s^3 downward jerk limit: very light for 0.1 s, then one straight blend to the stock limit
+ONSET_T_BP = [0.0, 0.15, 0.45]  # s since the request began falling faster than ONSET_J_DOWN[0]
+ONSET_J_DOWN = [0.25, 0.4, 4.0]  # m/s^3 downward jerk limit: barely anything for 0.15 s, then blend to the stock limit
 HARD_BRAKE_ACCEL = -2.0  # m/s^2, requests below this are urgent and get the stock limit straight away
 
 

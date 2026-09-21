@@ -6,7 +6,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import (StopG
                                                                           CREEP_LEAD_V, RELEASE_RATE)
 
 DT = 0.05
-STOP_ACCEL = -0.45          # hybrid stopAccel (Toyota interface)
+STOP_ACCEL = -1.0          # hybrid stopAccel (Toyota interface)
 STOPPING_DECEL_RATE = 0.3   # longcontrol ramp toward stopAccel
 
 

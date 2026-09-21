@@ -36,6 +36,7 @@ TAU_V = 0.6  # s, velocity-loop time constant that pulls ego onto the profile
 A_NEG_MAX = -2.0  # m/s^2, hardest braking the governor asks for
 A_PAST = 1.0  # m/s^2, firm (not full-force) brake once past the point
 V_STOP_CLAMP = 0.3  # m/s, and only once nearly stopped
+A_CREEP_FLOOR = 0.06  # m/s^2, smallest brake kept near the stop so the hybrid never creeps off a dead stop
 S_MIN = 0.1  # m
 RELEASE_RATE = 1.0  # m/s^3, fastest the demand may get lighter, from the MPC's target at engage
 DISENGAGE_MARGIN = 1.0
@@ -89,10 +90,10 @@ class StopGapGovernor:
     else:
       v_prof, a_ff = _profile(s, self.a_nom)
       decel = a_ff + (v_close - v_prof) / TAU_V   # feed-forward profile decel + pull onto the profile
-      # clip to a brake only, but allow release to zero: if the car has fallen behind the profile (braked too hard,
-      # e.g. the PCM over-delivered), the brake comes off so it coasts/creeps the last bit to the point instead of
-      # stopping short and then jerking forward
-      decel = float(np.clip(decel, 0.0, -A_NEG_MAX))
+      # keep a small brake floor near the stop (v_ego < V_TAPER) so the car never fully releases and creeps off a
+      # dead stop; above that the profile can still ease to zero. The firm standstill clamp (stopAccel) does the hold.
+      lo = A_CREEP_FLOOR if v_ego < V_TAPER else 0.0
+      decel = float(np.clip(decel, lo, -A_NEG_MAX))
       a = -decel
 
     a = min(a, float(a_current))                       # never brake less than the MPC
