@@ -22,11 +22,12 @@ V_EGO_HANDOFF = 1.2  # m/s, once ego rolls faster than this the MPC has clearly 
 LEAD_D_MIN = 2.0  # m, closest lead the assist will ever push towards (stops land at STOP_GAP = 3.0 m)
 LEAD_D_MAX = 12.0  # m, farthest lead that counts as "the car we are queued behind"
 LEAD_V_STATIONARY = 0.2  # m/s, lead speed below which it counts as stopped while arming
-ARM_TIME = 0.2  # s, both cars stopped for this long before the assist is armed
+ARM_TIME = 0.1  # s, both cars stopped for this long before the assist is armed
 LEAD_JUMP = 1.0  # m, a gap that closes this much in one frame is a different car (cut-in), start over
-LEAD_V_GO = 0.25  # m/s, raw lead speed that counts as "it is moving" (radar noise floor at a stop is < 0.1, rlog 2026-09-20)
-LEAD_D_GO = 0.5  # m, gap growth since the stop that counts as "it is moving"
-LEAD_V_CONFIRM = 0.15  # m/s, gap growth only counts as a departure when the lead speed also shows motion,
+LEAD_V_GO = 0.15  # m/s, raw lead speed that counts as "it is moving"; radar noise at a stop is < 0.1 (p99 0.075),
+                  # so this is as sensitive as the noise floor allows
+LEAD_D_GO = 0.35  # m, gap growth since the stop that counts as "it is moving"
+LEAD_V_CONFIRM = 0.12  # m/s, gap growth only counts as a departure when the lead speed also shows motion,
                        # so a stationary lead's radar drift or an ego roll-back can never relaunch the car
 GO_CONFIRM_TIME = 0.1  # s, either departure signal must hold this long (2 planner frames)
 GAP_MIN_ACTIVE = 2.3  # m, release the floor if the gap gets this small
