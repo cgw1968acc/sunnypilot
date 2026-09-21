@@ -27,7 +27,10 @@ TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 100
 # openpilot commands positive acceleration. It cuts throttle somewhere above +11 and only resumes below about +7.5,
 # which turns a larger gap into a speed oscillation (option1b_findings14 section 8). The driver's target is therefore
 # capped at the PCM set speed plus this headroom, so the HUD never shows a number the car cannot reach.
-TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 5.
+# 7 km/h keeps the target-to-PCM gap below the ~+11 throttle-cut point (so no oscillation) while giving the + button
+# more room before it hits the cap; the PCM holds the car up to about +7-8 (findings14 §8). Raised from 5 after the
+# Corolla Cross reported + presses doing nothing once the target sat at the ceiling (rlog 2026-09-20).
+TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 7.
 # A long press is how the driver moves the PCM's own number (this car steps it by 1 every ~0.25 s while held). With
 # openpilot owning the set speed, the driver uses a long press to park the PCM ceiling high (e.g. 120) once per drive
 # and openpilot's own target is left untouched by it; short presses then move openpilot's target by the custom
