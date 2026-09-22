@@ -60,6 +60,7 @@ class VCruiseHelper(VCruiseHelperSP):
     self.v_cruise_kph_last = 0
     self.button_timers = {ButtonType.decelCruise: 0, ButtonType.accelCruise: 0}
     self.button_change_states = {btn: {"standstill": False, "enabled": False} for btn in self.button_timers}
+    self._sp_pending_kph = 0.0  # software set speed: accumulated short-press delta not yet applied (rapid taps)
 
   @property
   def v_cruise_initialized(self):
@@ -185,6 +186,12 @@ class VCruiseHelper(VCruiseHelperSP):
     if not enabled:
       return
 
+    # Toyota software set speed: accumulate EVERY short press (rapid taps included) and apply the total, so N quick
+    # +/- taps reliably move the target by N x increment even if they arrive faster than one press per control cycle.
+    if self.software_pcm_cruise_speed:
+      self._update_software_pcm_short_press(CS, is_metric)
+      return
+
     long_press = False
     button_type = None
 
@@ -254,11 +261,43 @@ class VCruiseHelper(VCruiseHelperSP):
 
     self.v_cruise_kph = np.clip(round(self.v_cruise_kph, 1), self.v_cruise_min, V_CRUISE_MAX)
 
+  def _update_software_pcm_short_press(self, CS, is_metric):
+    """Software set speed (Toyota): count every short-press release this cycle into a pending delta and apply the
+    whole pending amount, so rapid +/- taps accumulate accurately. A long press (hold beyond the threshold) only
+    moves the PCM ceiling and is not counted here. It does not have to keep up with the taps in real time; the total
+    is what lands on the set speed."""
+    base = 1. if is_metric else IMPERIAL_INCREMENT
+    _, per_press = VCruiseHelperSP.update_v_cruise_delta(self, False, base)
+
+    for b in CS.buttonEvents:
+      if b.type.raw not in self.button_timers or b.pressed:
+        continue
+      hold = self.button_timers[b.type.raw]
+      if hold <= 0 or hold > self.cruise_long_press_frames:
+        continue  # not a short press (spurious, or a long press = ceiling move)
+      st = self.button_change_states[b.type.raw]
+      if b.type.raw == ButtonType.accelCruise and (st["standstill"] or CS.cruiseState.standstill):
+        continue
+      if not st["enabled"]:
+        continue
+      if self.update_speed_limit_assist_pre_active_confirmed(b.type.raw):
+        continue
+      self._sp_pending_kph += per_press * CRUISE_INTERVAL_SIGN[b.type.raw]
+
+    if self._sp_pending_kph != 0.:
+      delta_kph = self._sp_pending_kph
+      # if SET is tapped while overriding, do not lower the target below the current speed
+      if CS.gasPressed and delta_kph < 0.:
+        delta_kph = max(delta_kph, CS.vEgo * CV.MS_TO_KPH - self.v_cruise_kph)
+      self._apply_software_pcm_cruise_delta(delta_kph, is_metric)
+      self._sp_pending_kph = 0.
+
   def update_button_timers(self, CS, enabled):
     if self.software_pcm_cruise_speed and (not enabled or not CS.cruiseState.available or not self.software_pcm_cruise_initialized):
       for k in self.button_timers:
         self.button_timers[k] = 0
         self.button_change_states[k] = {"standstill": False, "enabled": False}
+      self._sp_pending_kph = 0.0
       return
 
     # increment timer for buttons still pressed
