@@ -26,6 +26,9 @@ A_CRUISE_MIN = -1.2
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
+# Below this the car is launching from a stop; skip the cruise soft start so it accelerates promptly instead of
+# crawling for >1 s (Corolla Cross rlog 2026-09-21). Soft start still shapes set-speed steps while moving.
+SOFT_START_MIN_SPEED = 3.0  # m/s
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -157,6 +160,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     v_cruise = self.get_cruise_target_override(v_ego, v_cruise, force_decel)
     a_cruise_prev = self.a_cruise
     soft_start_t = self.soft_start.update(a_cruise_prev)
+    if v_ego < SOFT_START_MIN_SPEED:
+      soft_start_t = None  # launching from a stop: don't soft-start, accelerate promptly
     gated_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego, a_cruise_prev, steer_angle_without_offset,
                                     self.CP, self.dt, accel_coast, self.allow_throttle, max_accel_override, soft_start_t)
     ungated_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego, a_cruise_prev, steer_angle_without_offset,
