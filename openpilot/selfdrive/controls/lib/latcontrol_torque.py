@@ -34,6 +34,19 @@ JERK_GAIN = 0.3
 LAT_ACCEL_REQUEST_BUFFER_SECONDS = 1.0
 VERSION = 1
 
+# Corner-cutting fix (Corolla Cross rlog 2026-09-21: the e2e path sits ~0.5 m inside on curves). Relax the
+# commanded curvature by a fraction of the part above a deadzone, so the car runs a little wider (outward) in
+# proportion to how tight the curve is. Straights and small lane corrections below the deadzone are untouched.
+CURVE_OUTWARD_FRAC = 0.12
+CURVE_OUTWARD_DEADZONE = 0.003  # 1/m (~radius 330 m); only real curves are biased
+
+
+def apply_curve_outward_bias(desired_curvature: float) -> float:
+  if abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
+    return desired_curvature
+  over = desired_curvature - math.copysign(CURVE_OUTWARD_DEADZONE, desired_curvature)
+  return desired_curvature - CURVE_OUTWARD_FRAC * over
+
 class LatControlTorque(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
@@ -67,6 +80,7 @@ class LatControlTorque(LatControl):
 
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
+    desired_curvature = apply_curve_outward_bias(desired_curvature)
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
     measurement = measured_curvature * CS.vEgo ** 2
     future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
