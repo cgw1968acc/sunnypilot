@@ -75,7 +75,9 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     # *** start long control state ***
     self.long_pid = get_long_tune(self.CP, self.CP_SP, self.params)
-    self.aego = FirstOrderFilter(0.0, 0.25, DT_CTRL * 3)
+    # 0.45 s (was 0.25): the aEgo derivative feeds the jerk feed-forward below; a heavier filter keeps ~1.4 Hz
+    # accel-measurement noise from making the steady-cruise command hunt across zero (Corolla Cross rlog 2026-09-22)
+    self.aego = FirstOrderFilter(0.0, 0.45, DT_CTRL * 3)
     self.pitch = FirstOrderFilter(0, 0.5, DT_CTRL)
     self.pitch_hp = HighPassFilter(0.0, 0.25, 1.5, DT_CTRL)
 
