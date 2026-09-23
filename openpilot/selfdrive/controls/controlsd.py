@@ -28,6 +28,10 @@ State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
 
+# cap how fast the commanded curvature builds at the start of a lane change so the switch eases in instead of
+# snapping over (Corolla Cross feedback 2026-09-23). 1/m per second.
+LANE_CHANGE_START_CURV_RATE = 0.004
+
 ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
 
 
@@ -143,6 +147,10 @@ class Controls(ControlsExt):
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    if model_v2.meta.laneChangeState == LaneChangeState.laneChangeStarting:
+      max_lc_delta = LANE_CHANGE_START_CURV_RATE * DT_CTRL
+      new_desired_curvature = min(max(new_desired_curvature, self.desired_curvature - max_lc_delta),
+                                  self.desired_curvature + max_lc_delta)
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
