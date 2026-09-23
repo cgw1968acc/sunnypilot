@@ -37,13 +37,13 @@ VERSION = 1
 # Corner-cutting fix (Corolla Cross rlog 2026-09-21: the e2e path sits ~0.5 m inside on curves). Relax the
 # commanded curvature by a fraction of the part above a deadzone, so the car runs a little wider (outward) in
 # proportion to how tight the curve is. Straights and small lane corrections below the deadzone are untouched.
-CURVE_OUTWARD_FRAC = 0.14  # fraction to relax the commanded curvature in a curve (bigger = wider / further outside)
+CURVE_OUTWARD_FRAC = 0.15  # fraction to relax the commanded curvature in a fast curve (bigger = wider / further outside)
 CURVE_OUTWARD_DEADZONE = 0.0012  # 1/m (~radius 830 m): below this is a straight / small correction, untouched. Low
                                  # enough that gentle high-speed curves (85 km/h ~ 0.0022) are still biased outward.
 # The outward bias only helps at higher speed, where the path cuts the inside. On tight LOW-speed curves the car
 # tends to run WIDE instead, so relaxing the curvature there makes it worse. Fade the bias out below ~54 km/h.
-CURVE_OUTWARD_V_LO = 15.0  # m/s (~54 km/h): no bias below this
-CURVE_OUTWARD_V_HI = 22.0  # m/s (~79 km/h): full bias at/above
+CURVE_OUTWARD_V_LO = 11.1  # m/s (40 km/h): no bias below this (tight low-speed curves need the full turn-in)
+CURVE_OUTWARD_V_HI = 25.0  # m/s (90 km/h): full bias at/above
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:

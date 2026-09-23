@@ -171,14 +171,9 @@ class VCruiseHelper(VCruiseHelperSP):
       return
 
     pcm_kph = round(CS.cruiseState.speed * CV.MS_TO_KPH, 1)
-    # Show the set speed on the SAME calibration as the speedometer (vEgoCluster vs vEgo), so the set number matches
-    # what the driver reads on the gauge (set 70 -> the speedometer settles at 70). The old offset used the PCM's own
-    # cluster-vs-canonical gap taken at the parked ceiling speed, which is much larger (e.g. +7 at 84 km/h) and made
-    # the set speed read ~7 higher than the car actually drove (Corolla Cross rlog 2026-09-23).
-    if CS.vEgo > 5.0:
-      cluster_offset_kph = (CS.vEgoCluster - CS.vEgo) * CV.MS_TO_KPH
-    else:
-      cluster_offset_kph = 0.0
+    pcm_cluster_kph = round(CS.cruiseState.speedCluster * CV.MS_TO_KPH, 1) if CS.cruiseState.speedCluster > 0 else pcm_kph
+    # the cluster shows the PCM's number with a calibration offset on Toyota; keep openpilot's pair the same way
+    cluster_offset_kph = pcm_cluster_kph - pcm_kph
 
     self.v_cruise_kph = min(self.v_cruise_kph, round(pcm_kph + TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, 1))
     self.v_cruise_cluster_kph = round(self.v_cruise_kph + cluster_offset_kph, 1)
