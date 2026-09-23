@@ -68,7 +68,7 @@ class LatControlTorque(LatControl):
 
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
-    desired_curvature = apply_curve_outward_bias(desired_curvature)
+    desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
     if not active:
       output_torque = 0.0
       pid_log.active = False

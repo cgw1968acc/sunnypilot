@@ -37,20 +37,20 @@ VERSION = 1
 # Corner-cutting fix (Corolla Cross rlog 2026-09-21: the e2e path sits ~0.5 m inside on curves). Relax the
 # commanded curvature by a fraction of the part above a deadzone, so the car runs a little wider (outward) in
 # proportion to how tight the curve is. Straights and small lane corrections below the deadzone are untouched.
-CURVE_OUTWARD_FRAC = 0.15  # fraction to relax the commanded curvature in a fast curve (bigger = wider / further outside)
 CURVE_OUTWARD_DEADZONE = 0.0012  # 1/m (~radius 830 m): below this is a straight / small correction, untouched. Low
                                  # enough that gentle high-speed curves (85 km/h ~ 0.0022) are still biased outward.
 # The outward bias only helps at higher speed, where the path cuts the inside. On tight LOW-speed curves the car
-# tends to run WIDE instead, so relaxing the curvature there makes it worse. Fade the bias out below ~54 km/h.
-CURVE_OUTWARD_V_LO = 11.1  # m/s (40 km/h): no bias below this (tight low-speed curves need the full turn-in)
-CURVE_OUTWARD_V_HI = 25.0  # m/s (90 km/h): full bias at/above
+# tends to run WIDE instead, so relaxing the curvature there makes it worse. Speed schedule (m/s -> fraction):
+# 0 up to 40 km/h, 0.15 at 90 km/h, 0.16 at 120 km/h.
+CURVE_OUTWARD_V_BP = [11.1, 25.0, 33.3]   # m/s (40, 90, 120 km/h)
+CURVE_OUTWARD_FRAC_V = [0.0, 0.15, 0.16]
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
   # In a fast curve, command a slightly smaller curvature so the car runs wider and stops cutting the inside. Faded
   # out at low speed (tight curves there need the full turn-in or the car runs wide). Straights and small lane
   # corrections below the deadzone are untouched.
-  frac = CURVE_OUTWARD_FRAC * float(np.interp(v_ego, [CURVE_OUTWARD_V_LO, CURVE_OUTWARD_V_HI], [0.0, 1.0]))
+  frac = float(np.interp(v_ego, CURVE_OUTWARD_V_BP, CURVE_OUTWARD_FRAC_V))
   if frac <= 0.0 or abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
     return desired_curvature
   return desired_curvature * (1.0 - frac)
