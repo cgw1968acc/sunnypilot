@@ -29,8 +29,19 @@ LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
 
 # cap how fast the commanded curvature builds at the start of a lane change so the switch eases in instead of
-# snapping over (Corolla Cross feedback 2026-09-23). 1/m per second.
-LANE_CHANGE_START_CURV_RATE = 0.001
+# snapping over (Corolla Cross feedback 2026-09-23). The cap ramps with time-in-lane-change: gentle for the first
+# second, then opening up so the move still completes. 1/m per second, interpolated over seconds since the start.
+LANE_CHANGE_START_CURV_RATE_T = (1.0, 3.0)      # seconds since laneChangeStarting began
+LANE_CHANGE_START_CURV_RATE_V = (0.001, 0.003)  # 1/m per second at those times (held flat outside the range)
+
+
+def _lane_change_start_curv_rate(t: float) -> float:
+  (t1, t3), (r1, r3) = LANE_CHANGE_START_CURV_RATE_T, LANE_CHANGE_START_CURV_RATE_V
+  if t <= t1:
+    return r1
+  if t >= t3:
+    return r3
+  return r1 + (r3 - r1) * (t - t1) / (t3 - t1)
 
 ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
 
@@ -56,6 +67,7 @@ class Controls(ControlsExt):
     self.steer_limited_by_safety = False
     self.curvature = 0.0
     self.desired_curvature = 0.0
+    self.lane_change_start_t = 0.0
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -148,9 +160,12 @@ class Controls(ControlsExt):
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
     if model_v2.meta.laneChangeState == LaneChangeState.laneChangeStarting:
-      max_lc_delta = LANE_CHANGE_START_CURV_RATE * DT_CTRL
+      self.lane_change_start_t += DT_CTRL
+      max_lc_delta = _lane_change_start_curv_rate(self.lane_change_start_t) * DT_CTRL
       new_desired_curvature = min(max(new_desired_curvature, self.desired_curvature - max_lc_delta),
                                   self.desired_curvature + max_lc_delta)
+    else:
+      self.lane_change_start_t = 0.0
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
