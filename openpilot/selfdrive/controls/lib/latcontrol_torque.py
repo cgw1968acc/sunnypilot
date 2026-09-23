@@ -41,9 +41,9 @@ CURVE_OUTWARD_DEADZONE = 0.0012  # 1/m (~radius 830 m): below this is a straight
                                  # enough that gentle high-speed curves (85 km/h ~ 0.0022) are still biased outward.
 # The outward bias only helps at higher speed, where the path cuts the inside. On tight LOW-speed curves the car
 # tends to run WIDE instead, so relaxing the curvature there makes it worse. Speed schedule (m/s -> fraction):
-# 0 up to 40 km/h, 0.15 at 90 km/h, 0.16 at 120 km/h.
+# 0 up to 40 km/h, then 0.15 from 90 km/h up.
 CURVE_OUTWARD_V_BP = [11.1, 25.0, 33.3]   # m/s (40, 90, 120 km/h)
-CURVE_OUTWARD_FRAC_V = [0.0, 0.15, 0.16]
+CURVE_OUTWARD_FRAC_V = [0.0, 0.15, 0.15]
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
