@@ -30,7 +30,7 @@ LaneChangeDirection = log.LaneChangeDirection
 
 # cap how fast the commanded curvature builds at the start of a lane change so the switch eases in instead of
 # snapping over (Corolla Cross feedback 2026-09-23). 1/m per second.
-LANE_CHANGE_START_CURV_RATE = 0.003
+LANE_CHANGE_START_CURV_RATE = 0.001
 
 ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
 
