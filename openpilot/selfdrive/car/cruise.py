@@ -31,10 +31,11 @@ TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 100
 # more room before it hits the cap; the PCM holds the car up to about +7-8 (findings14 §8). Raised from 5 after the
 # Corolla Cross reported + presses doing nothing once the target sat at the ceiling (rlog 2026-09-20).
 TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 7.
-# Toyota's speedometer reads ~1 km/h high vs the canonical CAN speed across the usable range (Corolla Cross rlog
-# 2026-09-24, user-confirmed). Show the set speed on that same scale so the displayed set number matches the
-# speedometer at every speed: display = canonical + 1, and the car drives canonical = display - 1.
-TOYOTA_SET_SPEED_DISPLAY_OFFSET_KPH = 1.0
+# Toyota's speedometer/cluster reads a fixed ~1.4% high vs the canonical CAN speed (Corolla Cross rlog 2026-09-24:
+# vEgoCluster/vEgo ~1.013-1.017 flat with speed, so the gap is +0.5 km/h at 40 but +1.4 at 100 - a fixed +1 only
+# matches 60-90). Show the set speed on that same ratio so the displayed set number equals the speedometer at every
+# speed: display = canonical * ratio, and the car drives canonical = display / ratio (exact inverse, no rounding gap).
+TOYOTA_SPEEDO_RATIO = 1.014
 # A long press is how the driver moves the PCM's own number (this car steps it by 1 every ~0.25 s while held). With
 # openpilot owning the set speed, the driver uses a long press to park the PCM ceiling high (e.g. 120) once per drive
 # and openpilot's own target is left untouched by it; short presses then move openpilot's target by the custom
@@ -84,9 +85,9 @@ class VCruiseHelper(VCruiseHelperSP):
   def _apply_software_pcm_cruise_delta(self, delta_kph: float, is_metric: bool) -> None:
     """Apply a delta in DISPLAY (speedometer) space and keep the canonical target = display / speedo ratio, so the
     set number the driver sees and snaps on lands on the speedometer's scale."""
-    new_kph = (self.v_cruise_cluster_kph + delta_kph) - TOYOTA_SET_SPEED_DISPLAY_OFFSET_KPH
+    new_kph = (self.v_cruise_cluster_kph + delta_kph) / TOYOTA_SPEEDO_RATIO
     self.v_cruise_kph = round(float(np.clip(new_kph, self.v_cruise_min, V_CRUISE_MAX)), 1)
-    self.v_cruise_cluster_kph = round(self.v_cruise_kph + TOYOTA_SET_SPEED_DISPLAY_OFFSET_KPH, 1)
+    self.v_cruise_cluster_kph = round(self.v_cruise_kph * TOYOTA_SPEEDO_RATIO, 1)
 
   def update_v_cruise(self, CS, enabled, is_metric):
     self.v_cruise_kph_last = self.v_cruise_kph
@@ -173,7 +174,7 @@ class VCruiseHelper(VCruiseHelperSP):
 
     self.v_cruise_kph = min(self.v_cruise_kph, round(pcm_kph + TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, 1))
     # show the set speed on the speedometer's scale so set number == speedometer reading at every speed
-    self.v_cruise_cluster_kph = round(self.v_cruise_kph + TOYOTA_SET_SPEED_DISPLAY_OFFSET_KPH, 1)
+    self.v_cruise_cluster_kph = round(self.v_cruise_kph * TOYOTA_SPEEDO_RATIO, 1)
     self.v_cruise_planner_kph = self.v_cruise_kph
 
   def _update_v_cruise_non_pcm(self, CS, enabled, is_metric):
