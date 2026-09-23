@@ -31,6 +31,10 @@ TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 100
 # more room before it hits the cap; the PCM holds the car up to about +7-8 (findings14 §8). Raised from 5 after the
 # Corolla Cross reported + presses doing nothing once the target sat at the ceiling (rlog 2026-09-20).
 TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 7.
+# Toyota's speedometer reads ~1 km/h high vs the canonical CAN speed across the usable range (Corolla Cross rlog
+# 2026-09-24, user-confirmed). Show the set speed on that same scale so the displayed set number matches the
+# speedometer at every speed: display = canonical + 1, and the car drives canonical = display - 1.
+TOYOTA_SET_SPEED_DISPLAY_OFFSET_KPH = 1.0
 # A long press is how the driver moves the PCM's own number (this car steps it by 1 every ~0.25 s while held). With
 # openpilot owning the set speed, the driver uses a long press to park the PCM ceiling high (e.g. 120) once per drive
 # and openpilot's own target is left untouched by it; short presses then move openpilot's target by the custom
@@ -78,16 +82,11 @@ class VCruiseHelper(VCruiseHelperSP):
     return 0 < self.v_cruise_kph < V_CRUISE_UNSET and 0 < self.v_cruise_cluster_kph < V_CRUISE_UNSET
 
   def _apply_software_pcm_cruise_delta(self, delta_kph: float, is_metric: bool) -> None:
-    """Move Toyota's planner/display targets together while respecting both targets' bounds."""
-    cluster_min_kph = self.v_cruise_min if is_metric else self.v_cruise_min * CV.MPH_TO_KPH
-    min_delta = max(V_CRUISE_MIN - self.v_cruise_kph, cluster_min_kph - self.v_cruise_cluster_kph)
-    max_delta = min(V_CRUISE_MAX - self.v_cruise_kph, V_CRUISE_MAX - self.v_cruise_cluster_kph)
-    if delta_kph > 0:
-      applied_delta = min(delta_kph, max(0., max_delta))
-    else:
-      applied_delta = max(delta_kph, min(0., min_delta))
-    self.v_cruise_kph = round(self.v_cruise_kph + applied_delta, 1)
-    self.v_cruise_cluster_kph = round(self.v_cruise_cluster_kph + applied_delta, 1)
+    """Apply a delta in DISPLAY (speedometer) space and keep the canonical target = display / speedo ratio, so the
+    set number the driver sees and snaps on lands on the speedometer's scale."""
+    new_kph = (self.v_cruise_cluster_kph + delta_kph) - TOYOTA_SET_SPEED_DISPLAY_OFFSET_KPH
+    self.v_cruise_kph = round(float(np.clip(new_kph, self.v_cruise_min, V_CRUISE_MAX)), 1)
+    self.v_cruise_cluster_kph = round(self.v_cruise_kph + TOYOTA_SET_SPEED_DISPLAY_OFFSET_KPH, 1)
 
   def update_v_cruise(self, CS, enabled, is_metric):
     self.v_cruise_kph_last = self.v_cruise_kph
@@ -171,12 +170,10 @@ class VCruiseHelper(VCruiseHelperSP):
       return
 
     pcm_kph = round(CS.cruiseState.speed * CV.MS_TO_KPH, 1)
-    pcm_cluster_kph = round(CS.cruiseState.speedCluster * CV.MS_TO_KPH, 1) if CS.cruiseState.speedCluster > 0 else pcm_kph
-    # the cluster shows the PCM's number with a calibration offset on Toyota; keep openpilot's pair the same way
-    cluster_offset_kph = pcm_cluster_kph - pcm_kph
 
     self.v_cruise_kph = min(self.v_cruise_kph, round(pcm_kph + TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, 1))
-    self.v_cruise_cluster_kph = round(self.v_cruise_kph + cluster_offset_kph, 1)
+    # show the set speed on the speedometer's scale so set number == speedometer reading at every speed
+    self.v_cruise_cluster_kph = round(self.v_cruise_kph + TOYOTA_SET_SPEED_DISPLAY_OFFSET_KPH, 1)
     self.v_cruise_planner_kph = self.v_cruise_kph
 
   def _update_v_cruise_non_pcm(self, CS, enabled, is_metric):
