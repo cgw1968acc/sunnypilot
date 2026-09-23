@@ -16,10 +16,13 @@ class TestCurveOutwardBias(unittest.TestCase):
       self.assertLess(abs(out), abs(k))            # commands a wider radius
       self.assertEqual(math.copysign(1, out), math.copysign(1, k))  # same turn direction
 
-  def test_reduction_is_proportional_to_curvature_over_the_deadzone(self):
+  def test_gentle_high_speed_curves_are_biased(self):
+    k = 0.0022  # ~85 km/h curve; must be reduced (used to fall below the deadzone and be untouched)
+    self.assertLess(abs(apply_curve_outward_bias(k)), abs(k))
+
+  def test_reduction_is_a_uniform_fraction_above_the_deadzone(self):
     for k in (0.006, 0.010, 0.02):
-      over = k - CURVE_OUTWARD_DEADZONE
-      self.assertAlmostEqual(apply_curve_outward_bias(k), k - CURVE_OUTWARD_FRAC * over, places=9)
+      self.assertAlmostEqual(apply_curve_outward_bias(k), k * (1.0 - CURVE_OUTWARD_FRAC), places=9)
 
   def test_bias_is_bounded(self):
     # never flips sign or over-relaxes: reduction is at most CURVE_OUTWARD_FRAC of the curvature

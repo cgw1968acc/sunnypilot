@@ -37,15 +37,18 @@ VERSION = 1
 # Corner-cutting fix (Corolla Cross rlog 2026-09-21: the e2e path sits ~0.5 m inside on curves). Relax the
 # commanded curvature by a fraction of the part above a deadzone, so the car runs a little wider (outward) in
 # proportion to how tight the curve is. Straights and small lane corrections below the deadzone are untouched.
-CURVE_OUTWARD_FRAC = 0.12
-CURVE_OUTWARD_DEADZONE = 0.003  # 1/m (~radius 330 m); only real curves are biased
+CURVE_OUTWARD_FRAC = 0.18  # fraction to relax the commanded curvature in a curve (bigger = wider / further outside)
+CURVE_OUTWARD_DEADZONE = 0.0012  # 1/m (~radius 830 m): below this is a straight / small correction, untouched. Low
+                                 # enough that gentle high-speed curves (85 km/h ~ 0.0022) are still biased outward.
 
 
 def apply_curve_outward_bias(desired_curvature: float) -> float:
+  # In a curve, command a slightly smaller curvature so the car runs wider and stops cutting the inside. A uniform
+  # fraction (not just the part over the deadzone) so gentle high-speed curves get a real outward shift too; below
+  # the deadzone (straights and small lane corrections) nothing changes.
   if abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
     return desired_curvature
-  over = desired_curvature - math.copysign(CURVE_OUTWARD_DEADZONE, desired_curvature)
-  return desired_curvature - CURVE_OUTWARD_FRAC * over
+  return desired_curvature * (1.0 - CURVE_OUTWARD_FRAC)
 
 class LatControlTorque(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
