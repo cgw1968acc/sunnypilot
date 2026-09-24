@@ -13,11 +13,15 @@ from openpilot.sunnypilot import get_sanitize_int_param
 
 AccelProfile = custom.LongitudinalPlanSP.AccelController.Profile
 
-MAX_ACCEL_BREAKPOINTS = [0., 3., 12,  24., 36.]  # m/s
+# Breakpoints at 60/70/80 km/h were added for the Corolla Cross Hybrid (2026-09-25). On flat road its engine starts
+# once wheel power (m*a*v + road load, m=1500 kg, Crr 0.010, CdA 0.82) exceeds roughly 11-13 kW at 39-53% SOC
+# (44 accel-driven starts over ten rlogs). Eco keeps m*a*v + road load under ~11 kW so a slow catch-up stays electric:
+# 60 km/h 0.25, 70 km/h 0.16, 80 km/h 0.08. Normal/sport hold their previous straight-line values at the new points.
+MAX_ACCEL_BREAKPOINTS = [0., 3., 12., 16.67, 19.44, 22.22, 24., 36.]  # m/s (16.67/19.44/22.22 = 60/70/80 km/h)
 MAX_ACCEL_PROFILES = {
-  AccelProfile.eco:    [1.70, 1.38, 0.40, 0.15, 0.10],
-  AccelProfile.normal: [1.80, 1.55, 0.55, 0.36, 0.25],
-  AccelProfile.sport:  [2.00, 2.00, 1.20, 0.70, 0.50],
+  AccelProfile.eco:    [1.70, 1.38, 0.40, 0.25, 0.16, 0.08, 0.06, 0.06],
+  AccelProfile.normal: [1.80, 1.55, 0.55, 0.48, 0.43, 0.39, 0.36, 0.25],
+  AccelProfile.sport:  [2.00, 2.00, 1.20, 1.00, 0.89, 0.78, 0.70, 0.50],
 }
 CRUISE_DECEL_RESPONSE_TIME = {  # seconds
   AccelProfile.eco: 4.0,
