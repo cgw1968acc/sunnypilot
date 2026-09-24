@@ -31,11 +31,13 @@ TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 100
 # more room before it hits the cap; the PCM holds the car up to about +7-8 (findings14 §8). Raised from 5 after the
 # Corolla Cross reported + presses doing nothing once the target sat at the ceiling (rlog 2026-09-20).
 TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 7.
-# Toyota's speedometer/cluster reads a fixed ~1.4% high vs the canonical CAN speed (Corolla Cross rlog 2026-09-24:
-# vEgoCluster/vEgo ~1.013-1.017 flat with speed, so the gap is +0.5 km/h at 40 but +1.4 at 100 - a fixed +1 only
-# matches 60-90). Show the set speed on that same ratio so the displayed set number equals the speedometer at every
-# speed: display = canonical * ratio, and the car drives canonical = display / ratio (exact inverse, no rounding gap).
-TOYOTA_SPEEDO_RATIO = 1.014
+# Toyota's speedometer reads a fixed ~2.1% high vs the canonical CAN speed. Measured on the Corolla Cross from the
+# cluster's own speed signal (CAN 0xB4 SPEED, which is what the dial shows) over three rlogs on 2026-09-23/24:
+# SPEED/vEgo = 1.0195-1.0211 flat from 20 to 90 km/h. (The earlier 1.014 came from carState.vEgoCluster, which is a
+# hard-coded vEgo*1.015 in opendbc, not a measurement - with it the dial still read +0.6 at a displayed 80.) Show the
+# set speed on the dial's ratio so the displayed set number equals the speedometer at every speed:
+# display = canonical * ratio, and the car drives canonical = display / ratio (exact inverse, no rounding gap).
+TOYOTA_SPEEDO_RATIO = 1.021
 # A long press is how the driver moves the PCM's own number (this car steps it by 1 every ~0.25 s while held). With
 # openpilot owning the set speed, the driver uses a long press to park the PCM ceiling high (e.g. 120) once per drive
 # and openpilot's own target is left untouched by it; short presses then move openpilot's target by the custom
