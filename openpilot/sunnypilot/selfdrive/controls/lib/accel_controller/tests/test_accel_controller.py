@@ -15,7 +15,8 @@ from openpilot.selfdrive.controls.lib.longitudinal_planner import (
   A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS, A_CRUISE_MIN, J_CRUISE_VALS, get_cruise_accel,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.accel_controller import (
-  AccelController, AccelProfile, CRUISE_DECEL_ACCEL, CRUISE_DECEL_RESPONSE_TIME, MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES,
+  AccelController, AccelProfile, CRUISE_DECEL_ACCEL, CRUISE_DECEL_RESPONSE_TIME, ECO_ENGINE_OFF_MAX_ACCEL, MAX_ACCEL_BREAKPOINTS,
+  MAX_ACCEL_PROFILES,
 )
 
 
@@ -334,3 +335,21 @@ def _bare_planner():
   planner.a_cruise = 0.0
   planner.source = LongitudinalPlanSource.cruise
   return planner
+
+  def test_engine_off_line_only_lowers_eco(self):
+    # hybrid engine stopped: eco drops to its EV line, never above the engine-running line; normal/sport untouched
+    speeds = np.linspace(0.0, 40.0, 401)
+    eco = self.set_profile(AccelProfile.eco)
+    for speed in speeds:
+      assert eco.get_max_accel(speed, engine_off=True) <= eco.get_max_accel(speed, engine_off=False) + 1e-12, speed
+    for speed, expected in zip(MAX_ACCEL_BREAKPOINTS, ECO_ENGINE_OFF_MAX_ACCEL, strict=True):
+      assert eco.get_max_accel(speed, engine_off=True) == expected
+    for profile in (AccelProfile.normal, AccelProfile.sport):
+      controller = self.set_profile(profile)
+      for speed in speeds:
+        assert controller.get_max_accel(speed, engine_off=True) == controller.get_max_accel(speed, engine_off=False), speed
+    # the EV line stays under the ~11-14 kW the Corolla Cross starts its engine at on flat road (m=1500, Crr .010, CdA .82)
+    for kph, budget_kw in ((60, 11.5), (70, 11.5), (80, 13.5)):
+      v = kph / 3.6
+      road = (0.010 * 1500 * 9.81 + 0.5 * 1.2 * 0.82 * v * v) * v
+      assert 1500 * eco.get_max_accel(v, engine_off=True) * v + road <= budget_kw * 1e3, kph
