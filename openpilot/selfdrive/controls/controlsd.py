@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import numpy as np
 from numbers import Number
 
 from openpilot.cereal import log
@@ -31,12 +32,19 @@ LaneChangeDirection = log.LaneChangeDirection
 # cap how fast the commanded curvature builds at the start of a lane change so the switch eases in instead of
 # snapping over (Corolla Cross feedback 2026-09-23). The cap ramps with time-in-lane-change: gentle for the first
 # second, then opening up so the move still completes. 1/m per second, interpolated over seconds since the start.
-LANE_CHANGE_START_CURV_RATE_T = (1.0, 3.0)      # seconds since laneChangeStarting began
-LANE_CHANGE_START_CURV_RATE_V = (0.001, 0.003)  # 1/m per second at those times (held flat outside the range)
+# The ramp is also speed dependent (feedback 2026-09-24: at 70-80 km/h the gentle ramp left too little steering to
+# finish the change): at or below 50 km/h the original flat 0.004 cap applies, at or above 100 km/h the 0.001->0.003
+# ramp applies, and each ramp point is interpolated linearly with speed in between.
+LANE_CHANGE_START_CURV_RATE_T = (1.0, 3.0)                    # seconds since laneChangeStarting began
+LANE_CHANGE_START_CURV_RATE_BP = (50. * CV.KPH_TO_MS, 100. * CV.KPH_TO_MS)  # m/s
+LANE_CHANGE_START_CURV_RATE_V1 = (0.004, 0.001)              # 1/m per second at t <= 1 s, low / high speed
+LANE_CHANGE_START_CURV_RATE_V3 = (0.004, 0.003)              # 1/m per second at t >= 3 s, low / high speed
 
 
-def _lane_change_start_curv_rate(t: float) -> float:
-  (t1, t3), (r1, r3) = LANE_CHANGE_START_CURV_RATE_T, LANE_CHANGE_START_CURV_RATE_V
+def _lane_change_start_curv_rate(t: float, v_ego: float) -> float:
+  t1, t3 = LANE_CHANGE_START_CURV_RATE_T
+  r1 = float(np.interp(v_ego, LANE_CHANGE_START_CURV_RATE_BP, LANE_CHANGE_START_CURV_RATE_V1))
+  r3 = float(np.interp(v_ego, LANE_CHANGE_START_CURV_RATE_BP, LANE_CHANGE_START_CURV_RATE_V3))
   if t <= t1:
     return r1
   if t >= t3:
@@ -161,7 +169,7 @@ class Controls(ControlsExt):
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
     if model_v2.meta.laneChangeState == LaneChangeState.laneChangeStarting:
       self.lane_change_start_t += DT_CTRL
-      max_lc_delta = _lane_change_start_curv_rate(self.lane_change_start_t) * DT_CTRL
+      max_lc_delta = _lane_change_start_curv_rate(self.lane_change_start_t, CS.vEgo) * DT_CTRL
       new_desired_curvature = min(max(new_desired_curvature, self.desired_curvature - max_lc_delta),
                                   self.desired_curvature + max_lc_delta)
     else:
