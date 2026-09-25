@@ -245,6 +245,15 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.MID, VisualAlert.none, AudibleAlert.prompt, 3.),
   },
 
+  # Early warning for a stopped vehicle ahead at highway speed (well before FCW, which is Priority.HIGH and overrides)
+  EventNameSP.stationaryLeadWarning: {
+    ET.PERMANENT: Alert(
+      "前方靜止車輛，準備煞車",
+      "Stopped vehicle ahead",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.MID, VisualAlert.fcw, AudibleAlert.promptRepeat, .5),
+  },
+
   EventNameSP.laneChangeRoadEdge: {
     ET.WARNING: Alert(
       "Lane Change Unavailable: Road Edge",
