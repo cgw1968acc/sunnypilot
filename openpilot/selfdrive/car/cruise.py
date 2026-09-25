@@ -19,7 +19,46 @@ IMPERIAL_INCREMENT = round(CV.MPH_TO_KPH, 1)  # round here to avoid rounding err
 ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
 CRUISE_LONG_PRESS = 50
-TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 65
+# Toyota software set speed. A physical short press is 450-520 ms on the bus (findings9); the PCM itself treats a
+# longer hold as a long press and steps its own set speed by 5 per repeat. Err on the long side: if the PCM sees a
+# long press and we see a short one both step by 5, the other way round we merely resync to the PCM's +1.
+TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 100
+# Toyota software set speed: the PCM will not hold the car more than roughly 8 kph above its OWN set speed even while
+# openpilot commands positive acceleration. It cuts throttle somewhere above +11 and only resumes below about +7.5,
+# which turns a larger gap into a speed oscillation (option1b_findings14 section 8). The driver's target is therefore
+# capped at the PCM set speed plus this headroom, so the HUD never shows a number the car cannot reach.
+# 7 km/h keeps the target-to-PCM gap below the ~+11 throttle-cut point (so no oscillation) while giving the + button
+# more room before it hits the cap; the PCM holds the car up to about +7-8 (findings14 §8). Raised from 5 after the
+# Corolla Cross reported + presses doing nothing once the target sat at the ceiling (rlog 2026-09-20).
+TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 7.
+# Toyota's speedometer is NOT the canonical CAN speed. The PCM keeps its set speed in two units: SET_SPEED (internal,
+# in the same units as the 0xB4 speed signal = ~true speed) and UI_SET_SPEED (what the cluster shows). Pairs read off
+# the Corolla Cross while the ceiling was being long-pressed up (rlog 2026-09-25, route 47): 26->30, 50->55, 74->80,
+# 93->100, 112->120, 120->128. Least squares: UI = 1.0457*internal + 2.73 (max residual 0.5, the internal value is
+# an integer). The dial follows the same calibration, so a target the driver reads on the HUD must be converted on
+# that line, not by the 1.021 that 0xB4/vEgo alone gives. Combined with 0xB4/vEgo = 1.021:
+#   dial = TOYOTA_DIAL_SLOPE * canonical + TOYOTA_DIAL_OFFSET_KPH
+# Road check the same day: a displayed 80 drove canonical 78.4 while the dial read 86; a displayed 100 drove 97.9
+# and the dial read 107. The line predicts 86.4 and 107.2. (The earlier 1.014/1.021 ratios only used vEgoCluster or
+# 0xB4, neither of which is the dial, hence the 7% miss.) The car drives canonical = (display - offset) / slope.
+TOYOTA_DIAL_SLOPE = 1.0457 * 1.021
+TOYOTA_DIAL_OFFSET_KPH = 2.73
+
+
+def toyota_dial_from_canonical(kph: float) -> float:
+  dial = TOYOTA_DIAL_SLOPE * kph + TOYOTA_DIAL_OFFSET_KPH
+  # the canonical target is kept to 0.1, which can put the dial number 0.1 off the integer the driver dialed; snap
+  # back onto it so the HUD shows the round number and the +/- snap grid keeps working
+  nearest = round(dial)
+  return float(nearest) if abs(dial - nearest) < 0.15 else round(dial, 1)
+
+
+def toyota_canonical_from_dial(kph: float) -> float:
+  return (kph - TOYOTA_DIAL_OFFSET_KPH) / TOYOTA_DIAL_SLOPE
+# A long press is how the driver moves the PCM's own number (this car steps it by 1 every ~0.25 s while held). With
+# openpilot owning the set speed, the driver uses a long press to park the PCM ceiling high (e.g. 120) once per drive
+# and openpilot's own target is left untouched by it; short presses then move openpilot's target by the custom
+# increment underneath that ceiling (findings14 §15).
 CRUISE_NEAREST_FUNC = {
   ButtonType.accelCruise: math.ceil,
   ButtonType.decelCruise: math.floor,
@@ -36,6 +75,12 @@ class VCruiseHelper(VCruiseHelperSP):
     self.CP = CP
     self.v_cruise_kph = V_CRUISE_UNSET
     self.v_cruise_cluster_kph = V_CRUISE_UNSET
+    self.v_cruise_planner_kph = V_CRUISE_UNSET  # what the longitudinal planner tracks, see apply_toyota_pcm_set_speed_constraints
+    # Toyota software set speed: remember how cruise was (re)engaged so a RES resume keeps openpilot's own target
+    self._toyota_frame = 0
+    self._toyota_last_press: tuple[int | None, int] = (None, -10**9)
+    self._toyota_engaged_prev = False
+    self._toyota_engaged_by_set = True
     self.v_cruise_kph_last = 0
     self.button_timers = {ButtonType.decelCruise: 0, ButtonType.accelCruise: 0}
     self.button_change_states = {btn: {"standstill": False, "enabled": False} for btn in self.button_timers}
@@ -57,16 +102,11 @@ class VCruiseHelper(VCruiseHelperSP):
     return 0 < self.v_cruise_kph < V_CRUISE_UNSET and 0 < self.v_cruise_cluster_kph < V_CRUISE_UNSET
 
   def _apply_software_pcm_cruise_delta(self, delta_kph: float, is_metric: bool) -> None:
-    """Move Toyota's planner/display targets together while respecting both targets' bounds."""
-    cluster_min_kph = self.v_cruise_min if is_metric else self.v_cruise_min * CV.MPH_TO_KPH
-    min_delta = max(V_CRUISE_MIN - self.v_cruise_kph, cluster_min_kph - self.v_cruise_cluster_kph)
-    max_delta = min(V_CRUISE_MAX - self.v_cruise_kph, V_CRUISE_MAX - self.v_cruise_cluster_kph)
-    if delta_kph > 0:
-      applied_delta = min(delta_kph, max(0., max_delta))
-    else:
-      applied_delta = max(delta_kph, min(0., min_delta))
-    self.v_cruise_kph = round(self.v_cruise_kph + applied_delta, 1)
-    self.v_cruise_cluster_kph = round(self.v_cruise_cluster_kph + applied_delta, 1)
+    """Apply a delta in DISPLAY (speedometer) space and keep the canonical target on the dial's calibration line, so
+    the set number the driver sees and snaps on lands on the speedometer's scale."""
+    new_kph = toyota_canonical_from_dial(self.v_cruise_cluster_kph + delta_kph)
+    self.v_cruise_kph = round(float(np.clip(new_kph, self.v_cruise_min, V_CRUISE_MAX)), 1)
+    self.v_cruise_cluster_kph = toyota_dial_from_canonical(self.v_cruise_kph)
 
   def update_v_cruise(self, CS, enabled, is_metric):
     self.v_cruise_kph_last = self.v_cruise_kph
@@ -74,13 +114,18 @@ class VCruiseHelper(VCruiseHelperSP):
     self.get_minimum_set_speed(is_metric)
 
     _enabled = self.update_enabled_state(CS, enabled)
+    hold_own_target = self._toyota_hold_own_target(CS, _enabled)
 
     if CS.cruiseState.available:
       software_pcm_enabled = not self.CP_SP.pcmCruiseSpeed and _enabled
       if self.software_pcm_cruise_speed:
         software_pcm_enabled = software_pcm_enabled and self.software_pcm_cruise_initialized
 
-      if not self.CP.pcmCruise or software_pcm_enabled:
+      if hold_own_target:
+        # Toyota software set speed, cruise cancelled or resumed with RES: keep openpilot's own target instead of
+        # mirroring the PCM's number, which is the parked ceiling (e.g. 120) and must never become the target
+        pass
+      elif not self.CP.pcmCruise or software_pcm_enabled:
         # if stock cruise is completely disabled, then we can use our own set speed logic
         self._update_v_cruise_non_pcm(CS, _enabled, is_metric)
         v_cruise_kph_before_sla = self.v_cruise_kph
@@ -94,6 +139,10 @@ class VCruiseHelper(VCruiseHelperSP):
       else:
         self.v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
         self.v_cruise_cluster_kph = CS.cruiseState.speedCluster * CV.MS_TO_KPH
+        if self.software_pcm_cruise_speed and CS.cruiseState.speedCluster > 0:
+          # a fresh SET mirrors the PCM: keep the cluster's number and drive the canonical speed that puts the dial
+          # on it (the PCM's own SET_SPEED is in 0xB4 units and would land ~2 km/h high on the dial)
+          self.v_cruise_kph = round(toyota_canonical_from_dial(self.v_cruise_cluster_kph), 1)
         if CS.cruiseState.speed == 0:
           self.v_cruise_kph = V_CRUISE_UNSET
           self.v_cruise_cluster_kph = V_CRUISE_UNSET
@@ -107,16 +156,71 @@ class VCruiseHelper(VCruiseHelperSP):
     if not self.CP.pcmCruise or not self.CP_SP.pcmCruiseSpeed:
       self.update_button_timers(CS, enabled)
 
+    self.apply_toyota_pcm_set_speed_constraints(CS)
+
+  def _toyota_hold_own_target(self, CS, _enabled: bool) -> bool:
+    """Toyota software set speed only. While cruise is cancelled (brake, CANCEL) and through a RES resume, openpilot's
+    own target is kept. Only a fresh SET (or an engagement we did not see a RES press for) mirrors the PCM, whose
+    number then equals the current speed. Never holds before the target is initialized."""
+    if not (self.software_pcm_cruise_speed and self.software_pcm_cruise_initialized):
+      return False
+
+    self._toyota_frame += 1
+    for b in CS.buttonEvents:
+      if b.pressed and b.type in (ButtonType.accelCruise, ButtonType.decelCruise):
+        self._toyota_last_press = (b.type.raw, self._toyota_frame)
+
+    engaged = CS.cruiseState.enabled
+    if engaged and not self._toyota_engaged_prev:
+      press_type, press_frame = self._toyota_last_press
+      resumed_with_res = press_type == ButtonType.accelCruise and self._toyota_frame - press_frame < 150
+      self._toyota_engaged_by_set = not resumed_with_res
+    self._toyota_engaged_prev = engaged
+
+    if _enabled:
+      return False  # the software set speed branch owns the target
+    if not engaged:
+      return True   # cancelled: hold
+    return not self._toyota_engaged_by_set  # engagement transition frames: hold after RES, mirror after SET
+
+  def apply_toyota_pcm_set_speed_constraints(self, CS) -> None:
+    """Toyota software set speed only. The PCM will not hold the car more than ~8 kph above its own set speed
+    (findings14 §8), so the driver's target is capped at the PCM number + headroom. The driver raises that ceiling
+    with a long press (the PCM steps by 1 every ~0.25 s while held); openpilot's target does not move on a long press.
+    The planner target equals the driver's target after the cap. Other brands and PCM mirroring are untouched."""
+    self.v_cruise_planner_kph = self.v_cruise_kph
+
+    if not (self.software_pcm_cruise_speed and self.software_pcm_cruise_initialized and CS.cruiseState.speed > 0):
+      return
+
+    pcm_kph = round(CS.cruiseState.speed * CV.MS_TO_KPH, 1)
+
+    self.v_cruise_kph = min(self.v_cruise_kph, round(pcm_kph + TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, 1))
+    # show the set speed on the speedometer's scale so set number == speedometer reading at every speed
+    self.v_cruise_cluster_kph = toyota_dial_from_canonical(self.v_cruise_kph)
+    self.v_cruise_planner_kph = self.v_cruise_kph
+
   def _update_v_cruise_non_pcm(self, CS, enabled, is_metric):
     # handle button presses. TODO: this should be in state_control, but a decelCruise press
     # would have the effect of both enabling and changing speed is checked after the state transition
     if not enabled:
       return
 
+    # Toyota software set speed: accumulate EVERY short press (rapid taps included) and apply the total, so N quick
+    # +/- taps reliably move the target by N x increment even if they arrive faster than one press per control cycle.
+    if self.software_pcm_cruise_speed:
+      self._update_software_pcm_short_press(CS, is_metric)
+      return
+
     long_press = False
     button_type = None
 
     v_cruise_delta = 1. if is_metric else IMPERIAL_INCREMENT
+
+    # Toyota software set speed: a long press only moves the PCM's own number (the ceiling); openpilot's target is
+    # untouched by it. Short presses below move openpilot's target by the custom increment.
+    if self.software_pcm_cruise_speed and any(timer >= self.cruise_long_press_frames for timer in self.button_timers.values()):
+      return
 
     for b in CS.buttonEvents:
       if b.type.raw in self.button_timers and not b.pressed:
@@ -176,6 +280,39 @@ class VCruiseHelper(VCruiseHelperSP):
       self.v_cruise_kph = max(self.v_cruise_kph, CS.vEgo * CV.MS_TO_KPH)
 
     self.v_cruise_kph = np.clip(round(self.v_cruise_kph, 1), self.v_cruise_min, V_CRUISE_MAX)
+
+  def _update_software_pcm_short_press(self, CS, is_metric):
+    """Software set speed (Toyota): apply EVERY short-press release this cycle, in order, so rapid +/- taps
+    accumulate. Each press uses the same snap-or-add rule as a single press (a custom increment of 5/10 snaps the
+    displayed number to the nearest multiple in the press direction, otherwise it steps by the increment), so the
+    set speed stays on round numbers. A long press (held beyond the threshold) only moves the PCM ceiling and is not
+    counted. It need not keep up with the taps in real time; N taps land N steps."""
+    base = 1. if is_metric else IMPERIAL_INCREMENT
+    for b in CS.buttonEvents:
+      if b.type.raw not in self.button_timers or b.pressed:
+        continue
+      hold = self.button_timers[b.type.raw]
+      if hold <= 0 or hold > self.cruise_long_press_frames:
+        continue  # not a short press (spurious, or a long press = ceiling move)
+      st = self.button_change_states[b.type.raw]
+      if b.type.raw == ButtonType.accelCruise and (st["standstill"] or CS.cruiseState.standstill):
+        continue
+      if not st["enabled"]:
+        continue
+      if self.update_speed_limit_assist_pre_active_confirmed(b.type.raw):
+        continue
+
+      round_to_nearest, delta = VCruiseHelperSP.update_v_cruise_delta(self, False, base)
+      ref = self.v_cruise_cluster_kph
+      if round_to_nearest and ref % delta != 0:  # snap the displayed number onto the increment grid
+        ref_new = CRUISE_NEAREST_FUNC[b.type.raw](ref / delta) * delta
+      else:
+        ref_new = ref + delta * CRUISE_INTERVAL_SIGN[b.type.raw]
+      delta_kph = ref_new - ref
+      # if SET is tapped while overriding, do not lower the target below the current speed
+      if CS.gasPressed and delta_kph < 0.:
+        delta_kph = max(delta_kph, CS.vEgo * CV.MS_TO_KPH - self.v_cruise_kph)
+      self._apply_software_pcm_cruise_delta(delta_kph, is_metric)
 
   def update_button_timers(self, CS, enabled):
     if self.software_pcm_cruise_speed and (not enabled or not CS.cruiseState.available or not self.software_pcm_cruise_initialized):
