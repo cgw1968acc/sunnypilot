@@ -27,22 +27,28 @@ MAX_ACCEL_PROFILES = {
 # does not move with SOC, rises mildly with speed: p10 14 kW at 80-89 km/h). 60 km/h 0.25, 70 km/h 0.16, 80 km/h 0.12.
 # Once the engine runs there is nothing to save, so the normal eco line above takes over until it stops again.
 ECO_ENGINE_OFF_MAX_ACCEL = [1.70, 1.38, 0.40, 0.25, 0.16, 0.12, 0.08, 0.06]
-# Cruise deceleration to a lowered set speed: a CONSTANT decel for the whole gap, then a short taper onto the target.
-# The decel is latched when the gap opens (gap / response time, but never gentler than CRUISE_DECEL_ACCEL) and held, so
-# the car slows on a straight line instead of the proportional gap/time law, which braked hardest at the start and
-# then dragged a long exponential tail (a 5 km/h step took ~10 s to land). Corolla Cross rlog 2026-09-25 (route 4a
-# seg 8): three quick -5 presses also crossed the old raw-target bypass, so the command surged to -1.2 m/s2, then
-# jumped back to -0.5 as the gap shrank. Every extra press re-latches with the larger gap, so more presses = firmer.
-CRUISE_DECEL_RESPONSE_TIME = {  # seconds to close the gap
-  AccelProfile.eco: 4.0,
+# Eco with NO lead: there is nothing to keep up with, so use a little less throttle again (driver request 2026-09-25,
+# "再節能一些"). Faded in between 3 and 8 m/s so the launch from a stop is untouched.
+ECO_NO_LEAD_FACTOR_BP = [3.0, 8.0]   # m/s
+ECO_NO_LEAD_FACTOR_V = [1.0, 0.85]
+# Cruise deceleration to a lowered set speed (no lead). Normal/sport: one CONSTANT decel latched when the gap opens
+# (gap / response time, never gentler than CRUISE_DECEL_ACCEL) and held, so the car slows on a straight line instead of
+# the proportional gap/time law, which braked hardest at the start and dragged a long tail; more presses = firmer.
+# Eco (driver request 2026-09-25): never hurry to the new set speed however far it is or however many presses - lift
+# off and let the car slow. Above 70 km/h the target is the car's own coast decel (road load of a 1500 kg Corolla
+# Cross, Crr 0.010, CdA 0.82: -0.22 at 70, -0.30 at 90, -0.40 at 120 km/h), below 60 km/h a light -0.30 (regen),
+# blended between 70 and 60 as the speed falls. It is a function of speed only, so the line stays straight and the
+# transition from coasting to -0.30 is continuous. Whether -0.30 is too firm is for the road test.
+CRUISE_DECEL_RESPONSE_TIME = {  # seconds to close the gap (normal/sport)
   AccelProfile.normal: 3.5,
   AccelProfile.sport: 3.0,
 }
-CRUISE_DECEL_ACCEL = {  # m/s^2; gentlest constant decel (small gaps still slow at least this firmly)
-  AccelProfile.eco: -0.35,
+CRUISE_DECEL_ACCEL = {  # m/s^2; gentlest constant decel (normal/sport)
   AccelProfile.normal: -0.50,
   AccelProfile.sport: -0.65,
 }
+ECO_CRUISE_DECEL_BP = [0., 16.67, 19.44, 25.0, 33.3]   # m/s (0, 60, 70, 90, 120 km/h)
+ECO_CRUISE_DECEL_V = [-0.30, -0.30, -0.22, -0.30, -0.40]  # m/s^2
 CRUISE_DECEL_TAPER_TIME = 1.0  # s; inside |decel| * this of the target the decel eases off proportionally (no overshoot)
 
 
@@ -64,9 +70,12 @@ class AccelController:
   def is_enabled(self) -> bool:
     return self._enabled
 
-  def get_max_accel(self, v_ego: float, engine_off: bool = False) -> float:
+  def get_max_accel(self, v_ego: float, engine_off: bool = False, has_lead: bool = True) -> float:
     profile = ECO_ENGINE_OFF_MAX_ACCEL if (engine_off and self._profile == AccelProfile.eco) else MAX_ACCEL_PROFILES[self._profile]
-    return float(np.interp(max(0.0, v_ego), MAX_ACCEL_BREAKPOINTS, profile))
+    max_accel = float(np.interp(max(0.0, v_ego), MAX_ACCEL_BREAKPOINTS, profile))
+    if self._profile == AccelProfile.eco and not has_lead:
+      max_accel *= float(np.interp(v_ego, ECO_NO_LEAD_FACTOR_BP, ECO_NO_LEAD_FACTOR_V))
+    return max_accel
 
   def get_cruise_target(self, v_ego: float, v_target: float) -> float:
     if not np.isfinite(v_target) or v_target <= 0.0 or v_target >= v_ego:
@@ -75,11 +84,16 @@ class AccelController:
       return v_target
 
     target_delta = v_target - v_ego
-    if self._cruise_decel is None or self._cruise_decel_target != v_target:
-      # a new (or changed) gap: latch one constant decel for this episode
-      self._cruise_decel = min(CRUISE_DECEL_ACCEL[self._profile], target_delta / CRUISE_DECEL_RESPONSE_TIME[self._profile])
-      self._cruise_decel_target = v_target
+    if self._profile == AccelProfile.eco:
+      # speed-scheduled, independent of the gap and of how many presses opened it
+      decel = float(np.interp(v_ego, ECO_CRUISE_DECEL_BP, ECO_CRUISE_DECEL_V))
+    else:
+      if self._cruise_decel is None or self._cruise_decel_target != v_target:
+        # a new (or changed) gap: latch one constant decel for this episode
+        self._cruise_decel = min(CRUISE_DECEL_ACCEL[self._profile], target_delta / CRUISE_DECEL_RESPONSE_TIME[self._profile])
+        self._cruise_decel_target = v_target
+      decel = self._cruise_decel
 
-    # hold the latched decel, taper it only once the target is close (both terms are negative; max = the gentler one)
-    decel = max(self._cruise_decel, target_delta / CRUISE_DECEL_TAPER_TIME)
+    # taper only once the target is close (both terms are negative; max = the gentler one) so the speed lands cleanly
+    decel = max(decel, target_delta / CRUISE_DECEL_TAPER_TIME)
     return float(v_ego + decel)

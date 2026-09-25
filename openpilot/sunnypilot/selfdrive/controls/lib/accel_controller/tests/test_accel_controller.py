@@ -15,7 +15,8 @@ from openpilot.selfdrive.controls.lib.longitudinal_planner import (
   A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS, A_CRUISE_MIN, J_CRUISE_VALS, get_cruise_accel,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.accel_controller import (
-  AccelController, AccelProfile, CRUISE_DECEL_ACCEL, CRUISE_DECEL_RESPONSE_TIME, ECO_ENGINE_OFF_MAX_ACCEL, MAX_ACCEL_BREAKPOINTS,
+  AccelController, AccelProfile, CRUISE_DECEL_ACCEL, CRUISE_DECEL_RESPONSE_TIME, ECO_CRUISE_DECEL_BP, ECO_CRUISE_DECEL_V,
+  ECO_ENGINE_OFF_MAX_ACCEL, MAX_ACCEL_BREAKPOINTS,
   MAX_ACCEL_PROFILES,
 )
 
@@ -116,14 +117,35 @@ class TestAccelController(OpenpilotTestCase):
     v_ego = 25.0
     v_target = 22.5
     targets = {}
-    for profile in (AccelProfile.eco, AccelProfile.normal, AccelProfile.sport):
+    for profile in (AccelProfile.normal, AccelProfile.sport):
       controller = self.set_profile(profile)
       targets[profile] = controller.get_cruise_target(v_ego, v_target)
       assert np.isclose(targets[profile] - v_ego, (v_target - v_ego) / CRUISE_DECEL_RESPONSE_TIME[profile])
+    controller = self.set_profile(AccelProfile.eco)
+    targets[AccelProfile.eco] = controller.get_cruise_target(v_ego, v_target)
+    assert np.isclose(targets[AccelProfile.eco] - v_ego, np.interp(v_ego, ECO_CRUISE_DECEL_BP, ECO_CRUISE_DECEL_V))
 
     assert v_ego > targets[AccelProfile.eco] > targets[AccelProfile.normal] > targets[AccelProfile.sport] > v_target
-    assert all(CRUISE_DECEL_RESPONSE_TIME[profile] >= 3.0 for profile in (AccelProfile.eco, AccelProfile.normal, AccelProfile.sport))
-    assert all(CRUISE_DECEL_ACCEL[profile] < 0.0 for profile in (AccelProfile.eco, AccelProfile.normal, AccelProfile.sport))
+    assert all(CRUISE_DECEL_RESPONSE_TIME[profile] >= 3.0 for profile in (AccelProfile.normal, AccelProfile.sport))
+    assert all(CRUISE_DECEL_ACCEL[profile] < 0.0 for profile in (AccelProfile.normal, AccelProfile.sport))
+
+  def test_eco_cruise_decel_is_speed_scheduled_not_gap_scheduled(self):
+    controller = self.set_profile(AccelProfile.eco)
+    # the same speed gives the same decel whether the gap is 2 or 10 m/s (extra presses do not make it firmer)
+    a_small = controller.get_cruise_target(22.0, 20.0) - 22.0
+    a_big = controller.get_cruise_target(22.0, 12.0) - 22.0
+    assert np.isclose(a_small, a_big)
+    # above 70 km/h it is the coast estimate, below 60 km/h -0.30, monotonic in between
+    assert np.isclose(controller.get_cruise_target(19.44, 10.0) - 19.44, -0.22)
+    assert np.isclose(controller.get_cruise_target(15.0, 10.0) - 15.0, -0.30)
+    assert -0.30 < controller.get_cruise_target(18.0, 10.0) - 18.0 < -0.22
+
+  def test_eco_no_lead_uses_less_throttle_above_launch(self):
+    controller = self.set_profile(AccelProfile.eco)
+    assert controller.get_max_accel(1.0, has_lead=False) == controller.get_max_accel(1.0, has_lead=True)
+    assert np.isclose(controller.get_max_accel(20.0, has_lead=False), 0.85 * controller.get_max_accel(20.0, has_lead=True))
+    normal = self.set_profile(AccelProfile.normal)
+    assert normal.get_max_accel(20.0, has_lead=False) == normal.get_max_accel(20.0, has_lead=True)
 
   def test_cruise_decel_is_constant_then_tapers(self):
     controller = self.set_profile(AccelProfile.eco)
