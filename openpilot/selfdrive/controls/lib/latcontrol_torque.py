@@ -69,7 +69,9 @@ def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
 # (bicycle model, 0.3 s steering lag, 2 cm line noise): 1 m inside at 47 km/h in a 70 m curve is back within
 # 10 cm in ~8 s with no overshoot, peak correction 1.9e-3 (0.32 m/s^2); 20 cm at 90 km/h in ~10 s.
 LANE_CENTER_MIN_SPEED = 8.0        # m/s (~30 km/h): below this the lines are too close / too curved to trust
-LANE_CENTER_MIN_LINE_PROB = 0.5    # both near lane lines must be at least this confident
+LANE_CENTER_MIN_LINE_PROB = 0.5    # the better of the two near lane lines must be at least this confident
+LANE_CENTER_MIN_OTHER_PROB = 0.3   # ...and the weaker one at least this: in tight curves the OUTER line's probability
+                                   # drops to 0.35-0.5 (route 4d segs 9/11) exactly when the correction is needed
 LANE_CENTER_WIDTH_RANGE = (2.6, 4.6)  # m; outside this the pair is not the ego lane
 LANE_CENTER_FIT_RANGE = 12.0       # m ahead used to fit the lane centre (offset + heading + curvature)
 LANE_CENTER_DEADBAND = 0.03        # m; no position correction inside this
@@ -110,7 +112,7 @@ class LaneCentering:
     probs = model_v2.laneLineProbs
     if len(lines) < 4 or len(probs) < 4 or len(lines[1].y) < 4 or len(lines[2].y) < 4:
       return None
-    if probs[1] < LANE_CENTER_MIN_LINE_PROB or probs[2] < LANE_CENTER_MIN_LINE_PROB:
+    if max(probs[1], probs[2]) < LANE_CENTER_MIN_LINE_PROB or min(probs[1], probs[2]) < LANE_CENTER_MIN_OTHER_PROB:
       return None
     yl, yr = lines[1].y[0], lines[2].y[0]
     width = yr - yl
@@ -120,7 +122,7 @@ class LaneCentering:
     n = int(np.sum(x <= LANE_CENTER_FIT_RANGE))
     if n < 4:
       return None
-    centre = (np.asarray(lines[1].y[:n]) + np.asarray(lines[2].y[:n])) / 2.0  # model y: positive = right
+    centre = (np.asarray(lines[1].y)[:n] + np.asarray(lines[2].y)[:n]) / 2.0  # model y: positive = right (capnp lists do not slice)
     # centre(x) ~ c0 + c1 x + c2 x^2: c0 is the centre's lateral position (right of the car), c1 its slope. A lane
     # that runs to the right ahead (c1 > 0) means the car is pointing LEFT of it.
     c2, c1, c0 = np.polyfit(x[:n], centre, 2)
