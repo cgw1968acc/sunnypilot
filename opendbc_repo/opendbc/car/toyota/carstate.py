@@ -10,6 +10,7 @@ from opendbc.car.interfaces import CarStateBase
 from opendbc.car.toyota.values import ToyotaFlags, CAR, DBC, STEER_THRESHOLD, NO_STOP_TIMER_CAR, \
                                                   TSS2_CAR, EPS_SCALE
 from opendbc.sunnypilot.car.toyota.carstate_ext import CarStateExt
+from opendbc.sunnypilot.car.toyota.cruise_switch_mirror import CruiseSwitchRaw
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarState
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
@@ -50,6 +51,23 @@ TEMP_STEER_FAULTS = (0, 9, 11, 21, 25)
 PERM_STEER_FAULTS = (3, 17)
 
 
+# Toyota has no dedicated cruise button message on the powertrain bus, but CLUTCH (0x361) byte 0 carries the raw
+# stalk switch state: bit 5 RES/+, bit 4 SET/-, bit 3 CANCEL, held for the real ~0.5 s of a physical short press.
+# PCM_CRUISE->CRUISE_STATE 9/10 ("click up/down") must NOT be used as the button source: it reflects the PCM
+# accelerating/decelerating towards its own set speed and persists for seconds whenever the car is above or below
+# that number, which openpilot then mistakes for a long press (option1b_findings14 section 12).
+class CruiseButton:
+  none = 0
+  plus = 1
+  minus = 2
+
+
+CRUISE_BUTTONS_DICT = {
+  CruiseButton.plus: ButtonType.accelCruise,
+  CruiseButton.minus: ButtonType.decelCruise,
+}
+
+
 class CarState(CarStateBase, CarStateExt):
   def __init__(self, CP, CP_SP):
     CarStateBase.__init__(self, CP, CP_SP)
@@ -72,6 +90,8 @@ class CarState(CarStateBase, CarStateExt):
 
     self.lkas_button = 0
     self.distance_button = 0
+    self.cruise_button = CruiseButton.none
+    self.cruise_switch = CruiseSwitchRaw()  # raw 0x361 frames, filled by CarInterface.update before parsing
 
     self.pcm_follow_distance = 0
 
@@ -279,6 +299,11 @@ class CarState(CarStateBase, CarStateExt):
 
       buttonEvents += create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
 
+    # set speed button events from the raw stalk switch bits on CLUTCH. Only needed when openpilot tracks the set
+    # speed itself, and CLUTCH is only registered with the parser in that case.
+    if not self.CP_SP.pcmCruiseSpeed:
+      buttonEvents += self.update_cruise_button_events(cp)
+
     ret.buttonEvents = buttonEvents
 
     if self.enhanced_bsm.enabled and self.frame > 199:
@@ -293,11 +318,42 @@ class CarState(CarStateBase, CarStateExt):
 
     return ret, ret_sp
 
+  def update_cruise_button_events(self, cp) -> list[structs.CarState.ButtonEvent]:
+    """Derive accelCruise/decelCruise events from the raw RES/SET stalk bits in CLUTCH (0x361).
+
+    Every sample received this cycle is walked in order so that a press and its release landing in the same
+    100 Hz iteration still produce both edges. RES and SET asserted together is physically impossible and is
+    treated as unpressed. CANCEL is left to the PCM (it disengages cruise on its own).
+    """
+    events: list[structs.CarState.ButtonEvent] = []
+
+    for res, set_ in zip(cp.vl_all["CLUTCH"]["CRUISE_BTN_RES"], cp.vl_all["CLUTCH"]["CRUISE_BTN_SET"], strict=True):
+      if bool(res) != bool(set_):
+        cruise_button = CruiseButton.plus if res else CruiseButton.minus
+      else:
+        cruise_button = CruiseButton.none
+      events += create_button_events(cruise_button, self.cruise_button, CRUISE_BUTTONS_DICT,
+                                     unpressed_btn=CruiseButton.none)
+      self.cruise_button = cruise_button
+
+    return events
+
   @staticmethod
   def get_can_parsers(CP, CP_SP):
     pt_messages = [
       ("BLINKERS_STATE", float('nan')),
+      ("PCM_CRUISE", 0),
     ]
+
+    # raw cruise stalk bits for the software set speed (0x361 runs at ~15.5 Hz on the Corolla Cross TSS2). Only
+    # registered when needed so cars without this message are not affected by the frequency check.
+    if not CP_SP.pcmCruiseSpeed:
+      pt_messages.append(("CLUTCH", 15))
+
+    # engine speed / running flag (0x1C4) so the hybrid's EV-vs-engine state reaches the planner. Alive check is
+    # skipped (nan) so a car without the message never invalidates CAN.
+    if CP.flags & ToyotaFlags.HYBRID:
+      pt_messages.append(("ENGINE_RPM", float('nan')))
 
     cam_messages = [
       ("RSA1", 0),

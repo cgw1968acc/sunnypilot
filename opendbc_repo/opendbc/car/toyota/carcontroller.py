@@ -12,6 +12,7 @@ from opendbc.car.toyota.values import CAR, NO_STOP_TIMER_CAR, TSS2_CAR, \
                                         CarControllerParams, ToyotaFlags
 from opendbc.can import CANPacker
 from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController
+from opendbc.sunnypilot.car.toyota.cruise_switch_mirror import CruiseSwitchMirrorCarController
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
@@ -43,12 +44,8 @@ CRUISE_CANCEL_DELAY_FRAMES = 10
 def get_long_tune(CP, CP_SP, params):
   if CP.flags & ToyotaFlags.TSS2:
     if CP_SP.flags & ToyotaFlagsSP.TSS2_LONG_TUNING:
-      #kiBP = [0.,   2.0,  9.0,  14.,  20.,  27.]
-      #kiV =  [0.25, 0.25, 0.15, 0.12, 0.12, 0.12]
-      #kiBP= [0.,  1.0,  2.0,   3.0,   4.0,   5.0,   7.,  20.,  27.,  36.]
-      #kiV  = [0.31, 0.32, 0.301, 0.280,  0.259,  0.226, 0.15, 0.15, 0.101, 0.10]
-      kiBP = [0.0,  2.0,  5.0,  12.,  36.]
-      kiV  = [0.45, 0.42, 0.36, 0.30, 0.26]
+      kiBP = [0.0,  0.4,  1.2,  5.0,  8.3,  27.]
+      kiV  = [0.50, 0.52, 0.52, 0.25, 0.21, 0.10]
     else:
       kiBP = [2., 5.]
       kiV = [0.5, 0.25]
@@ -78,7 +75,9 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     # *** start long control state ***
     self.long_pid = get_long_tune(self.CP, self.CP_SP, self.params)
-    self.aego = FirstOrderFilter(0.0, 0.25, DT_CTRL * 3)
+    # 0.45 s (was 0.25): the aEgo derivative feeds the jerk feed-forward below; a heavier filter keeps ~1.4 Hz
+    # accel-measurement noise from making the steady-cruise command hunt across zero (Corolla Cross rlog 2026-09-22)
+    self.aego = FirstOrderFilter(0.0, 0.45, DT_CTRL * 3)
     self.pitch = FirstOrderFilter(0, 0.5, DT_CTRL)
     self.pitch_hp = HighPassFilter(0.0, 0.25, 1.5, DT_CTRL)
 
@@ -95,6 +94,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     self.enhanced_bsm = EnhancedBsmCarController(CP, CP_SP)
     self.auto_brake_hold = AutoBrakeHoldCarController(CP, CP_SP)
+    self.cruise_switch_mirror = CruiseSwitchMirrorCarController(CP, CP_SP)
 
     self._auto_lock_speed = 0.0
 
@@ -345,6 +345,10 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     if self.enhanced_bsm.enabled:
       can_sends.extend(self.enhanced_bsm.update(CS, self.frame))
+
+    # one-shot cruise switch burst experiment (option1b_findings14 stage 2); sends nothing unless triggered on the device
+    if self.cruise_switch_mirror.enabled:
+      can_sends.extend(self.cruise_switch_mirror.update(CS, self.frame, CC.enabled and CS.out.cruiseState.enabled))
 
     new_actuators = actuators.as_builder()
     new_actuators.torque = apply_torque / self.params.STEER_MAX

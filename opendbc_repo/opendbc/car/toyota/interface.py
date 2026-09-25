@@ -1,4 +1,5 @@
 from opendbc.car import Bus, structs, get_safety_config, uds
+from opendbc.car.carlog import carlog
 from opendbc.car.toyota.carstate import CarState
 from opendbc.car.toyota.carcontroller import CarController
 from opendbc.car.toyota.radar_interface import RadarInterface
@@ -17,6 +18,17 @@ class CarInterface(CarInterfaceBase):
   RadarInterface = RadarInterface
 
   DRIVABLE_GEARS = (structs.CarState.GearShifter.sport,)
+
+  def update(self, can_packets):
+    # the cruise switch mirror needs the genuine 0x361 frame byte for byte, which the CAN parser does not expose.
+    # Experimental path: never let it take card down, a failure here only disables the mirror.
+    if not self.CP_SP.pcmCruiseSpeed and self.CS.cruise_switch is not None:
+      try:
+        self.CS.cruise_switch.update(can_packets)
+      except Exception as e:  # noqa: BLE001
+        carlog.error(f"cruise switch raw capture disabled: {e!r}")
+        self.CS.cruise_switch = None
+    return super().update(can_packets)
 
   @staticmethod
   def get_pid_accel_limits(CP, CP_SP, current_speed, cruise_speed):
@@ -196,6 +208,16 @@ class CarInterface(CarInterfaceBase):
       stock_cp.safetyConfigs[0].safetyParam |= ToyotaSafetyFlags.STOCK_LONGITUDINAL.value
     else:
       stock_cp.safetyConfigs[0].safetyParam &= ~ToyotaSafetyFlags.STOCK_LONGITUDINAL.value
+
+    # Track the cruise set speed internally instead of mirroring PCM_CRUISE_2->SET_SPEED. The PCM still owns
+    # engagement (pcmCruise stays True), it only stops owning the target speed. Depends on the set speed buttons
+    # synthesized from PCM_CRUISE->CRUISE_STATE in carstate.py, so keep the two conditions in sync.
+    if candidate == CAR.TOYOTA_COROLLA_TSS2 and stock_cp.openpilotLongitudinalControl:
+      ret.pcmCruiseSpeed = False
+      # Let the panda pass mirrored cruise switch presses (0x361) so openpilot can move the PCM's own set speed to
+      # match its software set speed and keep the instrument cluster in sync. Nothing is sent until the car
+      # controller uses it; this only widens the TX allowlist (RES/SET gated on controls allowed in safety).
+      ret.safetyParam |= ToyotaSafetyFlagsSP.CRUISE_SWITCH_TX
 
     return ret
 
