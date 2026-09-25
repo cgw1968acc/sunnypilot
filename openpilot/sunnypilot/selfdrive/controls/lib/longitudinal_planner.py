@@ -14,6 +14,7 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.accel_controller import AccelController
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
+from openpilot.sunnypilot.selfdrive.controls.lib.stationary_lead_warning import StationaryLeadWarning
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
@@ -39,6 +40,7 @@ class LongitudinalPlannerSP:
     self.generation = int(model_bundle.generation) if (model_bundle := get_active_bundle()) else None
     self.source = LongitudinalPlanSource.cruise
     self.e2e_alerts_helper = E2EAlertsHelper()
+    self.stationary_lead_warning = StationaryLeadWarning()
 
     self.output_v_target = 0.
     self.output_a_target = 0.
@@ -124,6 +126,7 @@ class LongitudinalPlannerSP:
     self.accel_controller.update()
     self.events_sp.clear()
     self.e2e_alerts_helper.update(sm, self.events_sp)
+    self.stationary_lead_warning.update(sm, self.events_sp)
 
   def update_dec(self, sm: messaging.SubMaster) -> None:
     self.dec.update(sm)
