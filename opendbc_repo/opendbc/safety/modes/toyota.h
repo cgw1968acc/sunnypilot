@@ -70,6 +70,7 @@ static bool toyota_alt_brake = false;
 static bool toyota_stock_longitudinal = false;
 static bool toyota_lta = false;
 static bool toyota_cruise_engaged = false;  // SP: PCM_CRUISE.CRUISE_ACTIVE, narrows the auto brake hold AEB window below
+static bool toyota_cruise_switch_tx = false;  // SP: openpilot may mirror cruise switch presses (0x361) to move the PCM set speed
 static int toyota_dbc_eps_torque_factor = 100;   // conversion factor for STEER_TORQUE_EPS in %: see dbc file
 
 static uint32_t toyota_compute_checksum(const CANPacket_t *msg) {
@@ -304,6 +305,21 @@ static bool toyota_tx_hook(const CANPacket_t *msg) {
       }
     }
 
+    // SP: cruise switch mirror (0x361 byte 0: bit 3 CANCEL, bit 4 SET/-, bit 5 RES/+). openpilot re-sends the
+    // driver's set speed presses so the PCM's own set speed follows openpilot's. Like the Hyundai/GM button
+    // spam modes, RES/SET are only allowed while controls are allowed so openpilot can never engage or resume
+    // cruise on its own; CANCEL is always allowed; an idle frame (no press) or RES+SET together is never allowed.
+    if (msg->addr == 0x361U) {
+      bool cancel_pressed = GET_BIT(msg, 3U);
+      bool set_pressed = GET_BIT(msg, 4U);
+      bool res_pressed = GET_BIT(msg, 5U);
+
+      bool allowed = cancel_pressed || ((set_pressed != res_pressed) && controls_allowed);
+      if (!allowed) {
+        tx = false;
+      }
+    }
+
     // STEERING_LTA angle steering check
     if (msg->addr == 0x191U) {
       // check the STEER_REQUEST, STEER_REQUEST_2, TORQUE_WIND_DOWN, STEER_ANGLE_CMD signals
@@ -447,6 +463,13 @@ static safety_config toyota_init(uint16_t param) {
     {0x200, 0, 6, .check_relay = false},  // gas interceptor
   };
 
+  // SP: openpilot longitudinal plus the cruise switch message. The genuine 0x361 lives on bus 0, so it must not be
+  // relay checked or statically blocked; openpilot only ever adds mirrored press frames next to the stock stream.
+  static const CanMsg TOYOTA_LONG_CRUISE_SWITCH_TX_MSGS[] = {
+    TOYOTA_COMMON_LONG_TX_MSGS
+    {0x361, 0, 8, .check_relay = false},  // cruise switch mirror
+  };
+
   // safety param flags
   // first byte is for EPS factor, second is for flags
   const uint32_t TOYOTA_PARAM_OFFSET = 8U;
@@ -457,6 +480,7 @@ static safety_config toyota_init(uint16_t param) {
 
   const uint16_t TOYOTA_PARAM_SP_UNSUPPORTED_DSU = 1;
   const uint16_t TOYTOA_PARAM_SP_GAS_INTERCEPTOR = 2;
+  const uint16_t TOYOTA_PARAM_SP_CRUISE_SWITCH_TX = 4;
 
 #ifdef ALLOW_DEBUG
   const uint32_t TOYOTA_PARAM_SECOC = 8UL << TOYOTA_PARAM_OFFSET;
@@ -470,10 +494,16 @@ static safety_config toyota_init(uint16_t param) {
 
   const bool toyota_unsupported_dsu = GET_FLAG(current_safety_param_sp, TOYOTA_PARAM_SP_UNSUPPORTED_DSU);
   enable_gas_interceptor = GET_FLAG(current_safety_param_sp, TOYTOA_PARAM_SP_GAS_INTERCEPTOR);
+  toyota_cruise_switch_tx = GET_FLAG(current_safety_param_sp, TOYOTA_PARAM_SP_CRUISE_SWITCH_TX);
 
   // gas interceptor should not be used if openpilot is not controlling longitudinal or is a TSK car
   if (toyota_stock_longitudinal || toyota_secoc) {
     enable_gas_interceptor = false;
+  }
+
+  // the cruise switch mirror only makes sense when openpilot owns longitudinal on a non SecOC car
+  if (toyota_stock_longitudinal || toyota_secoc || enable_gas_interceptor) {
+    toyota_cruise_switch_tx = false;
   }
 
   safety_config ret;
@@ -486,6 +516,8 @@ static safety_config toyota_init(uint16_t param) {
   } else {
     if (toyota_stock_longitudinal) {
       SET_TX_MSGS(TOYOTA_TX_MSGS, ret);
+    } else if (toyota_cruise_switch_tx) {
+      SET_TX_MSGS(TOYOTA_LONG_CRUISE_SWITCH_TX_MSGS, ret);
     } else {
       SET_TX_MSGS(TOYOTA_LONG_TX_MSGS, ret);
     }
