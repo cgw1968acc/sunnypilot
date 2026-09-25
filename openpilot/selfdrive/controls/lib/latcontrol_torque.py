@@ -37,8 +37,10 @@ VERSION = 1
 # Corner-cutting fix (Corolla Cross rlog 2026-09-21: the e2e path sits ~0.5 m inside on curves). Relax the
 # commanded curvature by a fraction of the part above a deadzone, so the car runs a little wider (outward) in
 # proportion to how tight the curve is. Straights and small lane corrections below the deadzone are untouched.
-CURVE_OUTWARD_DEADZONE = 0.0012  # 1/m (~radius 830 m): below this is a straight / small correction, untouched. Low
-                                 # enough that gentle high-speed curves (85 km/h ~ 0.0022) are still biased outward.
+CURVE_OUTWARD_DEADZONE = 0.0005  # 1/m (~radius 2000 m): below this is a straight / small correction, untouched.
+                                 # Lowered from 0.0012 (radius 830 m) on 2026-09-25: a gentle right curve at a set
+                                 # 100 km/h still ran inside because its curvature sat under the old deadzone, so the
+                                 # bias never applied there no matter the fraction.
 # The outward bias only helps at higher speed, where the path cuts the inside. On tight LOW-speed curves the car
 # tends to run WIDE instead, so relaxing the curvature there makes it worse. Speed schedule (m/s -> fraction):
 # 0 up to 40 km/h, 0.09 at 70, 0.155 at 90 km/h, 0.19 at 120 km/h (road test 2026-09-25: 90 km/h centred OK, 107 km/h still
