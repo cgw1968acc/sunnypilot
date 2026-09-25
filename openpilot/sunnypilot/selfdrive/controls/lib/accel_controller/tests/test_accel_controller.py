@@ -125,6 +125,23 @@ class TestAccelController(OpenpilotTestCase):
     assert all(CRUISE_DECEL_RESPONSE_TIME[profile] >= 3.0 for profile in (AccelProfile.eco, AccelProfile.normal, AccelProfile.sport))
     assert all(CRUISE_DECEL_ACCEL[profile] < 0.0 for profile in (AccelProfile.eco, AccelProfile.normal, AccelProfile.sport))
 
+  def test_cruise_decel_is_constant_then_tapers(self):
+    controller = self.set_profile(AccelProfile.eco)
+    v_target = 10.0
+    # far from the target the shaped target sits a fixed decel below v_ego (a straight-line slowdown)
+    a1 = controller.get_cruise_target(14.0, v_target) - 14.0
+    a2 = controller.get_cruise_target(13.0, v_target) - 13.0
+    assert a1 < 0 and np.isclose(a1, a2)
+    # close to the target the decel eases off instead of holding, so the speed lands without overshoot
+    a3 = controller.get_cruise_target(10.2, v_target) - 10.2
+    assert a1 < a3 < 0
+    # reaching the target ends the episode
+    assert controller.get_cruise_target(10.0, v_target) == v_target
+    # an extra press (lower target) re-latches a firmer decel
+    a4 = controller.get_cruise_target(14.0, v_target) - 14.0
+    a5 = controller.get_cruise_target(14.0, v_target - 2.0) - 14.0
+    assert a5 < a4
+
   def test_cruise_target_bypasses_non_decel_requests(self):
     controller = self.set_profile(AccelProfile.eco)
     assert controller.get_cruise_target(20.0, 25.0) == 25.0

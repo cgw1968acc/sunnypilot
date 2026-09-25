@@ -27,21 +27,30 @@ MAX_ACCEL_PROFILES = {
 # does not move with SOC, rises mildly with speed: p10 14 kW at 80-89 km/h). 60 km/h 0.25, 70 km/h 0.16, 80 km/h 0.12.
 # Once the engine runs there is nothing to save, so the normal eco line above takes over until it stops again.
 ECO_ENGINE_OFF_MAX_ACCEL = [1.70, 1.38, 0.40, 0.25, 0.16, 0.12, 0.08, 0.06]
-CRUISE_DECEL_RESPONSE_TIME = {  # seconds
+# Cruise deceleration to a lowered set speed: a CONSTANT decel for the whole gap, then a short taper onto the target.
+# The decel is latched when the gap opens (gap / response time, but never gentler than CRUISE_DECEL_ACCEL) and held, so
+# the car slows on a straight line instead of the proportional gap/time law, which braked hardest at the start and
+# then dragged a long exponential tail (a 5 km/h step took ~10 s to land). Corolla Cross rlog 2026-09-25 (route 4a
+# seg 8): three quick -5 presses also crossed the old raw-target bypass, so the command surged to -1.2 m/s2, then
+# jumped back to -0.5 as the gap shrank. Every extra press re-latches with the larger gap, so more presses = firmer.
+CRUISE_DECEL_RESPONSE_TIME = {  # seconds to close the gap
   AccelProfile.eco: 4.0,
   AccelProfile.normal: 3.5,
   AccelProfile.sport: 3.0,
 }
-CRUISE_DECEL_ACCEL = {  # m/s^2; comfort-first cruise deceleration target
+CRUISE_DECEL_ACCEL = {  # m/s^2; gentlest constant decel (small gaps still slow at least this firmly)
   AccelProfile.eco: -0.35,
   AccelProfile.normal: -0.50,
   AccelProfile.sport: -0.65,
 }
+CRUISE_DECEL_TAPER_TIME = 1.0  # s; inside |decel| * this of the target the decel eases off proportionally (no overshoot)
 
 
 class AccelController:
   def __init__(self):
     self.params = Params()
+    self._cruise_decel: float | None = None
+    self._cruise_decel_target: float | None = None
     self.update()
 
   def update(self) -> None:
@@ -61,10 +70,16 @@ class AccelController:
 
   def get_cruise_target(self, v_ego: float, v_target: float) -> float:
     if not np.isfinite(v_target) or v_target <= 0.0 or v_target >= v_ego:
+      self._cruise_decel = None
+      self._cruise_decel_target = None
       return v_target
 
-    response_time = CRUISE_DECEL_RESPONSE_TIME[self._profile]
     target_delta = v_target - v_ego
-    if target_delta < CRUISE_DECEL_ACCEL[self._profile] * response_time * 2.0:
-      return v_target
-    return float(v_ego + target_delta / response_time)
+    if self._cruise_decel is None or self._cruise_decel_target != v_target:
+      # a new (or changed) gap: latch one constant decel for this episode
+      self._cruise_decel = min(CRUISE_DECEL_ACCEL[self._profile], target_delta / CRUISE_DECEL_RESPONSE_TIME[self._profile])
+      self._cruise_decel_target = v_target
+
+    # hold the latched decel, taper it only once the target is close (both terms are negative; max = the gentler one)
+    decel = max(self._cruise_decel, target_delta / CRUISE_DECEL_TAPER_TIME)
+    return float(v_ego + decel)
