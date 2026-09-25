@@ -34,6 +34,122 @@ JERK_GAIN = 0.3
 LAT_ACCEL_REQUEST_BUFFER_SECONDS = 1.0
 VERSION = 1
 
+# Corner-cutting fix (Corolla Cross rlog 2026-09-21: the e2e path sits ~0.5 m inside on curves). Relax the
+# commanded curvature by a fraction of the part above a deadzone, so the car runs a little wider (outward) in
+# proportion to how tight the curve is. Straights and small lane corrections below the deadzone are untouched.
+CURVE_OUTWARD_DEADZONE = 0.0005  # 1/m (~radius 2000 m): below this is a straight / small correction, untouched.
+                                 # Lowered from 0.0012 (radius 830 m) on 2026-09-25: a gentle right curve at a set
+                                 # 100 km/h still ran inside because its curvature sat under the old deadzone, so the
+                                 # bias never applied there no matter the fraction.
+# The outward bias only helps at higher speed, where the path cuts the inside. On tight LOW-speed curves the car
+# tends to run WIDE instead, so relaxing the curvature there makes it worse. Speed schedule (m/s -> fraction):
+# 0 up to 40 km/h, 0.09 at 70, 0.155 at 90 km/h, 0.19 at 120 km/h (road test 2026-09-25: 90 km/h centred OK, 107 km/h still
+# cut the inside).
+CURVE_OUTWARD_V_BP = [11.1, 19.4, 25.0, 33.3]   # m/s (40, 70, 90, 120 km/h)
+CURVE_OUTWARD_FRAC_V = [0.0, 0.09, 0.155, 0.19]
+
+
+def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
+  # In a fast curve, command a slightly smaller curvature so the car runs wider and stops cutting the inside. Faded
+  # out at low speed (tight curves there need the full turn-in or the car runs wide). Straights and small lane
+  # corrections below the deadzone are untouched.
+  frac = float(np.interp(v_ego, CURVE_OUTWARD_V_BP, CURVE_OUTWARD_FRAC_V))
+  if frac <= 0.0 or abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
+    return desired_curvature
+  return desired_curvature * (1.0 - frac)
+
+# Lane centering feedback (Corolla Cross rlog 2026-09-25, route 4d seg 9): in a 70 m-radius curve at 47 km/h the car sat
+# ~1 m inside the lane (riding the inner line) although the torque loop tracked the model's desired curvature almost
+# exactly (14.2 vs 14.4 e-3). The e2e action itself holds the car inside, and the outward bias above is a blind
+# percentage. Close the loop on the lane lines instead: measure the car's offset from the lane centre and add a small
+# curvature correction that walks it back to the middle. Conventions (verified on seg 1): model y is positive to the
+# RIGHT and curvature is positive to the RIGHT, so a car left of centre ((yl + yr) / 2 > 0) needs a positive
+# correction. The correction is a lateral-acceleration request, so the same gain gives the same feel at any speed.
+# PD on offset + lane heading (damping), plus a slow capped integral for what the model keeps pulling. Simulated
+# (bicycle model, 0.3 s steering lag, 2 cm line noise): 1 m inside at 47 km/h in a 70 m curve is back within
+# 10 cm in ~8 s with no overshoot, peak correction 1.9e-3 (0.32 m/s^2); 20 cm at 90 km/h in ~10 s.
+LANE_CENTER_MIN_SPEED = 8.0        # m/s (~30 km/h): below this the lines are too close / too curved to trust
+LANE_CENTER_MIN_LINE_PROB = 0.5    # the better of the two near lane lines must be at least this confident
+LANE_CENTER_MIN_OTHER_PROB = 0.3   # ...and the weaker one at least this: in tight curves the OUTER line's probability
+                                   # drops to 0.35-0.5 (route 4d segs 9/11) exactly when the correction is needed
+LANE_CENTER_WIDTH_RANGE = (2.6, 4.6)  # m; outside this the pair is not the ego lane
+LANE_CENTER_FIT_RANGE = 12.0       # m ahead used to fit the lane centre (offset + heading + curvature)
+LANE_CENTER_DEADBAND = 0.03        # m; no position correction inside this
+LANE_CENTER_KP = 0.35              # m/s^2 of lateral accel per metre of offset
+LANE_CENTER_KD = 1.20              # m/s^2 per m/s of lateral speed toward/away from the centre (damping, ~critical)
+LANE_CENTER_KI = 0.05              # m/s^2 per metre per second: slowly takes over what the model keeps pulling
+LANE_CENTER_I_LIMIT = 0.25         # m/s^2; cap on the integrated part
+LANE_CENTER_MAX_LAT_ACCEL = 0.6    # m/s^2; cap on the total correction as felt by the driver
+LANE_CENTER_MAX_CURV = 3.5e-3      # 1/m; cap on the total correction (radius ~290 m)
+LANE_CENTER_RATE = 3.0e-3          # 1/m per second; how fast the correction may change
+LANE_CENTER_FILTER_TAU = 0.3       # s; low-pass on the measured offset and heading
+
+
+class LaneCentering:
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.offset_filter = FirstOrderFilter(0.0, LANE_CENTER_FILTER_TAU, dt)
+    self.heading_filter = FirstOrderFilter(0.0, LANE_CENTER_FILTER_TAU, dt)
+    self.integral = 0.0
+    self.correction = 0.0
+    self.offset = 0.0
+    self.heading = 0.0
+    self.valid = False
+
+  def reset(self):
+    self.offset_filter.x = 0.0
+    self.heading_filter.x = 0.0
+    self.integral = 0.0
+    self.correction = 0.0
+    self.valid = False
+
+  def measure(self, model_v2) -> tuple[float, float] | None:
+    """(offset, heading) of the car relative to the lane centre: offset positive = car LEFT of centre, heading
+    positive = car pointing LEFT of the lane direction. None when the lines are unreliable."""
+    if model_v2 is None:
+      return None
+    lines = model_v2.laneLines
+    probs = model_v2.laneLineProbs
+    if len(lines) < 4 or len(probs) < 4 or len(lines[1].y) < 4 or len(lines[2].y) < 4:
+      return None
+    if max(probs[1], probs[2]) < LANE_CENTER_MIN_LINE_PROB or min(probs[1], probs[2]) < LANE_CENTER_MIN_OTHER_PROB:
+      return None
+    yl, yr = lines[1].y[0], lines[2].y[0]
+    width = yr - yl
+    if not (LANE_CENTER_WIDTH_RANGE[0] <= width <= LANE_CENTER_WIDTH_RANGE[1]):
+      return None
+    x = np.asarray(lines[1].x)
+    n = int(np.sum(x <= LANE_CENTER_FIT_RANGE))
+    if n < 4:
+      return None
+    centre = (np.asarray(lines[1].y)[:n] + np.asarray(lines[2].y)[:n]) / 2.0  # model y: positive = right (capnp lists do not slice)
+    # centre(x) ~ c0 + c1 x + c2 x^2: c0 is the centre's lateral position (right of the car), c1 its slope. A lane
+    # that runs to the right ahead (c1 > 0) means the car is pointing LEFT of it.
+    c2, c1, c0 = np.polyfit(x[:n], centre, 2)
+    return float(c0), float(math.atan(c1))
+
+  def update(self, model_v2, v_ego: float, active: bool, steering_pressed: bool) -> float:
+    """Curvature to ADD to the desired curvature (positive = right)."""
+    meas = self.measure(model_v2) if active and not steering_pressed and v_ego > LANE_CENTER_MIN_SPEED else None
+    if meas is None:
+      self.reset()
+      return 0.0
+
+    self.valid = True
+    self.offset = self.offset_filter.update(meas[0])
+    self.heading = self.heading_filter.update(meas[1])
+    error = self.offset - float(np.clip(self.offset, -LANE_CENTER_DEADBAND, LANE_CENTER_DEADBAND))  # deadband
+    lateral_speed = v_ego * math.sin(self.heading)  # positive = drifting LEFT
+
+    self.integral = float(np.clip(self.integral + LANE_CENTER_KI * error * self.dt, -LANE_CENTER_I_LIMIT, LANE_CENTER_I_LIMIT))
+    lat_accel = LANE_CENTER_KP * error + LANE_CENTER_KD * lateral_speed + self.integral
+    lat_accel = float(np.clip(lat_accel, -LANE_CENTER_MAX_LAT_ACCEL, LANE_CENTER_MAX_LAT_ACCEL))
+    target = float(np.clip(lat_accel / max(v_ego, LANE_CENTER_MIN_SPEED) ** 2, -LANE_CENTER_MAX_CURV, LANE_CENTER_MAX_CURV))
+    step = LANE_CENTER_RATE * self.dt
+    self.correction = float(np.clip(target, self.correction - step, self.correction + step))
+    return self.correction
+
+
 class LatControlTorque(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
@@ -49,6 +165,7 @@ class LatControlTorque(LatControl):
     self.jerk_filter = FirstOrderFilter(0.0, 1 / (2 * np.pi * LP_FILTER_CUTOFF_HZ), self.dt)
 
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
+    self.lane_centering = LaneCentering(dt)
 
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -67,6 +184,8 @@ class LatControlTorque(LatControl):
 
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
+    desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
+    desired_curvature += self.lane_centering.update(self.extension.model_v2, CS.vEgo, active, CS.steeringPressed)
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
     measurement = measured_curvature * CS.vEgo ** 2
     future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
