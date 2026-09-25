@@ -31,13 +31,30 @@ TOYOTA_VIRTUAL_CRUISE_LONG_PRESS = 100
 # more room before it hits the cap; the PCM holds the car up to about +7-8 (findings14 §8). Raised from 5 after the
 # Corolla Cross reported + presses doing nothing once the target sat at the ceiling (rlog 2026-09-20).
 TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 7.
-# Toyota's speedometer reads a fixed ~2.1% high vs the canonical CAN speed. Measured on the Corolla Cross from the
-# cluster's own speed signal (CAN 0xB4 SPEED, which is what the dial shows) over three rlogs on 2026-09-23/24:
-# SPEED/vEgo = 1.0195-1.0211 flat from 20 to 90 km/h. (The earlier 1.014 came from carState.vEgoCluster, which is a
-# hard-coded vEgo*1.015 in opendbc, not a measurement - with it the dial still read +0.6 at a displayed 80.) Show the
-# set speed on the dial's ratio so the displayed set number equals the speedometer at every speed:
-# display = canonical * ratio, and the car drives canonical = display / ratio (exact inverse, no rounding gap).
-TOYOTA_SPEEDO_RATIO = 1.021
+# Toyota's speedometer is NOT the canonical CAN speed. The PCM keeps its set speed in two units: SET_SPEED (internal,
+# in the same units as the 0xB4 speed signal = ~true speed) and UI_SET_SPEED (what the cluster shows). Pairs read off
+# the Corolla Cross while the ceiling was being long-pressed up (rlog 2026-09-25, route 47): 26->30, 50->55, 74->80,
+# 93->100, 112->120, 120->128. Least squares: UI = 1.0457*internal + 2.73 (max residual 0.5, the internal value is
+# an integer). The dial follows the same calibration, so a target the driver reads on the HUD must be converted on
+# that line, not by the 1.021 that 0xB4/vEgo alone gives. Combined with 0xB4/vEgo = 1.021:
+#   dial = TOYOTA_DIAL_SLOPE * canonical + TOYOTA_DIAL_OFFSET_KPH
+# Road check the same day: a displayed 80 drove canonical 78.4 while the dial read 86; a displayed 100 drove 97.9
+# and the dial read 107. The line predicts 86.4 and 107.2. (The earlier 1.014/1.021 ratios only used vEgoCluster or
+# 0xB4, neither of which is the dial, hence the 7% miss.) The car drives canonical = (display - offset) / slope.
+TOYOTA_DIAL_SLOPE = 1.0457 * 1.021
+TOYOTA_DIAL_OFFSET_KPH = 2.73
+
+
+def toyota_dial_from_canonical(kph: float) -> float:
+  dial = TOYOTA_DIAL_SLOPE * kph + TOYOTA_DIAL_OFFSET_KPH
+  # the canonical target is kept to 0.1, which can put the dial number 0.1 off the integer the driver dialed; snap
+  # back onto it so the HUD shows the round number and the +/- snap grid keeps working
+  nearest = round(dial)
+  return float(nearest) if abs(dial - nearest) < 0.15 else round(dial, 1)
+
+
+def toyota_canonical_from_dial(kph: float) -> float:
+  return (kph - TOYOTA_DIAL_OFFSET_KPH) / TOYOTA_DIAL_SLOPE
 # A long press is how the driver moves the PCM's own number (this car steps it by 1 every ~0.25 s while held). With
 # openpilot owning the set speed, the driver uses a long press to park the PCM ceiling high (e.g. 120) once per drive
 # and openpilot's own target is left untouched by it; short presses then move openpilot's target by the custom
@@ -85,11 +102,11 @@ class VCruiseHelper(VCruiseHelperSP):
     return 0 < self.v_cruise_kph < V_CRUISE_UNSET and 0 < self.v_cruise_cluster_kph < V_CRUISE_UNSET
 
   def _apply_software_pcm_cruise_delta(self, delta_kph: float, is_metric: bool) -> None:
-    """Apply a delta in DISPLAY (speedometer) space and keep the canonical target = display / speedo ratio, so the
-    set number the driver sees and snaps on lands on the speedometer's scale."""
-    new_kph = (self.v_cruise_cluster_kph + delta_kph) / TOYOTA_SPEEDO_RATIO
+    """Apply a delta in DISPLAY (speedometer) space and keep the canonical target on the dial's calibration line, so
+    the set number the driver sees and snaps on lands on the speedometer's scale."""
+    new_kph = toyota_canonical_from_dial(self.v_cruise_cluster_kph + delta_kph)
     self.v_cruise_kph = round(float(np.clip(new_kph, self.v_cruise_min, V_CRUISE_MAX)), 1)
-    self.v_cruise_cluster_kph = round(self.v_cruise_kph * TOYOTA_SPEEDO_RATIO, 1)
+    self.v_cruise_cluster_kph = toyota_dial_from_canonical(self.v_cruise_kph)
 
   def update_v_cruise(self, CS, enabled, is_metric):
     self.v_cruise_kph_last = self.v_cruise_kph
@@ -122,6 +139,10 @@ class VCruiseHelper(VCruiseHelperSP):
       else:
         self.v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
         self.v_cruise_cluster_kph = CS.cruiseState.speedCluster * CV.MS_TO_KPH
+        if self.software_pcm_cruise_speed and CS.cruiseState.speedCluster > 0:
+          # a fresh SET mirrors the PCM: keep the cluster's number and drive the canonical speed that puts the dial
+          # on it (the PCM's own SET_SPEED is in 0xB4 units and would land ~2 km/h high on the dial)
+          self.v_cruise_kph = round(toyota_canonical_from_dial(self.v_cruise_cluster_kph), 1)
         if CS.cruiseState.speed == 0:
           self.v_cruise_kph = V_CRUISE_UNSET
           self.v_cruise_cluster_kph = V_CRUISE_UNSET
@@ -176,7 +197,7 @@ class VCruiseHelper(VCruiseHelperSP):
 
     self.v_cruise_kph = min(self.v_cruise_kph, round(pcm_kph + TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, 1))
     # show the set speed on the speedometer's scale so set number == speedometer reading at every speed
-    self.v_cruise_cluster_kph = round(self.v_cruise_kph * TOYOTA_SPEEDO_RATIO, 1)
+    self.v_cruise_cluster_kph = toyota_dial_from_canonical(self.v_cruise_kph)
     self.v_cruise_planner_kph = self.v_cruise_kph
 
   def _update_v_cruise_non_pcm(self, CS, enabled, is_metric):
