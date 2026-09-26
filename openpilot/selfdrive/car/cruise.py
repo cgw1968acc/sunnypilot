@@ -42,7 +42,8 @@ TOYOTA_PCM_SET_SPEED_HEADROOM_KPH = 7.
 # and the dial read 107. The line predicts 86.4 and 107.2. (The earlier 1.014/1.021 ratios only used vEgoCluster or
 # 0xB4, neither of which is the dial, hence the 7% miss.) The car drives canonical = (display - offset) / slope.
 TOYOTA_DIAL_SLOPE = 1.0457 * 1.021
-TOYOTA_DIAL_OFFSET_KPH = 2.73
+TOYOTA_DIAL_OFFSET_KPH = 2.53  # 2.73 measured; -0.2 on 2026-09-26 so the dial sits ~0.2 above the set number instead of
+                                #  fractionally below it (the driver saw the dial round down to N-1 at times)
 
 
 def toyota_dial_from_canonical(kph: float) -> float:
