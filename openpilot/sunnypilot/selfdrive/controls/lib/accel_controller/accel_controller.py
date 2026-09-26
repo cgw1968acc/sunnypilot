@@ -36,9 +36,9 @@ ECO_NO_LEAD_FACTOR_V = [1.0, 0.85]
 # the proportional gap/time law, which braked hardest at the start and dragged a long tail; more presses = firmer.
 # Eco (driver request 2026-09-25): never hurry to the new set speed however far it is or however many presses - lift
 # off and let the car slow. Above 70 km/h the target is the car's own coast decel (road load of a 1500 kg Corolla
-# Cross, Crr 0.010, CdA 0.82: -0.22 at 70, -0.30 at 90, -0.40 at 120 km/h), below 60 km/h a light -0.30 (regen),
-# blended between 70 and 60 as the speed falls. It is a function of speed only, so the line stays straight and the
-# transition from coasting to -0.30 is continuous. Whether -0.30 is too firm is for the road test.
+# Cross, Crr 0.010, CdA 0.82: -0.22 at 70, -0.30 at 90, -0.40 at 120 km/h), below 60 km/h -0.40 (regen; -0.30 until
+# the 2026-09-26 trial), blended between 70 and 60 as the speed falls. A function of speed only: the line stays straight,
+# the transition from coasting is continuous. Whether -0.40 is too firm is for the road test.
 CRUISE_DECEL_RESPONSE_TIME = {  # seconds to close the gap (normal/sport)
   AccelProfile.normal: 3.5,
   AccelProfile.sport: 3.0,
@@ -48,7 +48,7 @@ CRUISE_DECEL_ACCEL = {  # m/s^2; gentlest constant decel (normal/sport)
   AccelProfile.sport: -0.65,
 }
 ECO_CRUISE_DECEL_BP = [0., 16.67, 19.44, 25.0, 33.3]   # m/s (0, 60, 70, 90, 120 km/h)
-ECO_CRUISE_DECEL_V = [-0.30, -0.30, -0.22, -0.30, -0.40]  # m/s^2
+ECO_CRUISE_DECEL_V = [-0.40, -0.40, -0.22, -0.30, -0.40]  # m/s^2 (<=60 km/h -0.30 -> -0.40, driver trial 2026-09-26)
 CRUISE_DECEL_TAPER_TIME = 1.0  # s; inside |decel| * this of the target the decel eases off proportionally (no overshoot)
 
 
