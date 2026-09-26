@@ -69,6 +69,12 @@ def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
 # (bicycle model, 0.3 s steering lag, 2 cm line noise): 1 m inside at 47 km/h in a 70 m curve is back within
 # 10 cm in ~8 s with no overshoot, peak correction 1.9e-3 (0.32 m/s^2); 20 cm at 90 km/h in ~10 s.
 LANE_CENTER_MIN_SPEED = 8.0        # m/s (~30 km/h): below this the lines are too close / too curved to trust
+# Only at highway speed. Route 55 seg 8 (2026-09-26, 33-47 km/h right after the driver released the wheel out of a
+# turn): the correction sat on its cap (0.6 m/s^2 = 3.5e-3 1/m at 12 m/s, ~30% of the model's own swing) in phase
+# with the model's correction, and the car swung left/right with a ~3 s period for 10 s. The driver wants low speed
+# left exactly as stock; the feedback fades in between 70 and 80 km/h.
+LANE_CENTER_FADE_BP = [19.4, 22.2]  # m/s (70, 80 km/h)
+LANE_CENTER_FADE_V = [0.0, 1.0]
 LANE_CENTER_MIN_LINE_PROB = 0.5    # the better of the two near lane lines must be at least this confident
 LANE_CENTER_MIN_OTHER_PROB = 0.3   # ...and the weaker one at least this: in tight curves the OUTER line's probability
                                    # drops to 0.35-0.5 (route 4d segs 9/11) exactly when the correction is needed
@@ -153,6 +159,7 @@ class LaneCentering:
     lat_accel = LANE_CENTER_KP * error + LANE_CENTER_KD * lateral_speed + self.integral
     lat_accel = float(np.clip(lat_accel, -LANE_CENTER_MAX_LAT_ACCEL, LANE_CENTER_MAX_LAT_ACCEL))
     target = float(np.clip(lat_accel / max(v_ego, LANE_CENTER_MIN_SPEED) ** 2, -LANE_CENTER_MAX_CURV, LANE_CENTER_MAX_CURV))
+    target *= float(np.interp(v_ego, LANE_CENTER_FADE_BP, LANE_CENTER_FADE_V))
     self.correction = float(np.clip(target, self.correction - step, self.correction + step))
     return self.correction
 
@@ -164,6 +171,9 @@ class LaneCentering:
 # Bypassed during lane changes (controlsd has its own start-rate cap there) and when lateral control is inactive.
 DESIRED_CURVATURE_MAX_LAT_JERK = 1.0  # m/s^3
 DESIRED_CURVATURE_JERK_MIN_SPEED = 8.0  # m/s; below this the cap in curvature terms is so loose it barely acts
+# Highway speed only, like the lane centering: below 70 km/h the cap is effectively off (8 m/s^3), fading to 1.0 at 80.
+DESIRED_CURVATURE_JERK_FADE_BP = [19.4, 22.2]  # m/s
+DESIRED_CURVATURE_JERK_FADE_V = [8.0, DESIRED_CURVATURE_MAX_LAT_JERK]
 
 
 class DesiredCurvatureJerkLimiter:
@@ -175,7 +185,8 @@ class DesiredCurvatureJerkLimiter:
     if not active or lane_changing:
       self.prev = desired_curvature
       return desired_curvature
-    step = DESIRED_CURVATURE_MAX_LAT_JERK / max(v_ego, DESIRED_CURVATURE_JERK_MIN_SPEED) ** 2 * self.dt
+    max_jerk = float(np.interp(v_ego, DESIRED_CURVATURE_JERK_FADE_BP, DESIRED_CURVATURE_JERK_FADE_V))
+    step = max_jerk / max(v_ego, DESIRED_CURVATURE_JERK_MIN_SPEED) ** 2 * self.dt
     self.prev = float(np.clip(desired_curvature, self.prev - step, self.prev + step))
     return self.prev
 

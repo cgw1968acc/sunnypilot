@@ -17,8 +17,9 @@ onset on top of the brake already applied. Hard braking requests and FCW bypass 
 """
 import numpy as np
 
-ONSET_T_BP = [0.0, 0.2, 1.0]  # s since the request began falling faster than ONSET_J_DOWN[0]
+ONSET_T_BP = [0.0, 0.2, 1.5]  # s since the request began falling faster than ONSET_J_DOWN[0]
 ONSET_J_DOWN = [0.25, 0.4, 4.0]  # m/s^3 downward jerk limit: barely anything for 0.2 s, then one long ramp to the stock limit
+# (ramp end 1.0 -> 1.5 s after route 55 seg 7, 2026-09-26: a lead braking hard at 35 km/h still felt heavy)
 HARD_BRAKE_ACCEL = -2.0  # m/s^2, requests below this are urgent and get the stock limit straight away
 
 
