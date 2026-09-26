@@ -81,8 +81,9 @@ LANE_CENTER_KI = 0.05              # m/s^2 per metre per second: slowly takes ov
 LANE_CENTER_I_LIMIT = 0.25         # m/s^2; cap on the integrated part
 LANE_CENTER_MAX_LAT_ACCEL = 0.6    # m/s^2; cap on the total correction as felt by the driver
 LANE_CENTER_MAX_CURV = 3.5e-3      # 1/m; cap on the total correction (radius ~290 m)
-LANE_CENTER_RATE = 3.0e-3          # 1/m per second; how fast the correction may change
-LANE_CENTER_FILTER_TAU = 0.3       # s; low-pass on the measured offset and heading
+LANE_CENTER_JERK = 0.5             # m/s^3; how fast the correction may change, as lateral jerk so it feels the same at
+                                   # every speed (driver 2026-09-26: corrections at ~90 km/h felt stiff; was 3e-3 1/m/s = 1.9 m/s^3 there)
+LANE_CENTER_FILTER_TAU = 0.5       # s; low-pass on the measured offset and heading
 
 
 class LaneCentering:
@@ -131,9 +132,16 @@ class LaneCentering:
   def update(self, model_v2, v_ego: float, active: bool, steering_pressed: bool) -> float:
     """Curvature to ADD to the desired curvature (positive = right)."""
     meas = self.measure(model_v2) if active and not steering_pressed and v_ego > LANE_CENTER_MIN_SPEED else None
+    step = LANE_CENTER_JERK / max(v_ego, LANE_CENTER_MIN_SPEED) ** 2 * self.dt
     if meas is None:
-      self.reset()
-      return 0.0
+      # lines lost or driver steering: wind the correction back to zero at the same jerk instead of snapping (the
+      # snap showed up as a 3.9 m/s^3 spike when replaying route 53 seg 15)
+      self.offset_filter.x = 0.0
+      self.heading_filter.x = 0.0
+      self.integral = 0.0
+      self.valid = False
+      self.correction = float(np.clip(0.0, self.correction - step, self.correction + step))
+      return self.correction
 
     self.valid = True
     self.offset = self.offset_filter.update(meas[0])
@@ -145,7 +153,6 @@ class LaneCentering:
     lat_accel = LANE_CENTER_KP * error + LANE_CENTER_KD * lateral_speed + self.integral
     lat_accel = float(np.clip(lat_accel, -LANE_CENTER_MAX_LAT_ACCEL, LANE_CENTER_MAX_LAT_ACCEL))
     target = float(np.clip(lat_accel / max(v_ego, LANE_CENTER_MIN_SPEED) ** 2, -LANE_CENTER_MAX_CURV, LANE_CENTER_MAX_CURV))
-    step = LANE_CENTER_RATE * self.dt
     self.correction = float(np.clip(target, self.correction - step, self.correction + step))
     return self.correction
 
