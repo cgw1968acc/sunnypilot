@@ -139,6 +139,13 @@ class TestAccelController(OpenpilotTestCase):
     assert np.isclose(controller.get_cruise_target(19.44, 10.0) - 19.44, -0.22)
     assert np.isclose(controller.get_cruise_target(15.0, 10.0) - 15.0, -0.40)
     assert -0.40 < controller.get_cruise_target(18.0, 10.0) - 18.0 < -0.22
+    # with the planner's coast accel available, >= 70 km/h coasts exactly (pitch-aware), 60-70 blends into it
+    assert np.isclose(controller.get_cruise_target(22.0, 10.0, accel_coast=-0.27) - 22.0, -0.27)
+    assert np.isclose(controller.get_cruise_target(15.0, 10.0, accel_coast=-0.27) - 15.0, -0.40)
+    assert -0.40 < controller.get_cruise_target(18.0, 10.0, accel_coast=-0.27) - 18.0 < -0.27
+    # normal ignores the coast value
+    normal = self.set_profile(AccelProfile.normal)
+    assert normal.get_cruise_target(22.0, 20.0, accel_coast=-0.27) == normal.get_cruise_target(22.0, 20.0)
 
   def test_eco_no_lead_uses_less_throttle_above_launch(self):
     controller = self.set_profile(AccelProfile.eco)
