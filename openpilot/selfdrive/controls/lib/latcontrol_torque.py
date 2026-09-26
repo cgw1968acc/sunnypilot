@@ -157,6 +157,29 @@ class LaneCentering:
     return self.correction
 
 
+# Lateral jerk cap on the model's desired curvature. The MACROSTIFF model's path corrections felt a bit stiff to the
+# driver (route 53, 2026-09-26). Measured above 60 km/h outside lane changes on 2026-09-25/26: |d(desired curvature)/dt|
+# * v^2 has p90 0.70, p95 1.22, p99 2.19 m/s^3. Capping at 1.0 m/s^3 touches ~7% of frames - only the sharpest
+# corrections, which then reach the same curvature about 0.1-0.2 s later - and leaves steady centering untouched.
+# Bypassed during lane changes (controlsd has its own start-rate cap there) and when lateral control is inactive.
+DESIRED_CURVATURE_MAX_LAT_JERK = 1.0  # m/s^3
+DESIRED_CURVATURE_JERK_MIN_SPEED = 8.0  # m/s; below this the cap in curvature terms is so loose it barely acts
+
+
+class DesiredCurvatureJerkLimiter:
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.prev = 0.0
+
+  def update(self, desired_curvature: float, v_ego: float, active: bool, lane_changing: bool) -> float:
+    if not active or lane_changing:
+      self.prev = desired_curvature
+      return desired_curvature
+    step = DESIRED_CURVATURE_MAX_LAT_JERK / max(v_ego, DESIRED_CURVATURE_JERK_MIN_SPEED) ** 2 * self.dt
+    self.prev = float(np.clip(desired_curvature, self.prev - step, self.prev + step))
+    return self.prev
+
+
 class LatControlTorque(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
@@ -173,6 +196,7 @@ class LatControlTorque(LatControl):
 
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
     self.lane_centering = LaneCentering(dt)
+    self.curvature_jerk_limiter = DesiredCurvatureJerkLimiter(dt)
 
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -193,6 +217,8 @@ class LatControlTorque(LatControl):
     pid_log.version = VERSION
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
     desired_curvature += self.lane_centering.update(self.extension.model_v2, CS.vEgo, active, CS.steeringPressed)
+    lane_changing = self.extension.model_v2 is not None and self.extension.model_v2.meta.laneChangeState != 0
+    desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
     measurement = measured_curvature * CS.vEgo ** 2
     future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
