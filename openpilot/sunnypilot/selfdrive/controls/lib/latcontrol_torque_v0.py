@@ -10,7 +10,7 @@ from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
 
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext import LatControlTorqueExt
-from openpilot.selfdrive.controls.lib.latcontrol_torque import DesiredCurvatureJerkLimiter, LaneCentering, apply_curve_outward_bias
+from openpilot.selfdrive.controls.lib.latcontrol_torque import DesiredCurvatureJerkLimiter, LaneCentering, LaneTrimLowSpeed, apply_curve_outward_bias
 
 # At higher speeds (25+mph) we can assume:
 # Lateral acceleration achieved by a specific car correlates to
@@ -51,6 +51,7 @@ class LatControlTorque(LatControl):
 
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
     self.lane_centering = LaneCentering(dt)
+    self.lane_trim = LaneTrimLowSpeed(dt, self.lane_centering)
     self.curvature_jerk_limiter = DesiredCurvatureJerkLimiter(dt)
 
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
@@ -70,8 +71,10 @@ class LatControlTorque(LatControl):
 
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
+    model_curvature = desired_curvature
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
     desired_curvature += self.lane_centering.update(self.extension.model_v2, CS.vEgo, active, CS.steeringPressed)
+    desired_curvature += self.lane_trim.update(self.extension.model_v2, CS.vEgo, active, CS.steeringPressed, model_curvature)
     lane_changing = self.extension.model_v2 is not None and self.extension.model_v2.meta.laneChangeState != 0
     desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
     if not active:
