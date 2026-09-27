@@ -44,8 +44,10 @@ VERSION = 1
 # LOW-speed curves the car tends to run WIDE instead, so relaxing the curvature there makes it worse.
 CURVE_OUTWARD_DEADZONE = 0.0005  # 1/m (~radius 2000 m): below this is a straight / small correction, untouched.
 # Speed schedule (m/s -> fraction): 0 up to 40 km/h, 0.09 at 70, 0.155 at 90 km/h, 0.19 at 120 km/h.
-CURVE_OUTWARD_V_BP = [11.1, 13.9, 19.4, 25.0, 33.3]   # m/s (40, 50, 70, 90, 120 km/h)
-CURVE_OUTWARD_FRAC_V = [0.0, 0.05, 0.09, 0.155, 0.19]  # 50 km/h point added at 0.05 (was 0.03 by interpolation), 2026-09-27
+CURVE_OUTWARD_V_BP = [8.3, 11.1, 13.9, 19.4, 25.0, 33.3]   # m/s (30, 40, 50, 70, 90, 120 km/h)
+# Negative = INWARD bias (command more curvature than the model): Altis driver 2026-09-27, 30-40 km/h curves want more
+# steering; -0.05 at 30 km/h, back to 0 at 40, then the outward schedule. Stays 0 exactly at 40 so the two never fight.
+CURVE_OUTWARD_FRAC_V = [-0.05, 0.0, 0.05, 0.09, 0.155, 0.19]
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
@@ -53,9 +55,9 @@ def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
   # out at low speed (tight curves there need the full turn-in or the car runs wide). Straights and small lane
   # corrections below the deadzone are untouched.
   frac = float(np.interp(v_ego, CURVE_OUTWARD_V_BP, CURVE_OUTWARD_FRAC_V))
-  if frac <= 0.0 or abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
+  if frac == 0.0 or abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
     return desired_curvature
-  return desired_curvature * (1.0 - frac)
+  return desired_curvature * (1.0 - frac)   # frac < 0 scales the curvature UP (inward)
 
 # Lateral jerk cap on the model's desired curvature (ported from tncr18). Softens the sharpest high-speed path
 # corrections ("return to centre") while leaving steady centering untouched: capping |d(desired curvature)/dt| * v^2
