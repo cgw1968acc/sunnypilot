@@ -42,7 +42,8 @@ V_TAPER = 0.8  # m/s, below this the small creep-brake floor applies
 V_FIRM_IN = 8.3  # m/s (30 km/h; was 20 - driver 2026-09-27: build the firmness up slowly from 30 for a smoother feel)
 V_FIRM = 4.2  # m/s (15 km/h)
 A_FIRM_EXTRA = 0.45  # m/s^2 (0.4 too light, 0.47 too firm on the 2026-09-27 tests)
-A_FIRM_MAX = 1.6  # m/s^2
+A_FIRM_MAX = 2.0  # m/s^2 (1.6 -> 2.0, 2026-09-27 21:05: a fast approach reaches 30 km/h with ~25-30 m left, a_nom fits at
+                  # 1.0-1.5 and the old cap cut the +0.45 build-up to nothing - the stop felt like one straight line)
 V_GLIDE = 0.83  # m/s (3 km/h)
 A_GLIDE = 0.3  # m/s^2
 V_END = 0.7  # m/s
