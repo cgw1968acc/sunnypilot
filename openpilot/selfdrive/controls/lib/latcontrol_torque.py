@@ -26,7 +26,10 @@ KP = 0.8
 KI = 0.15
 
 INTERP_SPEEDS = [1, 1.5, 2.0, 3.0, 5, 7.5, 10, 15, 30]
-KP_INTERP = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, KP]
+# 15-30 km/h gains halved for the Corolla Altis Hybrid (2026-09-27, route b7 seg 8): with the stock schedule
+# (11.5 / 5.5 / 3.5 at 5 / 7.5 / 10 m/s) a wheel release mid-turn at 16 km/h turned into a full-authority limit cycle -
+# torque saturated 71% of the time, P term +-4 on a 0.3 m/s^2 error, ~1.2 s period, steering +-40-56 deg.
+KP_INTERP = [250, 120, 65, 30, 6.0, 3.2, 2.4, 1.6, KP]
 
 LP_FILTER_CUTOFF_HZ = 1.2
 JERK_LOOKAHEAD_SECONDS = 0.19
