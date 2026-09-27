@@ -24,14 +24,13 @@ def at(out, t):
 
 
 class TestBrakeOnset:
-  def test_step_brake_eases_in_over_the_first_second(self):
+  def test_step_brake_eases_in_only_for_the_first_instant(self):
     out = run([-1.5] * 60)
     assert at(out, 0.09) > -0.06  # first 0.15 s: barely anything
     assert at(out, 0.21) > -0.12  # 0.2 s: still very light
-    assert -0.45 < at(out, 0.36) < -0.10  # ~0.35 s: building slowly
-    assert -0.60 < at(out, 0.60) < -0.15  # 0.6 s: still gentle, about a fifth of the way
-    assert -1.10 < at(out, 1.00) < -0.55  # 1.0 s: about half way, the ramp is now running up
-    assert np.isclose(at(out, 1.5), -1.5, atol=1e-6)  # settled once the ramp reaches the stock limit
+    assert -0.50 < at(out, 0.36) < -0.15  # ~0.35 s: the quick ramp is under way
+    assert -1.30 < at(out, 0.60) < -0.80  # 0.6 s: most of the way, at the stock limit now
+    assert np.isclose(at(out, 1.0), -1.5, atol=1e-6)  # settled well before 1 s
 
   def test_jerk_follows_the_schedule_and_never_exceeds_stock(self):
     out = run([-1.9] * 60, a0=1.0)  # large step, still above the hard-brake bypass
