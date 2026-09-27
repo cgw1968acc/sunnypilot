@@ -51,6 +51,32 @@ def apply_curve_outward_bias(desired_curvature: float) -> float:
   over = desired_curvature - math.copysign(CURVE_OUTWARD_DEADZONE, desired_curvature)
   return desired_curvature - CURVE_OUTWARD_FRAC * over
 
+# Lateral jerk cap on the model's desired curvature (ported from tncr18). Softens the sharpest high-speed path
+# corrections ("return to centre") while leaving steady centering untouched: capping |d(desired curvature)/dt| * v^2
+# at 1.0 m/s^3 only touches the fastest few percent of frames, which then reach the same curvature about 0.1-0.2 s later.
+# Bypassed during lane changes (controlsd has its own start-rate cap there) and when lateral control is inactive.
+DESIRED_CURVATURE_MAX_LAT_JERK = 1.0  # m/s^3
+DESIRED_CURVATURE_JERK_MIN_SPEED = 8.0  # m/s; below this the cap in curvature terms is so loose it barely acts
+# Highway speed only: below 70 km/h the cap is effectively off (8 m/s^3), fading to 1.0 at 80.
+DESIRED_CURVATURE_JERK_FADE_BP = [19.4, 22.2]  # m/s
+DESIRED_CURVATURE_JERK_FADE_V = [8.0, DESIRED_CURVATURE_MAX_LAT_JERK]
+
+
+class DesiredCurvatureJerkLimiter:
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.prev = 0.0
+
+  def update(self, desired_curvature: float, v_ego: float, active: bool, lane_changing: bool) -> float:
+    if not active or lane_changing:
+      self.prev = desired_curvature
+      return desired_curvature
+    max_jerk = float(np.interp(v_ego, DESIRED_CURVATURE_JERK_FADE_BP, DESIRED_CURVATURE_JERK_FADE_V))
+    step = max_jerk / max(v_ego, DESIRED_CURVATURE_JERK_MIN_SPEED) ** 2 * self.dt
+    self.prev = float(np.clip(desired_curvature, self.prev - step, self.prev + step))
+    return self.prev
+
+
 class LatControlTorque(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
@@ -66,6 +92,7 @@ class LatControlTorque(LatControl):
     self.jerk_filter = FirstOrderFilter(0.0, 1 / (2 * np.pi * LP_FILTER_CUTOFF_HZ), self.dt)
 
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
+    self.curvature_jerk_limiter = DesiredCurvatureJerkLimiter(dt)
 
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -85,6 +112,8 @@ class LatControlTorque(LatControl):
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
     desired_curvature = apply_curve_outward_bias(desired_curvature)
+    lane_changing = self.extension.model_v2 is not None and self.extension.model_v2.meta.laneChangeState != 0
+    desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
     measurement = measured_curvature * CS.vEgo ** 2
     future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
