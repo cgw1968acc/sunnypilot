@@ -65,9 +65,12 @@ def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
 # Bypassed during lane changes (controlsd has its own start-rate cap there) and when lateral control is inactive.
 DESIRED_CURVATURE_MAX_LAT_JERK = 1.0  # m/s^3
 DESIRED_CURVATURE_JERK_MIN_SPEED = 8.0  # m/s; below this the cap in curvature terms is so loose it barely acts
-# Highway speed only: below 70 km/h the cap is effectively off (8 m/s^3), fading to 1.0 at 80.
-DESIRED_CURVATURE_JERK_FADE_BP = [19.4, 22.2]  # m/s
-DESIRED_CURVATURE_JERK_FADE_V = [8.0, DESIRED_CURVATURE_MAX_LAT_JERK]
+# Speed schedule (Altis 2026-09-27 21:14, route bf seg 11): after a torque-saturated tight turn at 41-47 km/h the model's
+# desired curvature swung -22 -> +6 -> -4 e-3 (~6 m/s^3) and the car swayed twice; a 2.5 m/s^3 cap rounds that off while
+# a normal turn-in (~1 m/s^3) is untouched. Off below 30 km/h (tight intersection turns need the full rate), 2.5 from
+# 40 to 70 km/h, then the highway 1.0 from 80 km/h.
+DESIRED_CURVATURE_JERK_FADE_BP = [8.3, 11.1, 19.4, 22.2]  # m/s (30, 40, 70, 80 km/h)
+DESIRED_CURVATURE_JERK_FADE_V = [8.0, 2.5, 2.5, DESIRED_CURVATURE_MAX_LAT_JERK]
 
 
 class DesiredCurvatureJerkLimiter:

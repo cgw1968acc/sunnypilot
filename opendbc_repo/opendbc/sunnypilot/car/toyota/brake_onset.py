@@ -17,7 +17,13 @@ onset on top of the brake already applied. Hard braking requests and FCW bypass 
 """
 import numpy as np
 
-ONSET_T_BP = [0.0, 0.15, 0.6]  # s since the request began falling faster than ONSET_J_DOWN[0]
+ONSET_T_BP = [0.0, 0.15, 0.6]  # s since the request began falling faster than ONSET_J_DOWN[0] (at speed)
+# At low speed the join is slower (Altis 2026-09-27 22:27, engage at 35 km/h behind a close lead: the ramp was at
+# ~1.7 m/s^3 by 0.3 s and the PCM over-delivered to -1.1 with -7.9 m/s^3 jerk). Below 40 km/h the schedule's time
+# points stretch to 0.3 / 1.2 s, above 60 km/h they are the stock 0.15 / 0.6 s, interpolated in between.
+ONSET_V_BP = [11.1, 16.7]  # m/s (40, 60 km/h)
+ONSET_T1_V = [0.3, 0.15]
+ONSET_T3_V = [1.2, 0.6]
 ONSET_J_DOWN = [0.25, 0.6, 4.0]  # m/s^3 downward jerk limit: almost nothing for the first instant, then one quick ramp to
 # the stock limit by 0.6 s. Road test 2026-09-27 11:22 (stopped car ahead): the earlier 1.5 s build-up was soft at
 # first but joined the normal brake too slowly and the rest of the stop felt uneven; the driver wants only the very
@@ -34,17 +40,24 @@ class BrakeOnsetShaper:
   def reset(self) -> None:
     self.t_onset = 0.0
 
-  def down_step(self, accel_request: float, prev_accel: float, bypass: bool = False) -> float:
+  @staticmethod
+  def schedule_t(v_ego: float) -> list[float]:
+    t1 = float(np.interp(v_ego, ONSET_V_BP, ONSET_T1_V))
+    t3 = float(np.interp(v_ego, ONSET_V_BP, ONSET_T3_V))
+    return [0.0, t1, t3]
+
+  def down_step(self, accel_request: float, prev_accel: float, bypass: bool = False, v_ego: float = 30.0) -> float:
     """Negative per-frame step allowed for the command this cycle (feed as dw_step to rate_limit)."""
     if bypass:
       self.t_onset = 0.0
       return -self.stock_down_jerk * self.dt
 
+    t_bp = self.schedule_t(v_ego)
     gentlest_step = -ONSET_J_DOWN[0] * self.dt
     onset = (accel_request - prev_accel) < gentlest_step - 1e-9
     if onset:
-      j_down = float(np.interp(self.t_onset, ONSET_T_BP, ONSET_J_DOWN))
-      self.t_onset = min(self.t_onset + self.dt, ONSET_T_BP[-1])
+      j_down = float(np.interp(self.t_onset, t_bp, ONSET_J_DOWN))
+      self.t_onset = min(self.t_onset + self.dt, t_bp[-1])
     else:
       # a gentle or rising request lets the schedule wind back at real time, so a short pause in a brake
       # does not fully re-arm it while a settled brake does

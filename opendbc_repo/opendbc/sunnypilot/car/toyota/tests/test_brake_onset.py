@@ -132,3 +132,30 @@ class TestEngageOnsetShaper:
     assert not sh.in_engage_window
     sh.up_step(False)
     assert sh.in_engage_window                     # re-armed by a disengage
+
+
+class TestLowSpeedOnset:
+  DT = 0.03
+  STOCK = 4.0
+
+  def _sim(self, v_ego, request=-1.5, frames=60):
+    sh = BrakeOnsetShaper(self.DT, self.STOCK)
+    cmd, out = 0.0, []
+    for _ in range(frames):
+      cmd = max(request, cmd + sh.down_step(request, cmd, v_ego=v_ego))
+      out.append(cmd)
+    return out
+
+  def test_low_speed_join_is_slower_than_at_speed(self):
+    slow = self._sim(30 / 3.6)
+    fast = self._sim(80 / 3.6)
+    i = int(0.5 / self.DT)
+    assert slow[i] > fast[i] + 0.1          # less brake half a second in at 30 km/h
+    assert slow[int(1.5 / self.DT)] <= -1.5 + 1e-9   # but the request is still reached by 1.5 s
+    assert BrakeOnsetShaper.schedule_t(30 / 3.6)[-1] == 1.2
+    assert BrakeOnsetShaper.schedule_t(80 / 3.6)[-1] == 0.6
+
+  def test_first_instant_is_the_same_lightest_touch_at_any_speed(self):
+    for v in (20 / 3.6, 50 / 3.6, 100 / 3.6):
+      out = self._sim(v)
+      assert out[int(0.09 / self.DT)] > -0.05
