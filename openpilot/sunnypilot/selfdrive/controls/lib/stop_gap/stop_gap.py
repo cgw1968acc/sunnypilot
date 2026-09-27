@@ -41,7 +41,7 @@ V_TAPER = 0.8  # m/s, below this the small creep-brake floor applies
 #   V_END -> 0              ramps up to A_END so the car comes to rest instead of crawling
 V_FIRM_IN = 5.6  # m/s (20 km/h)
 V_FIRM = 4.2  # m/s (15 km/h)
-A_FIRM_EXTRA = 0.5  # m/s^2
+A_FIRM_EXTRA = 0.4  # m/s^2 (0.5 -> 0.4, driver 2026-09-27 after the first test)
 A_FIRM_MAX = 1.6  # m/s^2
 V_GLIDE = 0.83  # m/s (3 km/h)
 A_GLIDE = 0.3  # m/s^2
