@@ -19,21 +19,34 @@ MAX_ACCEL_PROFILES = {
   AccelProfile.normal: [1.95, 1.80, 0.70, 0.36, 0.25],
   AccelProfile.sport:  [2.00, 2.00, 1.20, 0.70, 0.50],
 }
-CRUISE_DECEL_RESPONSE_TIME = {  # seconds
-  AccelProfile.eco: 4.0,
+# Cruise deceleration to a lowered set speed (no lead). Normal/sport: one CONSTANT decel latched when the gap opens
+# (gap / response time, never gentler than CRUISE_DECEL_ACCEL) and held, so the car slows on a straight line instead of
+# the proportional gap/time law, which braked hardest at the start and dragged a long tail; more presses = firmer.
+# Eco (driver request 2026-09-25/26): never hurry to the new set speed however far it is or however many presses.
+# Above 70 km/h: pure coasting - the target decel IS the planner's pitch-aware coast accel (get_coast_accel), so the
+# PCM neither adds throttle nor regen; the speed table above 70 is only the fallback when no coast value is given
+# (road-load estimate of a 1500 kg Corolla Cross: -0.22 at 70, -0.30 at 90, -0.40 at 120). Below 60 km/h -0.40
+# (regen), blended into coasting between 60 and 70 as the speed falls. Whether -0.40 is too firm is for the road test.
+CRUISE_DECEL_RESPONSE_TIME = {  # seconds to close the gap (normal/sport)
   AccelProfile.normal: 3.5,
   AccelProfile.sport: 3.0,
 }
-CRUISE_DECEL_ACCEL = {  # m/s^2; comfort-first cruise deceleration target
-  AccelProfile.eco: -0.35,
+CRUISE_DECEL_ACCEL = {  # m/s^2; gentlest constant decel (normal/sport)
   AccelProfile.normal: -0.50,
   AccelProfile.sport: -0.65,
 }
+ECO_CRUISE_DECEL_BP = [0., 16.67, 19.44, 25.0, 33.3]   # m/s (0, 60, 70, 90, 120 km/h)
+ECO_CRUISE_DECEL_V = [-0.40, -0.40, -0.22, -0.30, -0.40]  # m/s^2; the >= 70 km/h part is only the FALLBACK coast estimate
+ECO_COAST_BLEND_BP = [16.67, 19.44]  # m/s: -0.40 at 60 km/h blends into pure coasting by 70 km/h
+ECO_COAST_MIN, ECO_COAST_MAX = -1.2, -0.05  # m/s^2; sanity clip on the planner's pitch-aware coast accel
+CRUISE_DECEL_TAPER_TIME = 1.0  # s; inside |decel| * this of the target the decel eases off proportionally (no overshoot)
 
 
 class AccelController:
   def __init__(self):
     self.params = Params()
+    self._cruise_decel: float | None = None
+    self._cruise_decel_target: float | None = None
     self.update()
 
   def update(self) -> None:
@@ -50,12 +63,28 @@ class AccelController:
   def get_max_accel(self, v_ego: float) -> float:
     return float(np.interp(max(0.0, v_ego), MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES[self._profile]))
 
-  def get_cruise_target(self, v_ego: float, v_target: float) -> float:
+  def get_cruise_target(self, v_ego: float, v_target: float, accel_coast: float | None = None) -> float:
     if not np.isfinite(v_target) or v_target <= 0.0 or v_target >= v_ego:
+      self._cruise_decel = None
+      self._cruise_decel_target = None
       return v_target
 
-    response_time = CRUISE_DECEL_RESPONSE_TIME[self._profile]
     target_delta = v_target - v_ego
-    if target_delta < CRUISE_DECEL_ACCEL[self._profile] * response_time * 2.0:
-      return v_target
-    return float(v_ego + target_delta / response_time)
+    if self._profile == AccelProfile.eco:
+      # speed-scheduled, independent of the gap and of how many presses opened it
+      decel = float(np.interp(v_ego, ECO_CRUISE_DECEL_BP, ECO_CRUISE_DECEL_V))
+      if accel_coast is not None and np.isfinite(accel_coast) and accel_coast < 0.0:
+        # >= 70 km/h: coast exactly (pitch-aware); 60-70 km/h: blend from the low-speed value into coasting
+        coast = float(np.clip(accel_coast, ECO_COAST_MIN, ECO_COAST_MAX))
+        w = float(np.interp(v_ego, ECO_COAST_BLEND_BP, [0.0, 1.0]))
+        decel = (1.0 - w) * ECO_CRUISE_DECEL_V[1] + w * coast
+    else:
+      if self._cruise_decel is None or self._cruise_decel_target != v_target:
+        # a new (or changed) gap: latch one constant decel for this episode
+        self._cruise_decel = min(CRUISE_DECEL_ACCEL[self._profile], target_delta / CRUISE_DECEL_RESPONSE_TIME[self._profile])
+        self._cruise_decel_target = v_target
+      decel = self._cruise_decel
+
+    # taper only once the target is close (both terms are negative; max = the gentler one) so the speed lands cleanly
+    decel = max(decel, target_delta / CRUISE_DECEL_TAPER_TIME)
+    return float(v_ego + decel)
