@@ -37,19 +37,25 @@ JERK_GAIN = 0.3
 LAT_ACCEL_REQUEST_BUFFER_SECONDS = 1.0
 VERSION = 1
 
-# Corner-cutting fix (Altis rlog 2026-09-20: the e2e path sits ~0.6 m inside on curves, both directions).
-# Relax the commanded curvature by a small fraction of the part above a deadzone, so the car runs a little
-# wider (outward) in proportion to how tight the curve is. Below the deadzone (straights and small lane
-# corrections) nothing changes, so lane keeping is untouched. Road-tune CURVE_OUTWARD_FRAC (bigger = wider).
-CURVE_OUTWARD_FRAC = 0.12
-CURVE_OUTWARD_DEADZONE = 0.003  # 1/m (~radius 330 m); only real curves are biased
+# Corner-cutting fix (Altis rlog 2026-09-20: the e2e path sits ~0.6 m inside on curves, both directions). Relax the
+# commanded curvature by a fraction so the car runs a little wider (outward) in proportion to how tight the curve is.
+# Straights and small lane corrections below the deadzone are untouched. Schedule ported from tncr18 (Corolla Cross
+# road tests 2026-09-23..25): the outward bias only helps at higher speed, where the path cuts the inside. On tight
+# LOW-speed curves the car tends to run WIDE instead, so relaxing the curvature there makes it worse.
+CURVE_OUTWARD_DEADZONE = 0.0005  # 1/m (~radius 2000 m): below this is a straight / small correction, untouched.
+# Speed schedule (m/s -> fraction): 0 up to 40 km/h, 0.09 at 70, 0.155 at 90 km/h, 0.19 at 120 km/h.
+CURVE_OUTWARD_V_BP = [11.1, 19.4, 25.0, 33.3]   # m/s (40, 70, 90, 120 km/h)
+CURVE_OUTWARD_FRAC_V = [0.0, 0.09, 0.155, 0.19]
 
 
-def apply_curve_outward_bias(desired_curvature: float) -> float:
-  if abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
+def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
+  # In a fast curve, command a slightly smaller curvature so the car runs wider and stops cutting the inside. Faded
+  # out at low speed (tight curves there need the full turn-in or the car runs wide). Straights and small lane
+  # corrections below the deadzone are untouched.
+  frac = float(np.interp(v_ego, CURVE_OUTWARD_V_BP, CURVE_OUTWARD_FRAC_V))
+  if frac <= 0.0 or abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
     return desired_curvature
-  over = desired_curvature - math.copysign(CURVE_OUTWARD_DEADZONE, desired_curvature)
-  return desired_curvature - CURVE_OUTWARD_FRAC * over
+  return desired_curvature * (1.0 - frac)
 
 # Lateral jerk cap on the model's desired curvature (ported from tncr18). Softens the sharpest high-speed path
 # corrections ("return to centre") while leaving steady centering untouched: capping |d(desired curvature)/dt| * v^2
@@ -111,7 +117,7 @@ class LatControlTorque(LatControl):
 
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
-    desired_curvature = apply_curve_outward_bias(desired_curvature)
+    desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
     lane_changing = self.extension.model_v2 is not None and self.extension.model_v2.meta.laneChangeState != 0
     desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
