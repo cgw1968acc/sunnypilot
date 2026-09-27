@@ -150,6 +150,8 @@ class StopGapGovernor:
       # keep a small brake floor near the stop (v_ego < V_TAPER) so the car never fully releases and creeps off a
       # dead stop; above that the profile can still ease to zero. The firm standstill clamp (stopAccel) does the hold.
       lo = A_CREEP_FLOOR if v_ego < V_TAPER else 0.0
+      if self.three_phase and s <= S_END:
+        lo = max(lo, 0.75 * A_END)   # the last half metre always brakes: arriving slow must not turn into a crawl
       decel = float(np.clip(decel, lo, -A_NEG_MAX))
       a = -decel
 
