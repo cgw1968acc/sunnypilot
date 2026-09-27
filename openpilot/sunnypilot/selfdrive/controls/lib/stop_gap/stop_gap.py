@@ -39,9 +39,9 @@ V_TAPER = 0.8  # m/s, below this the small creep-brake floor applies
 #   V_FIRM -> V_GLIDE       ramps down to A_GLIDE
 #   V_GLIDE -> V_END        A_GLIDE (the light part, a brake still on - not coasting)
 #   V_END -> 0              ramps up to A_END so the car comes to rest instead of crawling
-V_FIRM_IN = 5.6  # m/s (20 km/h)
+V_FIRM_IN = 8.3  # m/s (30 km/h; was 20 - driver 2026-09-27: build the firmness up slowly from 30 for a smoother feel)
 V_FIRM = 4.2  # m/s (15 km/h)
-A_FIRM_EXTRA = 0.47  # m/s^2 (0.4 -> 0.47, driver 2026-09-27 after the second test)
+A_FIRM_EXTRA = 0.45  # m/s^2 (0.4 too light, 0.47 too firm on the 2026-09-27 tests)
 A_FIRM_MAX = 1.6  # m/s^2
 V_GLIDE = 0.83  # m/s (3 km/h)
 A_GLIDE = 0.3  # m/s^2
