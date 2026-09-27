@@ -44,10 +44,10 @@ VERSION = 1
 # LOW-speed curves the car tends to run WIDE instead, so relaxing the curvature there makes it worse.
 CURVE_OUTWARD_DEADZONE = 0.0005  # 1/m (~radius 2000 m): below this is a straight / small correction, untouched.
 # Speed schedule (m/s -> fraction): 0 up to 40 km/h, 0.09 at 70, 0.155 at 90 km/h, 0.19 at 120 km/h.
-CURVE_OUTWARD_V_BP = [v * CV.KPH_TO_MS for v in (30., 40., 50., 70., 90., 120.)]   # m/s
+CURVE_OUTWARD_V_BP = [v * CV.KPH_TO_MS for v in (30., 40., 50., 70., 90., 100., 120.)]   # m/s
 # Negative = INWARD bias (command more curvature than the model): Altis driver 2026-09-27, 30-40 km/h curves want more
 # steering; -0.05 at 30 km/h, back to 0 at 40, then the outward schedule. Stays 0 exactly at 40 so the two never fight.
-CURVE_OUTWARD_FRAC_V = [-0.05, 0.0, 0.05, 0.09, 0.155, 0.19]
+CURVE_OUTWARD_FRAC_V = [-0.05, 0.0, 0.05, 0.09, 0.155, 0.167, 0.167]  # flat from 100 km/h (was 0.19 at 120), 2026-09-27
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
