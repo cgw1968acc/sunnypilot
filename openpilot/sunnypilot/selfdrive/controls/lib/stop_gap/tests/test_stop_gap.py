@@ -2,8 +2,8 @@ import unittest
 
 import numpy as np
 
-from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import A_ENGAGE, S_ENGAGE_BASE, (StopGapGovernor, STOP_GAP, V_ENGAGE,
-                                                                          CREEP_LEAD_V, RELEASE_RATE)
+from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import (StopGapGovernor, STOP_GAP, V_ENGAGE,
+                                                                          CREEP_LEAD_V, RELEASE_RATE, A_ENGAGE, S_ENGAGE_BASE)
 
 DT = 0.05
 STOP_ACCEL = -1.0          # hybrid stopAccel (Toyota interface)
