@@ -8,6 +8,10 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
 STOPPING_DECEL_RATE = 0.3  # m/s^2/s while trying to stop
+# Once the car is actually standing still the brake request keeps falling towards stopAccel at this faster rate, so
+# the hold firms up in well under a second instead of ~3 s (Altis 2026-09-27: after a stop behind a lead the car rolled
+# on towards it). The approach and the stop itself are untouched: this rate only applies with CS.standstill set.
+STANDSTILL_HOLD_RATE = 1.0  # m/s^2/s
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -70,7 +74,7 @@ class LongControl:
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
         # TODO: can we just go straight to stopAccel?
-        output_accel -= STOPPING_DECEL_RATE * DT_CTRL
+        output_accel -= (STANDSTILL_HOLD_RATE if CS.standstill else STOPPING_DECEL_RATE) * DT_CTRL
       self.reset()
 
     else:  # LongCtrlState.pid

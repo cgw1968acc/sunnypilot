@@ -1,7 +1,7 @@
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import custom
 from openpilot.selfdrive.controls.lib.drive_helpers import STOPPING_SPEED, should_stop
-from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, LongCtrlState, long_control_state_trans
+from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, LongCtrlState, long_control_state_trans
 
 
 class TestLongControlStateTransition(OpenpilotTestCase):
@@ -53,3 +53,8 @@ class TestTerminalStop(OpenpilotTestCase):
     assert 0.0 < STOPPING_SPEED <= 0.3
     assert should_stop(STOPPING_SPEED - 0.01, 0.0)
     assert not should_stop(0.29, 0.0)  # the band upstream would latch in and we do not
+
+  def test_standstill_hold_firms_faster_than_the_stopping_ramp(self):
+    # the hold only speeds up once the car is stopped, and reaches a firm -1.0 m/s^2 hold in about a second
+    assert STANDSTILL_HOLD_RATE >= STOPPING_DECEL_RATE
+    assert 0.5 <= STANDSTILL_HOLD_RATE <= 2.0
