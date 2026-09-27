@@ -154,7 +154,9 @@ class SelfdriveD(CruiseHelper):
     self.state_machine = StateMachine()
     self.rk = Ratekeeper(100, print_delay_threshold=None)
 
-    self.ignored_processes = {'mapd', }
+    # micd only feeds soundd's volume adaptation; on the C3X the mic stream often cannot be opened at boot and micd used
+    # to die after its retries, which blocked engagement for the whole drive ("Process Not Running: micd", 2026-09-26)
+    self.ignored_processes = {'mapd', 'micd'}
 
     # Determine startup event
     is_remote = build_metadata.openpilot.comma_remote or build_metadata.openpilot.sunnypilot_remote
