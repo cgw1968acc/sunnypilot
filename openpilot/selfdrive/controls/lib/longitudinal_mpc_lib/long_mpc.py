@@ -61,7 +61,7 @@ def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
     return 1.0
   elif personality==log.LongitudinalPersonality.standard:
-    return 1.0
+    return 1.3  # 1.0 -> 1.3 (2026-09-27): weight jerk more so lead braking is a flatter, lower-peak curve
   elif personality==log.LongitudinalPersonality.aggressive:
     return 0.5
   else:

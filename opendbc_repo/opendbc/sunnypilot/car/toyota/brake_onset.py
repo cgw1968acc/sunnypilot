@@ -10,15 +10,18 @@ ACCEL_WINDDOWN_LIMIT (4 m/s^3) from the first frame, so a new brake request goes
 a driver eases onto the pedal. Here the downward jerk follows a schedule that restarts whenever the request starts
 falling faster than the gentlest rate: almost nothing in the first 0.1 s, then one straight ramp of the jerk limit
 up to the stock value at ONSET_T_BP[-1], so the soft start blends into the normal brake without a second bend
-(road test 2026-09-20: a two-stage schedule that stayed light until 0.2 s felt disconnected from the brake that
-followed). Because the schedule keys off the *request*, a lead switch to a closer car
-during a steady brake gets the same soft onset on top of the brake already applied. Hard braking requests and FCW
-bypass the schedule entirely, and the upward (release) limit is not touched.
+(Corolla Cross request 2026-09-26, route 53 seg 14: a lead brake at 95 km/h went 0 -> -0.3 m/s^2 in 0.3 s and
+-0.9 in 1.1 s and felt heavy; the driver asked for almost nothing in the first 0.2 s and a slow build after it).
+Because the schedule keys off the *request*, a lead switch to a closer car during a steady brake gets the same soft
+onset on top of the brake already applied. Hard braking requests and FCW bypass the schedule entirely, and the upward (release) limit is not touched.
 """
 import numpy as np
 
-ONSET_T_BP = [0.0, 0.15, 0.45]  # s since the request began falling faster than ONSET_J_DOWN[0]
-ONSET_J_DOWN = [0.25, 0.4, 4.0]  # m/s^3 downward jerk limit: barely anything for 0.15 s, then blend to the stock limit
+ONSET_T_BP = [0.0, 0.2, 0.6, 1.0, 1.5]  # s since the request began falling faster than ONSET_J_DOWN[0]
+ONSET_J_DOWN = [0.25, 0.4, 0.8, 1.8, 4.0]  # m/s^3 downward jerk limit: barely anything for 0.2 s, then a build-up that
+# stays gentle through the first second and only then runs up to the stock limit (driver, Corolla Cross 2026-09-26:
+# "very light at first, then ease in", follow distance must not change - only the shape of the first 1.5 s does).
+# With a request stepping to -1.5 m/s^2 the command is about -0.05 at 0.2 s, -0.3 at 0.6 s, -0.8 at 1.0 s, -1.5 by 1.3 s.
 HARD_BRAKE_ACCEL = -2.0  # m/s^2, requests below this are urgent and get the stock limit straight away
 
 
