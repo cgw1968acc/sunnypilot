@@ -120,3 +120,15 @@ class TestEngageOnsetShaper:
     assert sh.up_step(True) == self.STOCK * self.DT
     assert sh.up_step(False) == self.STOCK * self.DT
     assert sh.up_step(True) < 0.3 * self.DT     # re-armed: engage schedule from the start again
+
+  def test_engage_window_covers_the_first_0_6_s_only(self):
+    sh = EngageOnsetShaper(self.DT, self.STOCK)
+    assert sh.in_engage_window                     # not yet ticked: the engage instant
+    for _ in range(int(0.5 / self.DT)):
+      sh.up_step(True)
+    assert sh.in_engage_window
+    for _ in range(int(0.3 / self.DT)):
+      sh.up_step(True)
+    assert not sh.in_engage_window
+    sh.up_step(False)
+    assert sh.in_engage_window                     # re-armed by a disengage

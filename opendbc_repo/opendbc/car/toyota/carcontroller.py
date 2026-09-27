@@ -246,8 +246,9 @@ class CarController(CarControllerBase, GasInterceptorCarController):
         # the upward step is likewise eased for the first 0.6 s after engaging (gas side of the same request)
         pcm_accel_cmd = actuators.accel
         if CC.longActive:
-          winddown_step = self.brake_onset.down_step(pcm_accel_cmd, self.prev_accel,
-                                                     bypass=self.brake_onset.is_urgent(pcm_accel_cmd, fcw_alert))
+          # a hard request bypasses the soft brake onset, except in the first 0.6 s after engaging (FCW always does)
+          urgent = fcw_alert or (self.brake_onset.is_urgent(pcm_accel_cmd, False) and not self.engage_onset.in_engage_window)
+          winddown_step = self.brake_onset.down_step(pcm_accel_cmd, self.prev_accel, bypass=urgent)
           windup_step = self.engage_onset.up_step(True)
           pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, winddown_step, windup_step)
         else:
