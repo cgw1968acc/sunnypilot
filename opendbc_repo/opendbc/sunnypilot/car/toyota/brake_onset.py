@@ -74,6 +74,13 @@ class EngageOnsetShaper:
   def reset(self) -> None:
     self.t_engaged = None
 
+  @property
+  def in_engage_window(self) -> bool:
+    """True from the engage instant until the schedule has reached stock (0.6 s): the brake side must keep its soft
+    onset here even for a hard request, so a low-speed engage close behind a lead does not stab the brake
+    (driver 2026-09-27). FCW still bypasses everything."""
+    return self.t_engaged is None or self.t_engaged < ENGAGE_T_BP[-1]
+
   def up_step(self, active: bool) -> float:
     """Positive per-frame step allowed for the command this cycle (feed as up_step to rate_limit)."""
     if not active:
