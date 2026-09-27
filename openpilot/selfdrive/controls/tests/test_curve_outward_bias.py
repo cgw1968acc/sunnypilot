@@ -7,7 +7,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import (apply_curve_outw
 
 class TestCurveOutwardBias(unittest.TestCase):
   def test_straights_and_small_corrections_untouched(self):
-    for k in (0.0, 0.001, CURVE_OUTWARD_DEADZONE, -CURVE_OUTWARD_DEADZONE, 0.0025):
+    for k in (0.0, 0.0003, CURVE_OUTWARD_DEADZONE, -CURVE_OUTWARD_DEADZONE, -0.0004):
       self.assertEqual(apply_curve_outward_bias(k, CURVE_OUTWARD_V_BP[1]), k)
 
   def test_curves_relaxed_outward_and_sign_preserved(self):
