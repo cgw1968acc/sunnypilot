@@ -34,11 +34,11 @@ A_NOM_MAX = 1.6  # m/s^2, most it steepens to for a fast/close arrival
 V_TAPER = 0.8  # m/s, below this the small creep-brake floor applies
 # Three-phase stop (driver, Altis 2026-09-27): a little firmer between 10 and 5 km/h, then below 5 km/h a long glide
 # with only a very light brake all the way to the point.
-V_FIRM = 2.8  # m/s (10 km/h): top of the firmer phase
-A_FIRM_EXTRA = 0.25  # m/s^2 added to the constant-deceleration part for the 10-5 km/h phase
-A_FIRM_MAX = 1.5  # m/s^2
+V_FIRM = 4.2  # m/s (15 km/h; was 10 - driver 2026-09-27 13:21: start firming earlier): top of the firmer phase
+A_FIRM_EXTRA = 0.5  # m/s^2 added to the constant-deceleration part at the top of the firm phase (0.25 -> 0.5: heavier)
+A_FIRM_MAX = 1.6  # m/s^2
 V_GLIDE = 0.83  # m/s (3 km/h; was 5 km/h - the driver is fine with a shorter glide): below this the car glides ...
-A_GLIDE = 0.2  # m/s^2 ... with this very light brake ...
+A_GLIDE = 0.3  # m/s^2 ... with this light brake (0.2 -> 0.3: 'lighter braking', not coasting) ...
 A_END = 0.4  # m/s^2 ... and the last S_END metres a touch firmer so the car actually comes to rest instead of crawling
 S_END = 0.5  # m
 TAU_V = 0.6  # s, velocity-loop time constant that pulls ego onto the profile
