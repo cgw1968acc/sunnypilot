@@ -170,10 +170,14 @@ class StopGapGovernor:
     # glide, while the closing energy is tiny (<= 10 km/h, > 3 m to go) and the standstill clamp still applies.
     governor_owns_brake = (self.profile is not None and s <= self.profile.s_soft and v_lead < LEAD_STOPPED_V
                            and v_close <= V_FIRM_IN + 0.3)
+    a = float(np.clip(a, A_NEG_MAX, 0.0))              # the governor's own profile never asks harder than A_NEG_MAX
     if not governor_owns_brake:
+      # ... but it must never brake LESS than the MPC. The clip used to sit after this min(), so a lead braking hard
+      # (2026-09-27 21:05: MPC -2.8 at 35 km/h, lead 27 m closing 7 m/s) was capped to -2.0 and the stop ended 2.0 m
+      # behind the lead. The MPC's harder request now passes through untouched.
       a = min(a, float(a_current))
     a = min(a, self.a_prev + RELEASE_RATE * self.dt)   # never let the brake go with a jolt
-    a = float(np.clip(a, A_NEG_MAX, 0.0))
+    a = float(min(a, 0.0))
     self.a_prev = a
     # clamp for standstill once nearly stopped; the light taper above has already eased the car in near the point,
     # so this latches smoothly instead of grabbing the car short

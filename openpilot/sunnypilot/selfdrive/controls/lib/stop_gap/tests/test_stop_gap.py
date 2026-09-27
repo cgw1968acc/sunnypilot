@@ -132,3 +132,16 @@ class TestStopGapGovernor(unittest.TestCase):
 
 if __name__ == "__main__":
   unittest.main()
+
+
+def test_mpc_request_harder_than_the_cap_passes_through():
+  # a lead braking hard: the MPC asks for -2.8 while the governor's own profile is capped at A_NEG_MAX (-2.0)
+  from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import StopGapGovernor, A_NEG_MAX
+  g = StopGapGovernor(0.05)
+  out = None
+  for _ in range(20):
+    out = g.update(True, 8.0, True, 12.0, 1.0, -2.8)   # v_ego 8 m/s, lead 12 m ahead at 1 m/s (not stopped)
+  assert out is not None
+  a, _ = out
+  assert a <= -2.8 + 1e-9
+  assert a < A_NEG_MAX
