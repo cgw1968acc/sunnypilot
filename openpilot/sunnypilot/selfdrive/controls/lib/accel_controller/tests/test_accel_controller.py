@@ -16,7 +16,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_planner import (
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.accel_controller import (
   AccelController, AccelProfile, CRUISE_DECEL_ACCEL, CRUISE_DECEL_RESPONSE_TIME, ECO_CRUISE_DECEL_BP, ECO_CRUISE_DECEL_V,
-  MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES,
+  ECO_ENGINE_OFF_BP, ECO_ENGINE_OFF_MAX_ACCEL, MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES,
 )
 
 
@@ -169,6 +169,22 @@ class TestAccelController(OpenpilotTestCase):
     a4 = controller.get_cruise_target(14.0, v_target) - 14.0
     a5 = controller.get_cruise_target(14.0, v_target - 2.0) - 14.0
     assert a5 < a4
+
+  def test_engine_off_line_only_lowers_eco(self):
+    eco = self.set_profile(AccelProfile.eco)
+    for speed in np.linspace(0.0, 36.0, 73):
+      assert eco.get_max_accel(speed, engine_off=True) <= eco.get_max_accel(speed, engine_off=False) + 1e-12, speed
+    for speed, expected in zip(ECO_ENGINE_OFF_BP, ECO_ENGINE_OFF_MAX_ACCEL, strict=True):
+      assert eco.get_max_accel(speed, engine_off=True) == expected
+    for profile in (AccelProfile.normal, AccelProfile.sport):
+      controller = self.set_profile(profile)
+      for speed in (5.0, 15.0, 25.0):
+        assert controller.get_max_accel(speed, engine_off=True) == controller.get_max_accel(speed, engine_off=False), speed
+    # wheel power stays under the engine-start budget between 60 and 80 km/h (m 1400 kg, Crr 0.010, CdA 0.75)
+    for kph, budget_kw in ((60, 11.0), (70, 12.0), (80, 14.0)):
+      v = kph / 3.6
+      road = (0.010 * 1400 * 9.81 + 0.5 * 1.2 * 0.75 * v ** 2) * v
+      assert 1400 * eco.get_max_accel(v, engine_off=True) * v + road <= budget_kw * 1e3, kph
 
   def test_cruise_target_bypasses_non_decel_requests(self):
     controller = self.set_profile(AccelProfile.eco)

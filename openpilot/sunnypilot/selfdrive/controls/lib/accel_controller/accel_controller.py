@@ -19,6 +19,12 @@ MAX_ACCEL_PROFILES = {
   AccelProfile.normal: [1.95, 1.80, 0.70, 0.36, 0.25],
   AccelProfile.sport:  [2.00, 2.00, 1.20, 0.70, 0.50],
 }
+# Eco while the hybrid's engine is OFF (battery-first mode, ported from tncr18): keep wheel power m*a*v + road load under
+# the ~11-14 kW at which a Corolla hybrid starts its engine (30 Corolla Cross rlogs, threshold not SOC dependent):
+# 60 km/h 0.25, 70 km/h 0.16, 80 km/h 0.12. Launch values are the Altis eco ones. Once the engine runs there is nothing
+# to save, so the normal eco line takes over until it stops again.
+ECO_ENGINE_OFF_BP = [0., 3., 12., 16.67, 19.44, 22.22, 24., 36.]  # m/s
+ECO_ENGINE_OFF_MAX_ACCEL = [1.85, 1.55, 0.35, 0.25, 0.16, 0.12, 0.08, 0.06]
 # Cruise deceleration to a lowered set speed (no lead). Normal/sport: one CONSTANT decel latched when the gap opens
 # (gap / response time, never gentler than CRUISE_DECEL_ACCEL) and held, so the car slows on a straight line instead of
 # the proportional gap/time law, which braked hardest at the start and dragged a long tail; more presses = firmer.
@@ -60,7 +66,9 @@ class AccelController:
   def is_enabled(self) -> bool:
     return self._enabled
 
-  def get_max_accel(self, v_ego: float) -> float:
+  def get_max_accel(self, v_ego: float, engine_off: bool = False) -> float:
+    if engine_off and self._profile == AccelProfile.eco:
+      return float(np.interp(max(0.0, v_ego), ECO_ENGINE_OFF_BP, ECO_ENGINE_OFF_MAX_ACCEL))
     return float(np.interp(max(0.0, v_ego), MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES[self._profile]))
 
   def get_cruise_target(self, v_ego: float, v_target: float, accel_coast: float | None = None) -> float:
