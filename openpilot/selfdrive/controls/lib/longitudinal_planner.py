@@ -22,6 +22,10 @@ A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MIN = -1.2
+# stop cushion: floor on the deceleration target below 10 km/h (see update())
+STOP_CUSHION_V_BP = [0.0, 2.8]        # m/s (0, 10 km/h)
+STOP_CUSHION_A_MIN = [-0.35, -0.75]   # m/s^2
+STOP_CUSHION_MIN_GAP = 4.0            # m; a lead closer than this gets the full plan
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
@@ -179,6 +183,13 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if a_start is not None and a_start > output_a_target:
       output_a_target = a_start
       self.output_should_stop = False
+    # Stop cushion (Corolla Cross, driver 2026-09-27): the last metres of a stop still carried -0.75..-1.0 m/s^2
+    # below 10 km/h (logs 2026-09-26) and felt firm. Ease the target as the speed dies away, unless a lead is already
+    # inside the cushion gap, the driver/planner demands a hard stop, or FCW is on. The stop lands a little closer
+    # (~3-3.5 m instead of 4 m behind a stopped lead), which is the price of the softer end.
+    if (not force_decel and not self.fcw and v_ego < STOP_CUSHION_V_BP[-1]
+        and (not lead_one.present or lead_one.dRel > STOP_CUSHION_MIN_GAP)):
+      output_a_target = max(output_a_target, float(np.interp(v_ego, STOP_CUSHION_V_BP, STOP_CUSHION_A_MIN)))
     self.output_a_target = np.clip(output_a_target, ACCEL_MIN, ACCEL_MAX)
     self.accel_controller_active = self.is_accel_controller_active(force_decel)
 
