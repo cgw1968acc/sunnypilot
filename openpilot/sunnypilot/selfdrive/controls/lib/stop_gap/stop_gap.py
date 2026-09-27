@@ -23,13 +23,13 @@ import numpy as np
 
 STOP_GAP = 2.4  # m, radar target; the small coast onto the clamp point settles the stop near 3.0 m
 V_ENGAGE = 8.5  # m/s, ego speed below which the governor takes the stop over from the MPC
-A_ENGAGE = 1.0  # m/s^2, start braking when a constant stop at this deceleration is due (distance scales with speed)
+A_ENGAGE = 0.85  # m/s^2, start braking when a constant stop at this deceleration is due (distance scales with speed)
 S_ENGAGE_BASE = 3.0  # m, added to that stopping distance
 S_ENGAGE_MAX = 55.0  # m, hard cap on how far out it engages
 CREEP_LEAD_V = 2.0  # m/s, lead speed below which the governor manages the follow
 LEAD_STOPPED_V = 0.25  # m/s, lead speed below which it counts as fully stopped
 HANDBACK_V_REL = 0.2  # m/s, lead opening faster than ego by this much is a pull-away: hand back to the MPC
-A_NOM = 0.8  # m/s^2, least deceleration of the constant-deceleration (fast) part of the profile
+A_NOM = 0.7  # m/s^2 (0.8 -> 0.7, 2026-09-27: a touch lighter stop), least deceleration of the constant-deceleration (fast) part of the profile
 A_NOM_MAX = 1.6  # m/s^2, most it steepens to for a fast/close arrival
 V_TAPER = 0.8  # m/s, below this the deceleration ramps down linearly to zero at the point (the glide)
 TAU_V = 0.6  # s, velocity-loop time constant that pulls ego onto the profile
