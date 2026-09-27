@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import (StopGapGovernor, STOP_GAP, V_ENGAGE,
+from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import A_ENGAGE, S_ENGAGE_BASE, (StopGapGovernor, STOP_GAP, V_ENGAGE,
                                                                           CREEP_LEAD_V, RELEASE_RATE)
 
 DT = 0.05
@@ -79,8 +79,10 @@ class TestStopGapGovernor(unittest.TestCase):
       self.assertLessEqual(r['hold'], STOP_ACCEL + 0.05, msg=f'{v0=} hold {r["hold"]}')
 
   def test_faster_approach_brakes_harder(self):
-    r8 = run(8.0, STOP_GAP + 8.0 ** 2 / 2.0 + 2.0)
-    r4 = run(4.0, STOP_GAP + 4.0 ** 2 / 2.0 + 2.0)
+    # both leads appear right at the governor's own engage distance (a late, close appearance is covered by the
+    # landing test above; with little room the profile is compressed and brakes harder whatever the speed)
+    r8 = run(8.0, STOP_GAP + 8.0 ** 2 / (2.0 * A_ENGAGE) + S_ENGAGE_BASE)
+    r4 = run(4.0, STOP_GAP + 4.0 ** 2 / (2.0 * A_ENGAGE) + S_ENGAGE_BASE)
     self.assertLess(r8['targets'].min(), r4['targets'].min())   # more braking when entering faster
 
   def test_last_metre_glides_in(self):
