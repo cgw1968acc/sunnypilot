@@ -54,3 +54,36 @@ class BrakeOnsetShaper:
 
   def is_urgent(self, accel_request: float, fcw: bool) -> bool:
     return fcw or accel_request < HARD_BRAKE_ACCEL
+
+
+# Engage onset: the same idea for the GAS side, but only at the moment longitudinal control engages (driver
+# request 2026-09-27, Altis: "on engage, gas or brake, the first 0.1 s should be the lightest touch and then
+# blend in"). The brake side already gets this from BrakeOnsetShaper (it re-arms whenever control was inactive).
+# For the positive direction the upward jerk limit follows this schedule from the engage instant and is back to
+# the stock 4 m/s^3 by 0.6 s; after that gas requests are unshaped so lead follow-away stays crisp.
+ENGAGE_T_BP = [0.0, 0.1, 0.6]  # s since longitudinal control engaged
+ENGAGE_J_UP = [0.25, 0.6, 4.0]  # m/s^3 upward jerk limit
+
+
+class EngageOnsetShaper:
+  def __init__(self, dt: float, stock_up_jerk: float):
+    self.dt = dt
+    self.stock_up_jerk = stock_up_jerk
+    self.t_engaged: float | None = None
+
+  def reset(self) -> None:
+    self.t_engaged = None
+
+  def up_step(self, active: bool) -> float:
+    """Positive per-frame step allowed for the command this cycle (feed as up_step to rate_limit)."""
+    if not active:
+      self.t_engaged = None
+      return self.stock_up_jerk * self.dt
+    if self.t_engaged is None:
+      self.t_engaged = 0.0
+    else:
+      self.t_engaged += self.dt
+    if self.t_engaged >= ENGAGE_T_BP[-1]:
+      return self.stock_up_jerk * self.dt
+    j_up = float(np.interp(self.t_engaged, ENGAGE_T_BP, ENGAGE_J_UP))
+    return min(j_up, self.stock_up_jerk) * self.dt

@@ -1,7 +1,7 @@
 import numpy as np
 
 from opendbc.car import rate_limit, DT_CTRL
-from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, ONSET_J_DOWN, HARD_BRAKE_ACCEL
+from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper, ENGAGE_T_BP, ENGAGE_J_UP, ONSET_J_DOWN, HARD_BRAKE_ACCEL
 
 DT = DT_CTRL * 3
 STOCK_J = 4.0
@@ -81,3 +81,42 @@ class TestBrakeOnset:
     for _ in range(int(1.0 / DT)):  # a full second of settled brake winds it back completely
       shaper.down_step(a, a)
     assert shaper.t_onset == 0.0
+
+
+class TestEngageOnsetShaper:
+  DT = 0.03
+  STOCK = 4.0
+
+  def _sim(self, request=1.0, frames=40):
+    sh = EngageOnsetShaper(self.DT, self.STOCK)
+    cmd, out = 0.0, []
+    for _ in range(frames):
+      step = sh.up_step(True)
+      cmd = min(request, cmd + step)
+      out.append(cmd)
+    return out
+
+  def test_first_instant_is_almost_nothing_then_blends_to_stock(self):
+    out = self._sim()
+    t = [self.DT * (i + 1) for i in range(len(out))]
+
+    def at(s):
+      return out[max(i for i, ti in enumerate(t) if ti <= s + 1e-9)]
+    assert at(0.09) < 0.04            # ~0.25-0.5 m/s^3 for the first 0.1 s: a few hundredths of a m/s^2
+    assert 0.05 < at(0.3) < 0.35      # building
+    assert at(0.9) >= 0.99            # joined the stock ramp, request reached well under a second
+    jerks = [(out[i] - out[i - 1]) / self.DT for i in range(1, len(out))]
+    assert max(jerks) <= self.STOCK + 1e-9
+
+  def test_schedule_is_monotonic_and_ends_at_stock(self):
+    assert list(ENGAGE_J_UP) == sorted(ENGAGE_J_UP)
+    assert ENGAGE_J_UP[-1] == self.STOCK
+    assert ENGAGE_T_BP[0] == 0.0
+
+  def test_unshaped_once_settled_and_rearms_on_disengage(self):
+    sh = EngageOnsetShaper(self.DT, self.STOCK)
+    for _ in range(int(1.0 / self.DT)):
+      sh.up_step(True)
+    assert sh.up_step(True) == self.STOCK * self.DT
+    assert sh.up_step(False) == self.STOCK * self.DT
+    assert sh.up_step(True) < 0.3 * self.DT     # re-armed: engage schedule from the start again
