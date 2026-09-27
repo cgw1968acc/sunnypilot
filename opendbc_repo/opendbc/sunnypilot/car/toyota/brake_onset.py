@@ -17,11 +17,11 @@ onset on top of the brake already applied. Hard braking requests and FCW bypass 
 """
 import numpy as np
 
-ONSET_T_BP = [0.0, 0.2, 0.6, 1.0, 1.5]  # s since the request began falling faster than ONSET_J_DOWN[0]
-ONSET_J_DOWN = [0.25, 0.4, 0.8, 1.8, 4.0]  # m/s^3 downward jerk limit: barely anything for 0.2 s, then a build-up that
-# stays gentle through the first second and only then runs up to the stock limit (driver, Corolla Cross 2026-09-26:
-# "very light at first, then ease in", follow distance must not change - only the shape of the first 1.5 s does).
-# With a request stepping to -1.5 m/s^2 the command is about -0.05 at 0.2 s, -0.3 at 0.6 s, -0.8 at 1.0 s, -1.5 by 1.3 s.
+ONSET_T_BP = [0.0, 0.15, 0.6]  # s since the request began falling faster than ONSET_J_DOWN[0]
+ONSET_J_DOWN = [0.25, 0.6, 4.0]  # m/s^3 downward jerk limit: almost nothing for the first instant, then one quick ramp to
+# the stock limit by 0.6 s. Road test 2026-09-27 11:22 (stopped car ahead): the earlier 1.5 s build-up was soft at
+# first but joined the normal brake too slowly and the rest of the stop felt uneven; the driver wants only the very
+# first touch softened and the normal force picked up as soon as possible after it.
 HARD_BRAKE_ACCEL = -2.0  # m/s^2, requests below this are urgent and get the stock limit straight away
 
 
