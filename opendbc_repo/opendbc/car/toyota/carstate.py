@@ -298,6 +298,10 @@ class CarState(CarStateBase, CarStateExt):
     pt_messages = [
       ("BLINKERS_STATE", float('nan')),
     ]
+    # engine speed / running flag (0x1C4) so the hybrid's EV-vs-engine state reaches the planner. Alive check is
+    # skipped (nan) so a car without the message never invalidates CAN.
+    if CP.flags & ToyotaFlags.HYBRID:
+      pt_messages.append(("ENGINE_RPM", float('nan')))
 
     cam_messages = [
       ("RSA1", 0),

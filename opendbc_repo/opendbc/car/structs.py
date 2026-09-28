@@ -166,3 +166,7 @@ class CarControlSP:
 @auto_dataclass
 class CarStateSP:
   speedLimit: float = auto_field()
+  # hybrid powertrain: True only when the car reports its engine stopped (EV drive). Stays False on cars that
+  # do not expose engine state, so consumers treat False as "engine running / unknown".
+  engineOff: bool = auto_field()
+  engineRpm: float = auto_field()
