@@ -12,6 +12,7 @@ from opendbc.car.toyota.values import CAR, NO_STOP_TIMER_CAR, TSS2_CAR, \
                                         CarControllerParams, ToyotaFlags
 from opendbc.can import CANPacker
 from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController
+from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
@@ -45,10 +46,10 @@ def get_long_tune(CP, CP_SP, params):
     if CP_SP.flags & ToyotaFlagsSP.TSS2_LONG_TUNING:
       #kiBP = [0.,   2.0,  9.0,  14.,  20.,  27.]
       #kiV =  [0.25, 0.25, 0.15, 0.12, 0.12, 0.12]
-      #kiBP= [0.,  1.0,  2.0,   3.0,   4.0,   5.0,   7.,  20.,  27.,  36.]
-      #kiV  = [0.31, 0.32, 0.301, 0.280,  0.259,  0.226, 0.15, 0.15, 0.101, 0.10]
-      kiBP = [0.0,  2.0,  5.0,  12.,  36.]
-      kiV  = [0.45, 0.42, 0.36, 0.30, 0.26]
+      kiBP= [0.,   0.3,   5.0,   12.,  27.,  36.]
+      kiV  = [0.50, 0.52, 0.25,  0.23, 0.10, 0.09]
+      #kiBP = [0.15,  0.25,  5.0,  12.]
+      #kiV  = [0.35, 0.35, 0.22, 0.22]
     else:
       kiBP = [2., 5.]
       kiV = [0.5, 0.25]
@@ -78,12 +79,17 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     # *** start long control state ***
     self.long_pid = get_long_tune(self.CP, self.CP_SP, self.params)
-    self.aego = FirstOrderFilter(0.0, 0.25, DT_CTRL * 3)
+    # 0.45 s (was 0.25): the aEgo derivative feeds the jerk feed-forward below; a heavier filter keeps ~1.4 Hz
+    # accel-measurement noise from making the steady-cruise command hunt across zero (ported from tncr18, Corolla
+    # Cross rlog 2026-09-22; the Altis shows the same hunting at 80 km/h, route 000000a5 2026-09-26)
+    self.aego = FirstOrderFilter(0.0, 0.45, DT_CTRL * 3)
     self.pitch = FirstOrderFilter(0, 0.5, DT_CTRL)
     self.pitch_hp = HighPassFilter(0.0, 0.25, 1.5, DT_CTRL)
 
     self.accel = 0
     self.prev_accel = 0
+    self.brake_onset = BrakeOnsetShaper(DT_CTRL * 3, -ACCEL_WINDDOWN_LIMIT / (DT_CTRL * 3))
+    self.engage_onset = EngageOnsetShaper(DT_CTRL * 3, ACCEL_WINDUP_LIMIT / (DT_CTRL * 3))
     # *** end long control state ***
 
     self.packer = CANPacker(dbc_names[Bus.pt])
@@ -235,10 +241,19 @@ class CarController(CarControllerBase, GasInterceptorCarController):
           else:
             self.distance_button = 0
 
-        # internal PCM gas command can get stuck unwinding from negative accel so we apply a generous rate limit
+        # internal PCM gas command can get stuck unwinding from negative accel so we apply a generous rate limit.
+        # the downward step follows the brake onset schedule so a new brake request eases in like a driver's foot
+        # the upward step is likewise eased for the first 0.6 s after engaging (gas side of the same request)
         pcm_accel_cmd = actuators.accel
         if CC.longActive:
-          pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, ACCEL_WINDDOWN_LIMIT, ACCEL_WINDUP_LIMIT)
+          # a hard request bypasses the soft brake onset, except in the first 0.6 s after engaging (FCW always does)
+          urgent = fcw_alert or (self.brake_onset.is_urgent(pcm_accel_cmd, False) and not self.engage_onset.in_engage_window)
+          winddown_step = self.brake_onset.down_step(pcm_accel_cmd, self.prev_accel, bypass=urgent, v_ego=CS.out.vEgo)
+          windup_step = self.engage_onset.up_step(True)
+          pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, winddown_step, windup_step)
+        else:
+          self.brake_onset.reset()
+          self.engage_onset.reset()
         self.prev_accel = pcm_accel_cmd
 
         # calculate amount of acceleration PCM should apply to reach target, given pitch.
