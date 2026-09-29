@@ -16,7 +16,10 @@ STANDSTILL_HOLD_RATE = 1.0  # m/s^2/s
 # a hold ramp that starts on that flag is felt as the brake biting before the car is at rest (driver report
 # 2026-09-29, first stop on the -1.0 hold). The fast ramp therefore waits until standstill has been continuous for
 # this long; until then the request keeps falling only at the gentle STOPPING_DECEL_RATE.
-STANDSTILL_HOLD_DELAY = 0.5  # s
+# With a lead the hold matters more (creep towards it), without one the driver wants a longer settle first
+# (2026-09-29: "autohold still steps in too early on a stop with no car ahead", asked for 0.8 s).
+STANDSTILL_HOLD_DELAY_LEAD = 0.5  # s
+STANDSTILL_HOLD_DELAY_NO_LEAD = 0.8  # s
 # Before that the request is frozen at the value the glide ended on: the driver wants the stop itself exactly as it
 # felt on the drives where the hold never ramped at all (stopAccel -0.02 days) and the extra force only once the
 # car is at rest. Safety net: if the car has not reached standstill within STOPPING_FREEZE_MAX of entering the
@@ -69,7 +72,7 @@ class LongControl:
   def reset(self):
     self.pid.reset()
 
-  def update(self, active, CS, a_target, should_stop, accel_limits):
+  def update(self, active, CS, a_target, should_stop, accel_limits, has_lead=False):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
@@ -89,7 +92,8 @@ class LongControl:
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
         # TODO: can we just go straight to stopAccel?
-        if self.standstill_t >= STANDSTILL_HOLD_DELAY:
+        hold_delay = STANDSTILL_HOLD_DELAY_LEAD if has_lead else STANDSTILL_HOLD_DELAY_NO_LEAD
+        if self.standstill_t >= hold_delay:
           rate = STANDSTILL_HOLD_RATE
         elif self.stopping_t >= STOPPING_FREEZE_MAX:
           rate = STOPPING_DECEL_RATE
