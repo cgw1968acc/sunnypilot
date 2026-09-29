@@ -1,8 +1,8 @@
 # tnpbmod: pristine sunnypilot prebuilt + every tnpb1 commit, annotated
 
 `tnpbmod` is the Toyota Corolla Altis Hybrid (2023, TSS2, comma three X) tune `tnpb1`, based on the untouched
-sunnypilot `tn-prebuilt` base (5c37fd3ced, v2026.09.01-4826). Its code tree matches `tnpb1` at 456c8481c3
-(2026-09-28); the branch history has been regrouped into feature-level commits so each feature and its tests land
+sunnypilot `tn-prebuilt` base (5c37fd3ced, v2026.09.01-4826). Its code tree matches `tnpb1` at 9d266f8973
+(2026-09-29, see the section at the end for the commits after 456c8481c3); the branch history has been regrouped into feature-level commits so each feature and its tests land
 together. This document retains the original replay's 77-commit annotations as provenance, not as the current
 branch commit list. The original replay commits remain available from the pre-squash backup/remote ref.
 
@@ -18,7 +18,10 @@ change-by-change notes from before the history was grouped.
   0.6 m/s^2 at rest. It only ever adds braking to the MPC, never caps a harder MPC request, and hands back when
   the lead pulls away. Commits 20-29, 35-36, 52-59, 61, 63-64, 69, 76.
 * **Standstill hold**: hybrid `stopAccel` -1.0 m/s^2 with a faster 1.0 m/s^2/s ramp once stopped, so creep
-  torque cannot roll the car on. Commits 27, 28, 35, 68.
+  torque cannot roll the car on. Commits 27, 28, 35, 68. Since 2026-09-29 the HYBRID flag also comes from the CAN broadcast
+  set (0x127 + 0x245 present, 0x2C1 absent), because the firmware query found the hybrid ECU in only 23 of 42
+  boots and every miss silently ran the petrol tuning; petrol TSS2 holds at -2.0, the generic default is back at
+  upstream -2.0. The request is frozen through the stop and firms only after 0.5 s of standstill (2 s safety fallback). Commits 78-91.
 * **Lead start assist** (`lead_start_assist/`): a planner floor of 0.35-0.5 m/s^2 when a stopped lead really moves
   (confirmed over 0.25 s, not on radar drift), released once the gap opens. Commits 15, 19, 26, 36.
 * **Brake and gas onset shaping** (Toyota carcontroller): downward jerk limited to 0.25 m/s^3 for the first
@@ -134,3 +137,25 @@ These counts describe the 77 annotated source changes above, not the current fea
 * **Driver monitoring** (2): 11, 16
 * **Logging & processes** (2): 12, 17
 * **Docs** (1): 42
+
+## Annotated source changes 78-91 (2026-09-29)
+
+These rows preserve the pre-group replay hashes and their matching source commits from `tnpb1`. The changes are now
+grouped by feature in the current branch history; these replay hashes are historical references, not current commit IDs.
+
+| # | Pre-group replay | tnpb1 source | Subject | Summary | Area |
+|---|---|---|---|---|---|
+| 78 | f832f11b7a | 64077f320a | Update interfaces.py | Owner's GitHub edit: generic default stopAccel -0.06 -> -1.0 (no effect on Toyota, which sets its own value; superseded by 81). | Longitudinal |
+| 79 | 9ca99679fc | d7ca8b40d3 | toyota: force the HYBRID flag on the Altis | First fix for the hybrid-ECU firmware-query lottery (23 of 42 boots): HYBRID forced for TOYOTA_COROLLA_TSS2. Replaced by 83 because it would also mark a petrol Corolla as a hybrid. | Toyota car config |
+| 80 | 7a78541ccb | e50485f68e | toyota: petrol TSS2 stopAccel -2.0 (was -0.02) | A TSS2 car without the HYBRID flag now holds at -2.0 m/s^2 instead of the stock -0.02, which may not bring a petrol car fully to rest. Hybrid stays -1.0. | Toyota car config |
+| 81 | 403a6648b6 | b0c1f18e0c | interfaces: generic default stopAccel back to upstream -2.0 | The generic default only reaches brands that do not set their own value, so it is restored to upstream -2.0 (was -0.06 after the commit 01-09 series, then -1.0 from 78). | Longitudinal |
+| 82 | 218189eca7 | 0d8bceb494 | tests: TSS2 long tuning test expects the owner's ki table | test_tss2_tune_selection asserted sunnypilot's upstream custom tune (0.30 / 0.28) and had failed on every commit of this branch; it now asserts the owner's table (0.50 / 0.52 / 0.25 / 0.09 at 0 / 0.3 / 5 / 36 m/s). | Tests |
+| 83 | 9f43a2b8a4 | 473d4afebe | toyota: detect a hybrid from its CAN broadcasts | hybrid_can_messages(): HYBRID when bus 0 carries GEAR_PACKET_HYBRID 0x127 and GAS_PEDAL_HYBRID 0x245 and no GAS_PEDAL 0x2C1 (matches every Toyota hybrid and no petrol car in openpilot v0.8.5's CAN fingerprints; the Altis matched in all 42 boots), or when the firmware query finds the hybrid ECU. Removes the platform-wide force of 79. Unit tests for hybrid, petrol, SecOC-petrol and firmware paths. | Toyota car config |
+| 84 | c56424d7c1 | 6a40a30ce1 | longcontrol: wait 0.5 s after the standstill flag before firming the hold | STANDSTILL_HOLD_DELAY 0.5 s: the 1.0 m/s^2/s hold ramp starts only after CS.standstill has been continuous for 0.5 s (the Altis reports standstill while still settling, so the ramp was felt as the brake biting before rest); until then the request falls at the gentle 0.3 m/s^2/s. From a -0.3 glide: -0.46 at +0.5 s, -1.0 at +1.04 s (was +0.7 s). Two unit tests. | Longitudinal |
+| 85 | d48ba50a55 | 67c7a4fa39 | tests: longcontrol standstill-hold tests build CarParamsSP like the rest of the file | Test-only follow-up to 84. | Tests |
+| 86 | b8d7f38ce0 | 6108ae35bb | longcontrol: freeze the brake request through the stop; firm only after 0.5 s of standstill | In the stopping state the request no longer ramps at 0.3 m/s^2/s: it stays at the glide value until CS.standstill has been continuous for 0.5 s, then firms at 1.0 m/s^2/s to -1.0 (the stop itself now feels like the stopAccel -0.02 days). If standstill is not reached within 2.0 s the upstream 0.3 m/s^2/s ramp resumes. Two unit tests. | Longitudinal |
+| 87 | bcd36550a9 | 52a0594960 | latcontrol: curve bias 0.07 at 50 km/h (was 0.05), 0.137 from 100 km/h (was 0.167) | Driver request: +0.02 outward bias at 50 km/h, -0.03 at 100 km/h and above; 30/40/70/90 unchanged, so the bias peaks at 90 km/h (0.155) and eases to 0.137 above. Test pins the schedule. | Lateral |
+| 88 | 5dc6512804 | d480e6cfb8 | latcontrol: curve bias 0.06 at 50 km/h, flat 0.155 from 90 km/h | Driver correction of 87: 50 km/h 0.06 (not 0.07) and 100/120 km/h back to 0.155 so the bias is flat at the 90 km/h value from 90 upward; schedule monotonic again. | Lateral |
+| 89 | c4fdee733a | b6bc31ef86 | latcontrol: curve bias 0.02 at 40 km/h (was 0) | Driver request: small outward bias already at 40 km/h; the inward-to-outward hand-over now crosses zero at ~37 km/h by interpolation. Rest unchanged. | Lateral |
+| 90 | 35fc148e48 | 6e0356aab2 | planner: ease off the throttle at 0.2 m/s^3 when the set speed is lowered above 90 km/h | Cruise candidate's downward jerk limited to 0.2 m/s^3 (stock ~0.75) while v_ego > 90 km/h and the cruise target is below v_ego, so a -5 km/h tap eases the throttle off over ~2.4 s instead of 0.5 s; decel magnitude, release side, e2e and lead braking unchanged. Four tests. | Longitudinal |
+| 91 | caf3bfb0af | 9d266f8973 | longcontrol: standstill hold waits 0.8 s with no lead (0.5 s with a lead) | Hold delay lead-aware via longitudinalPlan.hasLead passed from controlsd: 0.5 s with a lead, 0.8 s without. | Longitudinal |
