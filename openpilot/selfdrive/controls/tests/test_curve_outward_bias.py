@@ -35,7 +35,8 @@ class TestCurveOutwardBias(unittest.TestCase):
 
   def test_schedule_is_monotonic_and_bounded(self):
     self.assertEqual(list(CURVE_OUTWARD_V_BP), sorted(CURVE_OUTWARD_V_BP))
-    self.assertEqual(list(CURVE_OUTWARD_FRAC_V), sorted(CURVE_OUTWARD_FRAC_V))
+    # 2026-09-29: the schedule is no longer monotonic on purpose (0.155 at 90 km/h, 0.137 from 100); pin the values
+    self.assertEqual([round(f, 3) for f in CURVE_OUTWARD_FRAC_V], [-0.05, 0.0, 0.07, 0.09, 0.155, 0.137, 0.137])
     self.assertGreaterEqual(min(CURVE_OUTWARD_FRAC_V), -0.1)
     self.assertLessEqual(max(CURVE_OUTWARD_FRAC_V), 0.25)
     for k in (0.05, -0.05):
