@@ -65,7 +65,7 @@ class TestTerminalStop(OpenpilotTestCase):
     from opendbc.car.structs import car
     from openpilot.common.realtime import DT_CTRL
     CP = car.CarParams.new_message(stopAccel=-1.0)
-    CP_SP = car.CarParamsSP.new_message()
+    CP_SP = custom.CarParamsSP.new_message()
     LoC = LongControl(CP, CP_SP)
     CS = car.CarState.new_message(vEgo=0.0, aEgo=0.0, standstill=True)
     CS.cruiseState.standstill = False
@@ -84,7 +84,7 @@ class TestTerminalStop(OpenpilotTestCase):
   def test_standstill_hold_timer_resets_when_the_car_moves(self):
     from opendbc.car.structs import car
     CP = car.CarParams.new_message(stopAccel=-1.0)
-    LoC = LongControl(CP, car.CarParamsSP.new_message())
+    LoC = LongControl(CP, custom.CarParamsSP.new_message())
     LoC.long_control_state = LongCtrlState.stopping
     LoC.last_output_accel = -0.3
     still = car.CarState.new_message(standstill=True)
