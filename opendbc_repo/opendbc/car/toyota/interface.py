@@ -55,7 +55,12 @@ class CarInterface(CarInterfaceBase):
     # In TSS2 cars, the camera does long control
     found_ecus = [fw.ecu for fw in car_fw]
 
-    if Ecu.hybrid in found_ecus:
+    # tnpb1 runs on one car, a Corolla Altis Hybrid, whose hybrid ECU answers the firmware query only about half the
+    # time (comma 3X, 2026-09-27 backup: 23 of 42 boots found it, 19 did not; 2026-09-29 08:12 drive did not). Without
+    # the flag the car ran as a petrol Corolla: stopAccel -0.02 (the firm hold below never applied and the car rolled on
+    # after stopping), 0.15 s actuator delay instead of 0.05, and no engine state for the eco profile. Set it from the
+    # platform so every drive gets the same tuning.
+    if Ecu.hybrid in found_ecus or candidate == CAR.TOYOTA_COROLLA_TSS2:
       ret.flags |= ToyotaFlags.HYBRID.value
 
     if candidate == CAR.TOYOTA_PRIUS:
