@@ -122,7 +122,8 @@ class CarInterface(CarInterfaceBase):
 
     if ret.flags & ToyotaFlags.TSS2:
       ret.flags |= ToyotaFlags.RAISED_ACCEL_LIMIT.value
-      ret.stopAccel = -0.02
+      # petrol TSS2: the stock -0.02 may not bring the car fully to rest, so hold at -2.0 (owner's value)
+      ret.stopAccel = -2.0
 
       # Hybrids have much quicker longitudinal actuator response
       if ret.flags & ToyotaFlags.HYBRID.value:
