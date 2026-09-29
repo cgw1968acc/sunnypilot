@@ -12,6 +12,11 @@ STOPPING_DECEL_RATE = 0.3  # m/s^2/s while trying to stop
 # the hold firms up in well under a second instead of ~3 s (Altis 2026-09-27: after a stop behind a lead the car rolled
 # on towards it). The approach and the stop itself are untouched: this rate only applies with CS.standstill set.
 STANDSTILL_HOLD_RATE = 1.0  # m/s^2/s
+# CS.standstill (all wheel speeds reading zero) arrives while the Altis is still settling the last few centimetres, so
+# a hold ramp that starts on that flag is felt as the brake biting before the car is at rest (driver report
+# 2026-09-29, first stop on the -1.0 hold). The fast ramp therefore waits until standstill has been continuous for
+# this long; until then the request keeps falling only at the gentle STOPPING_DECEL_RATE.
+STANDSTILL_HOLD_DELAY = 0.5  # s
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -53,6 +58,7 @@ class LongControl:
     self.pid = PIDController(0.0, (CP.longitudinalTuning.kiBP, CP.longitudinalTuning.kiV),
                              rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
+    self.standstill_t = 0.0  # s of continuous CS.standstill
 
   def reset(self):
     self.pid.reset()
@@ -65,6 +71,8 @@ class LongControl:
     self.long_control_state = long_control_state_trans(self.CP_SP, active, self.long_control_state,
                                                        should_stop, CS.brakePressed,
                                                        CS.cruiseState.standstill)
+    self.standstill_t = self.standstill_t + DT_CTRL if CS.standstill else 0.0
+
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.
@@ -74,7 +82,8 @@ class LongControl:
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
         # TODO: can we just go straight to stopAccel?
-        output_accel -= (STANDSTILL_HOLD_RATE if CS.standstill else STOPPING_DECEL_RATE) * DT_CTRL
+        hold = self.standstill_t >= STANDSTILL_HOLD_DELAY
+        output_accel -= (STANDSTILL_HOLD_RATE if hold else STOPPING_DECEL_RATE) * DT_CTRL
       self.reset()
 
     else:  # LongCtrlState.pid
