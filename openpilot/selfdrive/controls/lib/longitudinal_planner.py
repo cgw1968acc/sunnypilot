@@ -23,6 +23,14 @@ A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MIN = -1.2
+# Set-speed reductions at highway speed: ease off the throttle very gradually (Altis driver 2026-09-29: consecutive
+# -5 km/h taps above 90 km/h felt like the throttle being dropped; rlog 2026-09-27 route 000000c3, 112 -> 107 km/h at
+# 105: the cruise target went +0.12 -> -0.37 m/s^2 in 0.5 s). While v_ego is above V_CRUISE_EASE_MIN and the cruise
+# target is below v_ego, the cruise candidate's DOWNWARD jerk is limited to J_CRUISE_EASE_DOWN (+0.12 -> -0.35 now
+# takes ~2.4 s). The lead MPC and e2e candidates are separate, so braking for a lead is unaffected, and the upward
+# (release) side keeps J_CRUISE.
+V_CRUISE_EASE_MIN = 90. * CV.KPH_TO_MS  # m/s
+J_CRUISE_EASE_DOWN = 0.2  # m/s^3
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
@@ -55,7 +63,9 @@ def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, 
 
   target_accel = np.clip(v_cruise - v_ego, A_CRUISE_MIN, max_accel)
   j_cruise = np.interp(v_ego, A_CRUISE_MAX_BP, J_CRUISE_VALS)
-  target_accel = float(np.clip(target_accel, a_cruise_prev - j_cruise * dt, a_cruise_prev + j_cruise * dt))
+  ease = not e2e and v_ego > V_CRUISE_EASE_MIN and v_cruise < v_ego
+  j_down = min(j_cruise, J_CRUISE_EASE_DOWN) if ease else j_cruise
+  target_accel = float(np.clip(target_accel, a_cruise_prev - j_down * dt, a_cruise_prev + j_cruise * dt))
 
   return target_accel
 
