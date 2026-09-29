@@ -12,6 +12,12 @@ from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP, ToyotaSafetyFlag
 SteerControlType = structs.CarParams.SteerControlType
 
 
+def hybrid_can_messages(fingerprint: dict[int, dict[int, int]]) -> bool:
+  """True when the powertrain bus carries the hybrid-only gear/gas messages and not the petrol gas pedal message."""
+  bus0 = fingerprint.get(0, {})
+  return 0x127 in bus0 and 0x245 in bus0 and 0x2C1 not in bus0
+
+
 class CarInterface(CarInterfaceBase):
   CarState = CarState
   CarController = CarController
@@ -67,7 +73,15 @@ class CarInterface(CarInterfaceBase):
     # In TSS2 cars, the camera does long control
     found_ecus = [fw.ecu for fw in car_fw]
 
-    if Ecu.hybrid in found_ecus:
+    # The firmware query alone is not a reliable hybrid detector: the hybrid ECU (0x7e2) sometimes does not answer at
+    # boot (Corolla Cross Hybrid, comma four: 2 of 42 boots in the 2026-09-25 backup; Corolla Altis Hybrid: 19 of 42),
+    # and every miss ran the car as a petrol Corolla (0.15 s actuator delay instead of 0.05, no engine state for the
+    # eco profile). The CAN broadcast set is deterministic: hybrids send GEAR_PACKET_HYBRID (0x127) and
+    # GAS_PEDAL_HYBRID (0x245) and never GAS_PEDAL (0x2C1); petrol cars send 0x2C1 and neither of the others
+    # (openpilot v0.8.5 CAN fingerprints: Prius, Camry/Corolla/RX hybrids vs Camry, Highlander, RAV4 TSS2, Lexus IS;
+    # both cars matched the hybrid pattern in all 42 boots). A petrol car cannot match this rule, and the flag is set
+    # when either source says hybrid.
+    if Ecu.hybrid in found_ecus or hybrid_can_messages(fingerprint):
       ret.flags |= ToyotaFlags.HYBRID.value
 
     if candidate == CAR.TOYOTA_PRIUS:
