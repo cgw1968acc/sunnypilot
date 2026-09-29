@@ -19,10 +19,12 @@ class TestCurveOutwardBias(unittest.TestCase):
       self.assertLess(abs(out), abs(k))            # commands a wider radius
       self.assertGreater(out * k, 0.0)              # same direction
 
-  def test_zero_at_40_kmh(self):
-    # the hand-over point between the inward (low speed) and outward (high speed) schedules: exactly the model curvature
+  def test_hand_over_between_30_and_40_kmh(self):
+    # inward at 30 km/h, a small outward bias (0.02) at 40 km/h, and exactly the model curvature in between (~37 km/h)
     for k in (0.006, 0.02, -0.02):
-      self.assertEqual(apply_curve_outward_bias(k, V40), k)
+      self.assertAlmostEqual(apply_curve_outward_bias(k, V40), k * (1.0 - 0.02), places=9)
+      v_zero = (30 + 10 * 0.05 / 0.07) * CV.KPH_TO_MS
+      self.assertAlmostEqual(apply_curve_outward_bias(k, v_zero), k, places=9)
 
   def test_low_speed_curves_biased_inward(self):
     # 30 km/h and below: a little MORE curvature than the model (Altis runs wide in tight low-speed curves)
@@ -36,7 +38,7 @@ class TestCurveOutwardBias(unittest.TestCase):
   def test_schedule_is_monotonic_and_bounded(self):
     self.assertEqual(list(CURVE_OUTWARD_V_BP), sorted(CURVE_OUTWARD_V_BP))
     self.assertEqual(list(CURVE_OUTWARD_FRAC_V), sorted(CURVE_OUTWARD_FRAC_V))
-    self.assertEqual([round(f, 3) for f in CURVE_OUTWARD_FRAC_V], [-0.05, 0.0, 0.06, 0.09, 0.155, 0.155, 0.155])
+    self.assertEqual([round(f, 3) for f in CURVE_OUTWARD_FRAC_V], [-0.05, 0.02, 0.06, 0.09, 0.155, 0.155, 0.155])
     self.assertGreaterEqual(min(CURVE_OUTWARD_FRAC_V), -0.1)
     self.assertLessEqual(max(CURVE_OUTWARD_FRAC_V), 0.25)
     for k in (0.05, -0.05):
