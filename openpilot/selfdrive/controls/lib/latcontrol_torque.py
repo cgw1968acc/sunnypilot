@@ -46,8 +46,10 @@ CURVE_OUTWARD_DEADZONE = 0.0005  # 1/m (~radius 2000 m): below this is a straigh
 # Speed schedule (m/s -> fraction): 0 up to 40 km/h, 0.09 at 70, 0.155 at 90 km/h, 0.19 at 120 km/h.
 CURVE_OUTWARD_V_BP = [v * CV.KPH_TO_MS for v in (30., 40., 50., 70., 90., 100., 120.)]   # m/s
 # Negative = INWARD bias (command more curvature than the model): Altis driver 2026-09-27, 30-40 km/h curves want more
-# steering; -0.05 at 30 km/h, back to 0 at 40, then the outward schedule. Stays 0 exactly at 40 so the two never fight.
-CURVE_OUTWARD_FRAC_V = [-0.05, 0.0, 0.05, 0.09, 0.155, 0.167, 0.167]  # flat from 100 km/h (was 0.19 at 120), 2026-09-27
+# steering; -0.05 at 30 km/h, then the outward schedule from 40 km/h. The hand-over from inward to outward is by
+# interpolation between 30 and 40 km/h (zero at ~37 km/h).
+CURVE_OUTWARD_FRAC_V = [-0.05, 0.02, 0.06, 0.09, 0.155, 0.155, 0.155]  # 2026-09-29 driver request: 40 km/h 0 -> 0.02,
+# 50 km/h 0.05 -> 0.06, flat at the 90 km/h value 0.155 from 90 upward (100/120 were 0.167).
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
