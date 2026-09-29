@@ -17,6 +17,11 @@ STANDSTILL_HOLD_RATE = 1.0  # m/s^2/s
 # 2026-09-29, first stop on the -1.0 hold). The fast ramp therefore waits until standstill has been continuous for
 # this long; until then the request keeps falling only at the gentle STOPPING_DECEL_RATE.
 STANDSTILL_HOLD_DELAY = 0.5  # s
+# Before that the request is frozen at the value the glide ended on: the driver wants the stop itself exactly as it
+# felt on the drives where the hold never ramped at all (stopAccel -0.02 days) and the extra force only once the
+# car is at rest. Safety net: if the car has not reached standstill within STOPPING_FREEZE_MAX of entering the
+# stopping state (request too light to finish the stop, e.g. a creep), the upstream STOPPING_DECEL_RATE ramp resumes.
+STOPPING_FREEZE_MAX = 2.0  # s
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -59,6 +64,7 @@ class LongControl:
                              rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
     self.standstill_t = 0.0  # s of continuous CS.standstill
+    self.stopping_t = 0.0  # s in the stopping state
 
   def reset(self):
     self.pid.reset()
@@ -72,6 +78,7 @@ class LongControl:
                                                        should_stop, CS.brakePressed,
                                                        CS.cruiseState.standstill)
     self.standstill_t = self.standstill_t + DT_CTRL if CS.standstill else 0.0
+    self.stopping_t = self.stopping_t + DT_CTRL if self.long_control_state == LongCtrlState.stopping else 0.0
 
     if self.long_control_state == LongCtrlState.off:
       self.reset()
@@ -82,8 +89,13 @@ class LongControl:
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
         # TODO: can we just go straight to stopAccel?
-        hold = self.standstill_t >= STANDSTILL_HOLD_DELAY
-        output_accel -= (STANDSTILL_HOLD_RATE if hold else STOPPING_DECEL_RATE) * DT_CTRL
+        if self.standstill_t >= STANDSTILL_HOLD_DELAY:
+          rate = STANDSTILL_HOLD_RATE
+        elif self.stopping_t >= STOPPING_FREEZE_MAX:
+          rate = STOPPING_DECEL_RATE
+        else:
+          rate = 0.0
+        output_accel -= rate * DT_CTRL
       self.reset()
 
     else:  # LongCtrlState.pid

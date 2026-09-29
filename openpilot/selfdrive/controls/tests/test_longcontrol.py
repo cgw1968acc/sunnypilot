@@ -1,7 +1,7 @@
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import custom
 from openpilot.selfdrive.controls.lib.drive_helpers import STOPPING_SPEED, should_stop
-from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY, LongControl, \
+from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY, STOPPING_FREEZE_MAX, LongControl, \
   LongCtrlState, long_control_state_trans
 
 
@@ -61,25 +61,43 @@ class TestTerminalStop(OpenpilotTestCase):
     assert 0.5 <= STANDSTILL_HOLD_RATE <= 2.0
 
   def test_standstill_hold_waits_after_the_standstill_flag(self):
-    """The fast hold ramp starts STANDSTILL_HOLD_DELAY after CS.standstill, not on the flag itself."""
+    """The request is frozen through the stop and for STANDSTILL_HOLD_DELAY after CS.standstill; only then it firms."""
     from opendbc.car.structs import car
     from openpilot.common.realtime import DT_CTRL
     CP = car.CarParams.new_message(stopAccel=-1.0)
     CP_SP = custom.CarParamsSP.new_message()
     LoC = LongControl(CP, CP_SP)
-    CS = car.CarState.new_message(vEgo=0.0, aEgo=0.0, standstill=True)
-    CS.cruiseState.standstill = False
+    moving = car.CarState.new_message(vEgo=0.2, standstill=False)
+    still = car.CarState.new_message(vEgo=0.0, standstill=True)
     LoC.long_control_state = LongCtrlState.stopping
     LoC.last_output_accel = -0.3
+    # 0.5 s of stopping state before the wheels read zero: nothing changes
+    for _ in range(int(0.5 / DT_CTRL)):
+      a = float(LoC.update(True, moving, 0.0, True, (-3.5, 1.5)))
+    assert a == -0.3
     a = [-0.3]
     for _ in range(int(1.0 / DT_CTRL)):
-      a.append(float(LoC.update(True, CS, 0.0, True, (-3.5, 1.5))))
+      a.append(float(LoC.update(True, still, 0.0, True, (-3.5, 1.5))))
     n_delay = int(STANDSTILL_HOLD_DELAY / DT_CTRL)
-    early = (a[0] - a[n_delay - 1]) / (STANDSTILL_HOLD_DELAY - DT_CTRL)
+    assert a[n_delay - 1] == -0.3                              # still frozen at the end of the wait
     late = (a[n_delay] - a[-1]) / (1.0 - STANDSTILL_HOLD_DELAY)
-    assert abs(early - STOPPING_DECEL_RATE) < 0.02, early     # gentle while the car is still settling
     assert abs(late - STANDSTILL_HOLD_RATE) < 0.05, late      # fast once the delay has passed
-    assert a[n_delay] > -0.5                                  # the request has barely moved when the wait ends
+    assert a[-1] < -0.75
+
+  def test_stopping_ramp_resumes_if_the_car_never_stops(self):
+    from opendbc.car.structs import car
+    from openpilot.common.realtime import DT_CTRL
+    CP = car.CarParams.new_message(stopAccel=-1.0)
+    LoC = LongControl(CP, custom.CarParamsSP.new_message())
+    LoC.long_control_state = LongCtrlState.stopping
+    LoC.last_output_accel = -0.1
+    creeping = car.CarState.new_message(vEgo=0.15, standstill=False)
+    for _ in range(int(STOPPING_FREEZE_MAX / DT_CTRL) - 1):
+      a = float(LoC.update(True, creeping, 0.0, True, (-3.5, 1.5)))
+    assert a == -0.1                                           # frozen for the whole grace period
+    for _ in range(int(1.0 / DT_CTRL)):
+      a = float(LoC.update(True, creeping, 0.0, True, (-3.5, 1.5)))
+    assert abs((-0.1 - a) - STOPPING_DECEL_RATE) < 0.02        # then the upstream ramp
 
   def test_standstill_hold_timer_resets_when_the_car_moves(self):
     from opendbc.car.structs import car
