@@ -50,8 +50,8 @@ TEMP_STEER_FAULTS = (0, 9, 11, 21, 25)
 PERM_STEER_FAULTS = (3, 17)
 
 
-CLUSTER_SPEED_GAIN = 1.04           # dash km/h per true km/h (stock openpilot: 1.015)
-CLUSTER_SPEED_OFFSET_KPH = 1.6      # km/h added on top
+CLUSTER_SPEED_GAIN = 1.056          # dash km/h per true km/h (stock openpilot: 1.015); driver 2026-09-30 23:40: no offset, pure gain
+CLUSTER_SPEED_OFFSET_KPH = 0.0      # km/h added on top
 CLUSTER_MIN_KPH = 5.0               # below this the screen shows the true speed
 
 
