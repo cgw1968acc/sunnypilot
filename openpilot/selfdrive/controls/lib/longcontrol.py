@@ -4,6 +4,7 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import A_3KPH, A_2KPH, A_1KPH, A_0KPH, DELIVERY_LEAD
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
@@ -38,6 +39,19 @@ STOPPING_EXIT_DEBOUNCE = 0.2  # s
 # STOPPING_FOLLOW_MIN is not followed (a released brake at 0.5 km/h would lurch), and the easing is rate-limited.
 STOPPING_FOLLOW_MIN = -0.10  # m/s^2
 STOPPING_FOLLOW_RATE = 2.0  # m/s^3
+# Universal end-of-stop taper (driver 2026-09-30 night: the 'taper' in the last 0.3 s is what makes a stop seamless, a
+# human cannot repeat it every time, the code must). Whatever produced the request - the stop-gap governor, the lead
+# MPC or an e2e stop with no lead - below END_TAPER_V_START the braking request may not exceed the tuned end-of-stop
+# curve (the governor's A_3KPH..A_0KPH), read END_TAPER_LEAD ahead of the car's speed so the deceleration the PCM
+# actually delivers (lagged) follows it. Positive targets pass, so a lead driving off is not held back.
+END_TAPER_V_START = 3.0 / 3.6  # m/s
+END_TAPER_LEAD = DELIVERY_LEAD  # s
+
+
+def end_taper_decel(v_ego: float, a_ego: float) -> float:
+  """Largest deceleration (positive number) allowed this close to the stop."""
+  v_future = max(v_ego + min(a_ego, 0.0) * END_TAPER_LEAD, 0.0)
+  return float(np.interp(v_future, [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6], [A_0KPH, A_1KPH, A_2KPH, A_3KPH]))
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -131,6 +145,9 @@ class LongControl:
       error = a_target - CS.aEgo
       output_accel = self.pid.update(error, speed=CS.vEgo,
                                      feedforward=a_target)
+
+    if active and not CS.standstill and CS.vEgo < END_TAPER_V_START and a_target < 0.0 and not CS.brakePressed:
+      output_accel = max(output_accel, -end_taper_decel(CS.vEgo, CS.aEgo))
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     return self.last_output_accel

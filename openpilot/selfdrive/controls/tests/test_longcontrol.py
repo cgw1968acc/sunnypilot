@@ -1,7 +1,7 @@
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import custom
 from openpilot.selfdrive.controls.lib.drive_helpers import STOPPING_SPEED, should_stop
-from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, STOPPING_EXIT_DEBOUNCE, STOPPING_FOLLOW_MIN, LongControl, \
+from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, STOPPING_EXIT_DEBOUNCE, STOPPING_FOLLOW_MIN, END_TAPER_V_START, end_taper_decel, LongControl, \
   LongCtrlState, long_control_state_trans
 
 
@@ -155,3 +155,25 @@ class TestTerminalStop(OpenpilotTestCase):
       a = float(LoC.update(True, rolling, 0.0, True, (-3.5, 1.5), has_lead=True))     # plan at 0 (flicker): not followed
     assert abs(a + 0.20) < 1e-6, a
     assert STOPPING_FOLLOW_MIN < 0.0
+
+  def test_every_stop_tapers_in_the_last_metre_whatever_the_planner_asks(self):
+    from opendbc.car.structs import car
+    from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import A_1KPH, A_2KPH, A_3KPH
+    CP = car.CarParams.new_message(stopAccel=-1.0)
+    CP.longitudinalTuning.kiBP = [0.0]
+    CP.longitudinalTuning.kiV = [0.0]
+    LoC = LongControl(CP, custom.CarParamsSP.new_message())
+    LoC.long_control_state = LongCtrlState.pid
+    # a hard request at 2 km/h (no lag: aEgo 0) is capped at the 2 km/h curve value, at 1 km/h at the 1 km/h value
+    a2 = float(LoC.update(True, car.CarState.new_message(vEgo=2.0 / 3.6, aEgo=0.0), -1.5, False, (-3.5, 1.5)))
+    assert abs(a2 + A_2KPH) < 0.02, a2
+    LoC.long_control_state = LongCtrlState.pid
+    a1 = float(LoC.update(True, car.CarState.new_message(vEgo=1.0 / 3.6, aEgo=0.0), -1.5, False, (-3.5, 1.5)))
+    assert abs(a1 + A_1KPH) < 0.02, a1
+    # with the car still decelerating, the curve is read ahead (lighter still)
+    assert end_taper_decel(2.0 / 3.6, -0.8) < A_2KPH
+    # above the taper speed nothing is capped, positive targets and a light target pass unchanged
+    assert end_taper_decel(END_TAPER_V_START, 0.0) >= A_3KPH - 1e-9
+    LoC.long_control_state = LongCtrlState.pid
+    a_up = float(LoC.update(True, car.CarState.new_message(vEgo=1.0 / 3.6, aEgo=0.0), 0.6, False, (-3.5, 1.5)))
+    assert a_up > 0.5, a_up
