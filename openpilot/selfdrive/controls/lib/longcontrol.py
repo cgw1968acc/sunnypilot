@@ -4,7 +4,7 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
-from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import A_3KPH, A_2KPH, A_1KPH, A_0KPH, DELIVERY_LEAD
+from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import end_decel, DELIVERY_LEAD
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
@@ -62,7 +62,7 @@ END_TAPER_RELEASE_JERK = 1.0  # m/s^3, fastest the taper may lighten the brake (
 def end_taper_decel(v_ego: float, a_ego: float) -> float:
   """Largest deceleration (positive number) allowed this close to the stop."""
   v_future = max(v_ego + min(a_ego, 0.0) * END_TAPER_LEAD, 0.0)
-  return float(np.interp(v_future, [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6], [A_0KPH, A_1KPH, A_2KPH, A_3KPH]))
+  return end_decel(v_future)
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 

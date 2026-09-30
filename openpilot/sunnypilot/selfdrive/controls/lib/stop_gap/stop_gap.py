@@ -56,7 +56,7 @@ V_TAPER = 0.8  # m/s, below this the small creep-brake floor applies
 V_FIRM_IN = 8.3  # m/s (30 km/h; was 20 - driver 2026-09-27: build the firmness up slowly from 30 for a smoother feel)
 V_FIRM = 4.2  # m/s (15 km/h)
 V_FIRM_HOLD = 4.0 / 3.6  # m/s (4 km/h): the firm force is held from V_FIRM down to here (2026-09-30: 7 -> 4, the easing from 7 let go too much)
-A_FIRM_EXTRA = 0.45  # m/s^2 (0.4 too light, 0.47 too firm on the 2026-09-27 tests)
+A_FIRM_EXTRA = 0.0  # m/s^2 (was 0.45: the 15 km/h firm hump; the driver's perfect stops are front-loaded instead, 2026-10-01)
 A_FIRM_MAX = 2.0  # m/s^2 (1.6 -> 2.0, 2026-09-27 21:05: a fast approach reaches 30 km/h with ~25-30 m left, a_nom fits at
                   # 1.0-1.5 and the old cap cut the +0.45 build-up to nothing - the stop felt like one straight line)
 # What "seamless" means in numbers (IMU, not the wheel-speed aEgo whose stop-instant spike is an artifact of the wheel
@@ -70,10 +70,26 @@ A_FIRM_MAX = 2.0  # m/s^2 (1.6 -> 2.0, 2026-09-27 21:05: a fast approach reaches
 # 1 km/h 0.40 -> 0.38, 0 km/h 0.35 -> 0.33 (driver's values); 2 km/h set on the line between them. 2026-09-30 night, from
 # the IMU analysis above: 1 km/h 0.28, 0 km/h 0.20, end floor 0.15, so the car arrives at wheel-stop with ~0.2-0.4 left
 # (plant with 0.4 s lag: 0.64 -> 0.43 in the last 0.2 s, last half metre 0.7 -> 1.0 s, landing 3.61 m, no creep).
-A_3KPH = 0.80
-A_2KPH = 0.59
-A_1KPH = 0.28
-A_0KPH = 0.20
+# End-of-stop law from the driver's own perfect stops (2026-10-01 01:20:03 and 01:23:20, rated with three bookmarks;
+# IMU, delivered deceleration vs speed): below the knee the deceleration is proportional to speed, a = v / END_TAU,
+# i.e. the speed decays exponentially and the deceleration fades to almost nothing exactly at the stop - no step for
+# the body to nod on. 01:20:03: 3.0 km/h 1.19, 2.2 km/h 0.92, 1.6 km/h 0.75, 1.2 km/h 0.45, 0.9 km/h 0.33,
+# 0.6 km/h 0.23, stop 0.19, rebound 0.14 (v / 0.65 s gives 1.28 / 0.94 / 0.68 / 0.51 / 0.38 / 0.26 / floor). Above the
+# knee the driver brakes at a steady level (2.1-2.4 from 21 down to 9.6 km/h) - front-loaded, not a firm hump near the
+# end. The brake pedal itself was held CONSTANT (760 N) through the last 0.8 s; the fade is the car's.
+END_TAU = 0.65         # s
+END_FLOOR = 0.15       # m/s^2, least deceleration kept to the stop (the template ended at 0.19-0.38 delivered)
+
+
+def end_decel(v: float) -> float:
+  """End-of-stop deceleration (positive) at speed v (m/s)."""
+  return max(END_FLOOR, v / END_TAU)
+
+
+A_3KPH = end_decel(3.0 / 3.6)  # 1.28, kept as names for tests and the longcontrol taper
+A_2KPH = end_decel(2.0 / 3.6)  # 0.85
+A_1KPH = end_decel(1.0 / 3.6)  # 0.43
+A_0KPH = END_FLOOR             # 0.15
 V_END = 0.7  # m/s (2.5 km/h): below this the end floor applies
 A_END_FLOOR = 0.15  # m/s^2: the very end always brakes at least this much - arriving slow must not turn into a crawl
                     # (keep it below A_1KPH / A_0KPH so the curve above, not this floor, decides the feel)
@@ -112,29 +128,13 @@ DELIVERY_LEAD = 0.25  # s
 EASING_LOOP_MAX = 0.2  # m/s^2
 
 
-# One continuous stop, whatever the approach (driver 2026-10-01 00:07:28, route 000000e2: a tight approach fitted a_nom
-# ~1.3, the firm part reached ~1.75 and was held to 4 km/h, then the 3 km/h end curve cut it to 0.4 in 0.2 s - the
-# brake let go, creep torque pushed the car forward again and it stopped a second time, 0.6 m further than planned).
-# (1) The firm extra shrinks as a_nom grows, so a tight approach is one steady deceleration instead of a hump:
-#     full A_FIRM_EXTRA up to FIRM_EXTRA_FADE_BP[0], none from FIRM_EXTRA_FADE_BP[1].
-# (2) The easing towards the end curve starts early enough that it never needs more than EASE_JERK: the firm value is
-#     held down to V_FIRM_HOLD only when it is already close to A_3KPH; a higher firm value starts easing earlier.
-FIRM_EXTRA_FADE_BP = [0.8, 1.2]  # m/s^2 of a_nom
-EASE_JERK = 0.8  # m/s^3
-
-
-def _ease_start(a_firm: float) -> float:
-  a_mid = 0.5 * (a_firm + A_3KPH)
-  v = 3.0 / 3.6 + a_mid * max(a_firm - A_3KPH, 0.0) / EASE_JERK   # speed lost while the decel falls at EASE_JERK
-  return float(np.clip(v, V_FIRM_HOLD, V_FIRM - 0.05))
+# (2026-10-01 00:07:28 two-stage stop: the firm hump + a hard cut at 3 km/h; replaced by the exponential tail below.)
 
 
 def _decel_of_v(v: np.ndarray, a_nom: float) -> np.ndarray:
-  extra = A_FIRM_EXTRA * float(np.interp(a_nom, FIRM_EXTRA_FADE_BP, [1.0, 0.0]))
-  a_firm = min(a_nom + extra, A_FIRM_MAX)
-  v_bp = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, _ease_start(a_firm), V_FIRM, V_FIRM_IN]
-  a_v = [A_0KPH, A_1KPH, A_2KPH, A_3KPH, a_firm, a_firm, a_nom]
-  return np.interp(v, v_bp, a_v)
+  # a steady a_nom (sized so the whole stop lands on the point) down to the knee, then the driver's exponential tail
+  v = np.asarray(v, dtype=float)
+  return np.minimum(a_nom, np.maximum(END_FLOOR, v / END_TAU))
 
 
 class StopProfile:
