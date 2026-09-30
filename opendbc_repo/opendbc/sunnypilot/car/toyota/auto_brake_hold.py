@@ -11,8 +11,14 @@ from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
 GearShifter = structs.CarState.GearShifter
 
-# frames of confirmed hold-eligible standstill required before engaging
-BRAKE_HOLD_ALLOWED_TIMER = 100
+# frames of confirmed hold-eligible standstill required before engaging. 100 (1 s) -> 200 (2 s), Altis driver
+# 2026-09-30: the hold felt like it grabbed the car at the stop. rlog 000000dc-e0 (8 manual stops with ACC main on):
+# the override always started exactly 1.00 s after the wheel-speed standstill flag and nothing was sent before it,
+# but the flag rises while the car is still settling, and the hold's pre-brake clamp is a step (PBRTRGR, not a
+# ramped request) - on 2 of 8 stops the IMU shows it as a -0.4..-0.6 m/s^2 jolt at +1.1 s (21:36:29, 22:17:20),
+# felt as part of the stop. At 2 s the car has settled and the driver's foot has taken the load, so the clamp is not
+# felt; the hold still engages long before anyone lifts off the pedal at a light.
+BRAKE_HOLD_ALLOWED_TIMER = 200
 
 DISALLOWED_GEARS = (GearShifter.park, GearShifter.reverse)
 
