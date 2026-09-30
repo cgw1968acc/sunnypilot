@@ -246,8 +246,11 @@ class TestAutoBrakeHoldFirmPress(unittest.TestCase):
     self.assertFalse(self._run([BRAKE_HOLD_MIN_FORCE * 0.6] * BRAKE_HOLD_LIGHT_TIMER).active)
     self.assertTrue(self._run([BRAKE_HOLD_MIN_FORCE * 0.6] * (BRAKE_HOLD_LIGHT_TIMER + 1)).active)
 
-  def test_firm_press_engages_at_the_shorter_timer(self, mock_create):
-    self.assertTrue(self._run([BRAKE_HOLD_MIN_FORCE * 1.1] * (BRAKE_HOLD_ALLOWED_TIMER + 1)).active)
+  def test_firm_press_engages_one_timer_after_the_press(self, mock_create):
+    light, firm = BRAKE_HOLD_MIN_FORCE * 0.6, BRAKE_HOLD_MIN_FORCE * 1.1
+    # stopped lightly for 0.5 s, then pressed firmly: engages BRAKE_HOLD_ALLOWED_TIMER after the press, not before
+    self.assertFalse(self._run([light] * 50 + [firm] * BRAKE_HOLD_ALLOWED_TIMER).active)
+    self.assertTrue(self._run([light] * 50 + [firm] * (BRAKE_HOLD_ALLOWED_TIMER + 1)).active)
     self.assertLess(BRAKE_HOLD_ALLOWED_TIMER, BRAKE_HOLD_LIGHT_TIMER)
 
   def test_firm_press_arms_even_if_eased_afterwards(self, mock_create):

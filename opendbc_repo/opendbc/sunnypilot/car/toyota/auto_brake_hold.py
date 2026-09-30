@@ -13,14 +13,14 @@ from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
 GearShifter = structs.CarState.GearShifter
 
-# frames of confirmed hold-eligible standstill required before engaging. 100 (1 s) -> 200 (2 s), Altis driver
-# 2026-09-30: the hold felt like it grabbed the car at the stop. rlog 000000dc-e0 (8 manual stops with ACC main on):
-# the override always started exactly 1.00 s after the wheel-speed standstill flag and nothing was sent before it,
-# but the flag rises while the car is still settling, and the hold's pre-brake clamp is a step (PBRTRGR, not a
-# ramped request) - on 2 of 8 stops the IMU shows it as a -0.4..-0.6 m/s^2 jolt at +1.1 s (21:36:29, 22:17:20),
-# felt as part of the stop. At 2 s the car has settled and the driver's foot has taken the load, so the clamp is not
-# felt; the hold still engages long before anyone lifts off the pedal at a light.
-BRAKE_HOLD_ALLOWED_TIMER = 200
+# Two ways to engage (driver 2026-09-30 night, modelled on the factory EPB hold of the Corolla Cross):
+#  - firm press at the stop: BRAKE_HOLD_ALLOWED_TIMER after the moment the brake force first reaches
+#    BRAKE_HOLD_MIN_FORCE while standing still;
+#  - no firm press: BRAKE_HOLD_LIGHT_TIMER after the wheels stopped.
+# The hold's pre-brake clamp is a step (PBRTRGR, not a ramped request). rlog 000000dc-e0: with the old fixed 1 s after
+# the standstill flag it showed as a -0.4..-0.6 m/s^2 jolt on 2 of 8 light manual stops, felt as part of stopping;
+# a light stop now waits 2.5 s, and after a deliberate firm press the clamp is expected.
+BRAKE_HOLD_ALLOWED_TIMER = 100  # frames (1 s) after the firm press
 # Like the factory electronic-parking-brake hold (Corolla Cross), the hold only arms when the driver has pressed the
 # pedal firmly at the stop: brake pressure (BRAKE 0xA6 BRAKE_FORCE) must reach BRAKE_HOLD_MIN_FORCE at some point
 # during the standstill. Altis 2026-09-30 night: an ordinary light stop sits at 600-1050 N, a deliberate firm press is
@@ -69,6 +69,7 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     self._counter = 0
     self._released = False
     self._armed = False
+    self._firm_frame = 0
     self._prev_brake_pressed = False
 
   def update(self, CS: structs.CarState, frame: int, packer) -> list:
@@ -82,11 +83,13 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
       if CS.out.brakePressed and not self._prev_brake_pressed:
         self._released = True
       force = getattr(CS, "brake_force", float("nan"))
-      if math.isnan(force) or force >= BRAKE_HOLD_MIN_FORCE:
-        self._armed = True
       self._counter += 1
+      if not self._armed and (math.isnan(force) or force >= BRAKE_HOLD_MIN_FORCE):
+        self._armed = True
+        self._firm_frame = self._counter
+      firm_ready = self._armed and self._counter - self._firm_frame >= BRAKE_HOLD_ALLOWED_TIMER
       held_long = self._counter > BRAKE_HOLD_LIGHT_TIMER
-      self.active = ((self._counter > BRAKE_HOLD_ALLOWED_TIMER and self._armed) or held_long) and not self._released
+      self.active = (firm_ready or held_long) and not self._released
     else:
       self._counter = 0
       self.active = False
