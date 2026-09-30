@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import (StopGapGovernor, STOP_GAP, V_ENGAGE,
-                                                                          CREEP_LEAD_V, RELEASE_RATE, A_ENGAGE, S_ENGAGE_BASE)
+                                                                          CREEP_LEAD_V, RELEASE_RATE, A_ENGAGE, S_ENGAGE_BASE, HANDBACK_TIME)
 
 DT = 0.05
 STOP_ACCEL = -1.0          # hybrid stopAccel (Toyota interface)
@@ -14,22 +14,23 @@ def mpc_like(v_close, s):
   return -float(np.clip(v_close * v_close / (2.0 * max(s, 0.5)), 0.3, 1.2)) if v_close > 0 else -0.05
 
 
-def run(v0, gap0, lead_v=None, secs=22.0, lag=0.4, gain=1.6, creep=0.06):
+def run(v0, gap0, lead_v=None, secs=22.0, lag=0.4, gain=1.6, creep=0.06, gov=None):
   """Closed loop against a lagged plant that brakes `gain`x the request below 1.5 m/s and creeps at +creep when the
   delivered brake is lighter than the creep torque. longcontrol's stopping state is modelled: it latches on the
   governor's should_stop, then holds the last output and ramps it toward STOP_ACCEL."""
   if lead_v is None:
     lead_v = lambda t: 0.0  # noqa: E731
-  gov = StopGapGovernor(DT)
+  gov = gov or StopGapGovernor(DT)
   v, gap = v0, gap0
   a = mpc_like(v0 - lead_v(0.0), gap0 - STOP_GAP)
   out = a
-  targets, gaps, vs = [], [], []
+  targets, gaps, vs, accels = [], [], [], []
   t = 0.0
   t_stop = None
   gap_stop = None
   hold = None
   crept = False
+  at_rest = False
   stopping = False
   while t < secs:
     vl = max(lead_v(t), 0.0)
@@ -52,19 +53,23 @@ def run(v0, gap0, lead_v=None, secs=22.0, lag=0.4, gain=1.6, creep=0.06):
     targets.append(target)
     gaps.append(gap)
     vs.append(v)
+    accels.append(a)
     delivered = out * gain if (out < 0 and v < 1.5) else out
     net = delivered + (creep if delivered > -creep else 0.0)
     a += (net - a) * DT / lag
     v = max(v + a * DT, 0.0)
     gap += (vl - v) * DT
     t += DT
-    if t_stop is not None and t > t_stop + 0.4 and abs(v) > 0.1 and vl < 0.05:
+    # crept = moving again after the car had come to rest (a second stop), not a slow final metre
+    if t_stop is not None and v < 0.02:
+      at_rest = True
+    if t_stop is not None and at_rest and abs(v) > 0.1 and vl < 0.05:
       crept = True
     if t_stop is not None and t > t_stop + 3.0 and vl < 0.05:
       hold = out
       break
   return {"gap": gap_stop if gap_stop is not None else gap, "hold": hold, "crept": crept,
-          "targets": np.array(targets), "gaps": np.array(gaps), "vs": np.array(vs)}
+          "targets": np.array(targets), "gaps": np.array(gaps), "vs": np.array(vs), "accels": np.array(accels)}
 
 
 class TestStopGapGovernor(unittest.TestCase):
@@ -89,7 +94,10 @@ class TestStopGapGovernor(unittest.TestCase):
     r = run(5.0, STOP_GAP + 5.0 ** 2 / 2.0 + 2.0)
     near = r['targets'][(r['vs'] < 0.8) & (r['vs'] > 0.15)]
     self.assertTrue(len(near) > 2)
-    self.assertGreater(near.min(), -0.6)   # the glide is light, no firm grab at the end
+    self.assertGreater(near.min(), -1.0)   # lighter than the firm part (~1.15): no firm grab at the end
+    last = r['targets'][(r['vs'] < 0.3) & (r['vs'] > 0.05)]
+    if len(last):
+      self.assertGreater(last.mean(), near.min())   # and it keeps easing towards the stop
 
   def test_creeping_lead_is_followed_without_a_lurch(self):
     def lead_v(t):
@@ -108,8 +116,18 @@ class TestStopGapGovernor(unittest.TestCase):
   def test_hands_back_when_the_lead_pulls_away(self):
     gov = StopGapGovernor(DT)
     self.assertIsNotNone(gov.update(True, 0.5, True, 5.0, 0.3, -0.3))
-    self.assertIsNone(gov.update(True, 0.5, True, 5.0, 1.5, 0.4))
+    self.assertIsNone(gov.update(True, 0.5, True, 5.0, 1.5, 0.4))          # clearly driving off: at once
     self.assertIsNone(gov.update(True, 1.0, True, 5.0, CREEP_LEAD_V + 0.5, 0.4))
+
+  def test_a_radar_flicker_does_not_hand_back(self):
+    gov = StopGapGovernor(DT)
+    self.assertIsNotNone(gov.update(True, 0.0, True, 5.3, 0.0, -0.1))
+    self.assertIsNotNone(gov.update(True, 0.0, True, 5.3, 0.25, -0.1))     # one sample of +0.25 m/s: still holding
+    self.assertIsNotNone(gov.update(True, 0.0, True, 5.3, 0.0, -0.1))
+    n = 0
+    while gov.update(True, 0.0, True, 5.3, 0.3, -0.1) is not None and n < 100:
+      n += 1
+    self.assertAlmostEqual(n * DT, HANDBACK_TIME, delta=DT * 1.5)          # a sustained slow pull-away hands back after HANDBACK_TIME
 
   def test_only_ever_adds_braking_relative_to_the_mpc(self):
     gov = StopGapGovernor(DT)
@@ -145,3 +163,24 @@ def test_mpc_request_harder_than_the_cap_passes_through():
   a, _ = out
   assert a <= -2.8 + 1e-9
   assert a < A_NEG_MAX
+
+
+def test_last_metre_deceleration_follows_the_tuned_curve_despite_the_lag():
+  # lagged, over-delivering plant (0.4 s, 1.6x): the actual deceleration between 3 and 1 km/h must stay well below the
+  # firm value it eases from (~1.15 at a_nom 0.7), i.e. the easing is felt by the car, not only requested
+  from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import A_3KPH
+  for v0 in (8.0, 4.0):
+    r = run(v0, STOP_GAP + v0 ** 2 / (2.0 * A_ENGAGE) + S_ENGAGE_BASE)
+    m = (r['vs'] < 3.0 / 3.6) & (r['vs'] > 1.0 / 3.6)
+    assert -r['accels'][m].mean() < A_3KPH + 0.35, -r['accels'][m].mean()
+    assert not r['crept'] and STOP_GAP - 0.5 < r['gap'] < STOP_GAP + 0.8
+
+
+def test_tight_stop_still_ends_on_the_tuned_curve():
+  # lead appears with little room (compressed profile, firm part at the cap): the request below 1.5 km/h must still be
+  # close to the tuned end values, not the loop's demand, and the car must not hit the lead
+  from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import A_1KPH, EASING_LOOP_MAX
+  r = run(8.0, STOP_GAP + 8.0 ** 2 / (2.0 * 1.4) + 1.0, secs=25)
+  m = (r['vs'] < 1.5 / 3.6) & (r['vs'] > 0.1)
+  assert len(r['targets'][m]) and -r['targets'][m].mean() <= A_1KPH + EASING_LOOP_MAX + 0.15, -r['targets'][m].mean()
+  assert r['gap'] > STOP_GAP - 1.0 and not r['crept'], r['gap']
