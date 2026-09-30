@@ -96,6 +96,12 @@ DISENGAGE_MARGIN = 1.0
 # 2026-09-30 and rejected: the ratio measured during the easing phase is dominated by the lag, so on a car that does
 # not over-deliver it still "learned" 1.3-1.5x, lightened the last metre, and the car crept and stopped 0.5 m short.)
 DELIVERY_LEAD = 0.25  # s
+# In the easing phase the velocity loop may add at most this much on top of the curve. Evening drive 2026-09-30 (route
+# 000000da): on compressed stops (lead 3.0-3.1 m at rest, a_firm at the 2.0 cap) the loop pushed the request to -1.08
+# at 1 km/h and the car delivered -1.74 with a -1.60 jolt, while the tuned curve says 0.38. Below 3 km/h the kinetic
+# energy is tiny (3 km/h needs 0.6 m at 0.6 m/s^2, 0.3 m at 1.2), so limiting the correction costs at most ~0.3 m of
+# landing accuracy on a tight stop and keeps the last metre on the tuned curve in every case.
+EASING_LOOP_MAX = 0.2  # m/s^2
 
 
 def _decel_of_v(v: np.ndarray, a_nom: float) -> np.ndarray:
@@ -201,11 +207,13 @@ class StopGapGovernor:
       a = -A_PAST
     else:
       v_prof, a_ff = self.profile.at(s) if self.profile is not None else _profile_single(s, self.a_nom)
+      loop = (v_close - v_prof) / TAU_V   # pull onto the profile
       if self.profile is not None and v_ego < V_FIRM_HOLD:
         # read the curve where the car will be once the PCM has responded, so what the car actually does in the
-        # last metre is the tuned curve rather than the curve ~0.7 km/h behind it
+        # last metre is the tuned curve rather than the curve ~0.7 km/h behind it, and let the loop add only a little
         _, a_ff = self.profile.at(max(s - v_close * DELIVERY_LEAD, 0.0))
-      decel = a_ff + (v_close - v_prof) / TAU_V   # feed-forward profile decel + pull onto the profile
+        loop = min(loop, EASING_LOOP_MAX)
+      decel = a_ff + loop   # feed-forward profile decel + pull onto the profile
       # keep a small brake floor near the stop (v_ego < V_TAPER) so the car never fully releases and creeps off a
       # dead stop; above that the profile can still ease to zero. The firm standstill clamp (stopAccel) does the hold.
       lo = A_CREEP_FLOOR if v_ego < V_TAPER else 0.0

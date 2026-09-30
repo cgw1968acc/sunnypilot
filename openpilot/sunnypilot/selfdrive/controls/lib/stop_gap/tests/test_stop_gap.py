@@ -170,3 +170,13 @@ def test_last_metre_deceleration_follows_the_tuned_curve_despite_the_lag():
     m = (r['vs'] < 3.0 / 3.6) & (r['vs'] > 1.0 / 3.6)
     assert -r['accels'][m].mean() < A_3KPH + 0.35, -r['accels'][m].mean()
     assert not r['crept'] and STOP_GAP - 0.5 < r['gap'] < STOP_GAP + 0.8
+
+
+def test_tight_stop_still_ends_on_the_tuned_curve():
+  # lead appears with little room (compressed profile, firm part at the cap): the request below 1.5 km/h must still be
+  # close to the tuned end values, not the loop's demand, and the car must not hit the lead
+  from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import A_1KPH, EASING_LOOP_MAX
+  r = run(8.0, STOP_GAP + 8.0 ** 2 / (2.0 * 1.4) + 1.0, secs=25)
+  m = (r['vs'] < 1.5 / 3.6) & (r['vs'] > 0.1)
+  assert len(r['targets'][m]) and -r['targets'][m].mean() <= A_1KPH + EASING_LOOP_MAX + 0.15, -r['targets'][m].mean()
+  assert r['gap'] > STOP_GAP - 1.0 and not r['crept'], r['gap']
