@@ -54,9 +54,11 @@ STOPPING_FOLLOW_RATE = 2.0  # m/s^3
 # MPC or an e2e stop with no lead - below END_TAPER_V_START the braking request may not exceed the tuned end-of-stop
 # curve (the governor's A_3KPH..A_0KPH), read END_TAPER_LEAD ahead of the car's speed so the deceleration the PCM
 # actually delivers (lagged) follows it. Positive targets pass, so a lead driving off is not held back.
-END_TAPER_V_START = 3.0 / 3.6  # m/s
+END_TAPER_V_START = 10.0 / 3.6  # m/s (3 -> 10 km/h, 2026-10-01 device campaign: with a lead braking -2 to a stop the MPC still
+                                # asked 1.5 at 1 km/h when the taper only started at 3 km/h; the law v/0.65 only binds near the stop)
 END_TAPER_LEAD = DELIVERY_LEAD  # s
-END_TAPER_RELEASE_JERK = 1.0  # m/s^3, fastest the taper may lighten the brake (00:07:28: it dropped -1.35 -> -0.39 in 0.2 s)
+END_TAPER_RELEASE_JERK = 3.0  # m/s^3, fastest the taper may lighten the brake (1.0 -> 3.0 with the earlier start: the cap now
+                              # follows v/0.65 from 10 km/h, so it eases in instead of cutting at 3 km/h as on 00:07:28)
 
 
 def end_taper_decel(v_ego: float, a_ego: float) -> float:

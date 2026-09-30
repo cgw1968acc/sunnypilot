@@ -41,7 +41,8 @@ HANDBACK_V_REL = 0.2  # m/s, lead opening faster than ego by this much is a pull
 HANDBACK_TIME = 0.3  # s
 HANDBACK_V_REL_FAST = 0.8  # m/s, a lead clearly driving off hands back at once
 A_NOM = 0.7  # m/s^2 (0.8 -> 0.7, 2026-09-27: a touch lighter stop), least deceleration of the constant-deceleration (fast) part of the profile
-A_NOM_MAX = 1.6  # m/s^2, most it steepens to for a fast/close arrival
+A_NOM_MAX = 2.2  # m/s^2, most it steepens to for a fast/close arrival (1.6 -> 2.2, 2026-10-01: at 1.6 a stopped lead seen late
+                 # got no fitted profile, the MPC stopped hard and ~6 m short; device campaign: 3.1-3.6 m, template end)
 V_TAPER = 0.8  # m/s, below this the small creep-brake floor applies
 # Speed-scheduled stop (driver, Altis 2026-09-27, "firm from 15 km/h, then lighter, every change gradual"; 2026-09-30:
 # "keep the 15 km/h force down to about 7 km/h, then ease off step by step, and give me the 1 -> 0 km/h values to
@@ -95,7 +96,7 @@ A_END_FLOOR = 0.15  # m/s^2: the very end always brakes at least this much - arr
                     # (keep it below A_1KPH / A_0KPH so the curve above, not this floor, decides the feel)
 PROFILE_DV = 0.02  # m/s, integration step for the distance table
 TAU_V = 0.6  # s, velocity-loop time constant that pulls ego onto the profile
-A_NEG_MAX = -2.0  # m/s^2, hardest braking the governor asks for
+A_NEG_MAX = -2.5  # m/s^2, hardest braking the governor asks for (-2.0 -> -2.5 with A_NOM_MAX 2.2; a harder MPC request still passes)
 A_PAST = 1.0  # m/s^2, firm (not full-force) brake once past the point
 V_STOP_CLAMP = 0.3  # m/s, and only once nearly stopped
 A_CREEP_FLOOR = 0.06  # m/s^2, smallest brake kept near the stop so the hybrid never creeps off a dead stop
