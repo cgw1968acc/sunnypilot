@@ -112,9 +112,27 @@ DELIVERY_LEAD = 0.25  # s
 EASING_LOOP_MAX = 0.2  # m/s^2
 
 
+# One continuous stop, whatever the approach (driver 2026-10-01 00:07:28, route 000000e2: a tight approach fitted a_nom
+# ~1.3, the firm part reached ~1.75 and was held to 4 km/h, then the 3 km/h end curve cut it to 0.4 in 0.2 s - the
+# brake let go, creep torque pushed the car forward again and it stopped a second time, 0.6 m further than planned).
+# (1) The firm extra shrinks as a_nom grows, so a tight approach is one steady deceleration instead of a hump:
+#     full A_FIRM_EXTRA up to FIRM_EXTRA_FADE_BP[0], none from FIRM_EXTRA_FADE_BP[1].
+# (2) The easing towards the end curve starts early enough that it never needs more than EASE_JERK: the firm value is
+#     held down to V_FIRM_HOLD only when it is already close to A_3KPH; a higher firm value starts easing earlier.
+FIRM_EXTRA_FADE_BP = [0.8, 1.2]  # m/s^2 of a_nom
+EASE_JERK = 0.8  # m/s^3
+
+
+def _ease_start(a_firm: float) -> float:
+  a_mid = 0.5 * (a_firm + A_3KPH)
+  v = 3.0 / 3.6 + a_mid * max(a_firm - A_3KPH, 0.0) / EASE_JERK   # speed lost while the decel falls at EASE_JERK
+  return float(np.clip(v, V_FIRM_HOLD, V_FIRM - 0.05))
+
+
 def _decel_of_v(v: np.ndarray, a_nom: float) -> np.ndarray:
-  a_firm = min(a_nom + A_FIRM_EXTRA, A_FIRM_MAX)
-  v_bp = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, V_FIRM_HOLD, V_FIRM, V_FIRM_IN]
+  extra = A_FIRM_EXTRA * float(np.interp(a_nom, FIRM_EXTRA_FADE_BP, [1.0, 0.0]))
+  a_firm = min(a_nom + extra, A_FIRM_MAX)
+  v_bp = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, _ease_start(a_firm), V_FIRM, V_FIRM_IN]
   a_v = [A_0KPH, A_1KPH, A_2KPH, A_3KPH, a_firm, a_firm, a_nom]
   return np.interp(v, v_bp, a_v)
 

@@ -30,6 +30,7 @@ def run(v0, gap0, lead_v=None, secs=22.0, lag=0.4, gain=1.6, creep=0.06, gov=Non
   gap_stop = None
   hold = None
   crept = False
+  at_rest = False
   stopping = False
   while t < secs:
     vl = max(lead_v(t), 0.0)
@@ -59,7 +60,10 @@ def run(v0, gap0, lead_v=None, secs=22.0, lag=0.4, gain=1.6, creep=0.06, gov=Non
     v = max(v + a * DT, 0.0)
     gap += (vl - v) * DT
     t += DT
-    if t_stop is not None and t > t_stop + 0.4 and abs(v) > 0.1 and vl < 0.05:
+    # crept = moving again after the car had come to rest (a second stop), not a slow final metre
+    if t_stop is not None and v < 0.02:
+      at_rest = True
+    if t_stop is not None and at_rest and abs(v) > 0.1 and vl < 0.05:
       crept = True
     if t_stop is not None and t > t_stop + 3.0 and vl < 0.05:
       hold = out

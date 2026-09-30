@@ -12,7 +12,8 @@ STOPPING_DECEL_RATE = 0.3  # m/s^2/s while trying to stop
 # Once the car is actually standing still the brake request keeps falling towards stopAccel at this faster rate, so
 # the hold firms up in well under a second instead of ~3 s (Altis 2026-09-27: after a stop behind a lead the car rolled
 # on towards it). The approach and the stop itself are untouched: this rate only applies with CS.standstill set.
-STANDSTILL_HOLD_RATE = 1.0  # m/s^2/s
+STANDSTILL_HOLD_RATE = 0.5  # m/s^2/s (1.0 -> 0.5, 2026-10-01: 2 of 18 stops rolled ~8 cm forward while the hold was ramping
+                            # at 1.0 - PCM brake blending at standstill; the gradual creep response covers any creep)
 # CS.standstill (all wheel speeds reading zero) arrives while the Altis is still settling the last few centimetres, so
 # a hold ramp that starts on that flag is felt as the brake biting before the car is at rest (driver report
 # 2026-09-29, first stop on the -1.0 hold). The fast ramp therefore waits until standstill has been continuous for
@@ -45,6 +46,7 @@ STOPPING_EXIT_DEBOUNCE = 0.2  # s
 CREEP_V_MIN = 0.03  # m/s, below this the car counts as stopped for the creep response
 CREEP_RATE_BASE = 0.3  # m/s^2/s
 CREEP_RATE_GROWTH = 1.5  # m/s^2/s per second of creep
+CREEP_RATE_MAX = 1.0  # m/s^2/s
 STOPPING_FOLLOW_MIN = -0.10  # m/s^2
 STOPPING_FOLLOW_RATE = 2.0  # m/s^3
 # Universal end-of-stop taper (driver 2026-09-30 night: the 'taper' in the last 0.3 s is what makes a stop seamless, a
@@ -54,6 +56,7 @@ STOPPING_FOLLOW_RATE = 2.0  # m/s^3
 # actually delivers (lagged) follows it. Positive targets pass, so a lead driving off is not held back.
 END_TAPER_V_START = 3.0 / 3.6  # m/s
 END_TAPER_LEAD = DELIVERY_LEAD  # s
+END_TAPER_RELEASE_JERK = 1.0  # m/s^3, fastest the taper may lighten the brake (00:07:28: it dropped -1.35 -> -0.39 in 0.2 s)
 
 
 def end_taper_decel(v_ego: float, a_ego: float) -> float:
@@ -151,7 +154,7 @@ class LongControl:
         if self.standstill_t >= hold_delay:
           rate = STANDSTILL_HOLD_RATE
         elif creeping:
-          rate = min(CREEP_RATE_BASE + CREEP_RATE_GROWTH * self.creep_t, STANDSTILL_HOLD_RATE)
+          rate = min(CREEP_RATE_BASE + CREEP_RATE_GROWTH * self.creep_t, CREEP_RATE_MAX)
         elif self.stopping_t >= STOPPING_FREEZE_MAX:
           rate = STOPPING_DECEL_RATE
         else:
@@ -166,7 +169,11 @@ class LongControl:
 
     if active and not CS.standstill and CS.vEgo < END_TAPER_V_START and a_target < 0.0 and not CS.brakePressed and \
        not (self.long_control_state == LongCtrlState.stopping and self.stopped_once):
-      output_accel = max(output_accel, -end_taper_decel(CS.vEgo, CS.aEgo))
+      capped = max(output_accel, -end_taper_decel(CS.vEgo, CS.aEgo))
+      if capped > output_accel:
+        # never let the brake go faster than END_TAPER_RELEASE_JERK: a sudden release lets creep torque push the car on
+        capped = min(capped, self.last_output_accel + END_TAPER_RELEASE_JERK * DT_CTRL)
+        output_accel = max(output_accel, capped)
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     return self.last_output_accel

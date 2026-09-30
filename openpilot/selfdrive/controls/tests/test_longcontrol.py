@@ -167,8 +167,9 @@ class TestTerminalStop(OpenpilotTestCase):
     # a hard request at 2 km/h (no lag: aEgo 0) is capped at the 2 km/h curve value, at 1 km/h at the 1 km/h value
     a2 = float(LoC.update(True, car.CarState.new_message(vEgo=2.0 / 3.6, aEgo=0.0), -1.5, False, (-3.5, 1.5)))
     assert abs(a2 + A_2KPH) < 0.02, a2
-    LoC.long_control_state = LongCtrlState.pid
-    a1 = float(LoC.update(True, car.CarState.new_message(vEgo=1.0 / 3.6, aEgo=0.0), -1.5, False, (-3.5, 1.5)))
+    for _ in range(100):   # the cap may only lighten the brake at END_TAPER_RELEASE_JERK, so give it time
+      LoC.long_control_state = LongCtrlState.pid
+      a1 = float(LoC.update(True, car.CarState.new_message(vEgo=1.0 / 3.6, aEgo=0.0), -1.5, False, (-3.5, 1.5)))
     assert abs(a1 + A_1KPH) < 0.02, a1
     # with the car still decelerating, the curve is read ahead (lighter still)
     assert end_taper_decel(2.0 / 3.6, -0.8) < A_2KPH
