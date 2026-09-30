@@ -50,6 +50,19 @@ TEMP_STEER_FAULTS = (0, 9, 11, 21, 25)
 PERM_STEER_FAULTS = (3, 17)
 
 
+CLUSTER_SPEED_GAIN = 1.04           # dash km/h per true km/h (stock openpilot: 1.015)
+CLUSTER_SPEED_OFFSET_KPH = 1.6      # km/h added on top
+CLUSTER_MIN_KPH = 5.0               # below this the screen shows the true speed
+
+
+def cluster_speed(v_ego: float) -> float:
+  """Speed for the on-screen readout, matched to the car's own speedometer (m/s in, m/s out)."""
+  v_kph = v_ego * CV.MS_TO_KPH
+  if v_kph < CLUSTER_MIN_KPH:
+    return v_ego
+  return (CLUSTER_SPEED_GAIN * v_kph + CLUSTER_SPEED_OFFSET_KPH) * CV.KPH_TO_MS
+
+
 class CarState(CarStateBase, CarStateExt):
   def __init__(self, CP, CP_SP):
     CarStateBase.__init__(self, CP, CP_SP)
@@ -159,7 +172,12 @@ class CarState(CarStateBase, CarStateExt):
       cp.vl["WHEEL_SPEEDS"]["WHEEL_SPEED_RL"],
       cp.vl["WHEEL_SPEEDS"]["WHEEL_SPEED_RR"],
     )
-    ret.vEgoCluster = ret.vEgo * 1.015  # minimum of all the cars
+    # Speedometer model for the on-screen speed. Stock: vEgo * 1.015. Corolla Altis Hybrid 2026-09-30 22:30: at a set
+    # speed of 105 the dash read 104 while the screen (1.015 * vEgo) read 100, i.e. vEgo ~98.5 km/h - the dash is about
+    # 5.5% above the true speed. Toyota speedometers are close to affine (gain plus a small offset); start from gain 1.04
+    # and +1.6 km/h, which reproduces that point, and refine with more dash/screen pairs. Only above CLUSTER_MIN_KPH so
+    # crawling and standstill stay exact. Tunables: CLUSTER_SPEED_GAIN, CLUSTER_SPEED_OFFSET_KPH.
+    ret.vEgoCluster = cluster_speed(ret.vEgo)
 
     ret.standstill = abs(ret.vEgoRaw) < 1e-3
 
