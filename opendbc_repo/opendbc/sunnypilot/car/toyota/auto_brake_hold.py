@@ -5,6 +5,8 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+import math
+
 from opendbc.car import structs
 from opendbc.car.toyota import toyotacan
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
@@ -19,6 +21,12 @@ GearShifter = structs.CarState.GearShifter
 # felt as part of the stop. At 2 s the car has settled and the driver's foot has taken the load, so the clamp is not
 # felt; the hold still engages long before anyone lifts off the pedal at a light.
 BRAKE_HOLD_ALLOWED_TIMER = 200
+# Like the factory electronic-parking-brake hold (Corolla Cross), the hold only arms when the driver has pressed the
+# pedal firmly at the stop: brake pressure (BRAKE 0xA6 BRAKE_FORCE) must reach BRAKE_HOLD_MIN_FORCE at some point
+# during the standstill. Altis 2026-09-30 night: an ordinary light stop sits at 600-1050 N, a deliberate firm press is
+# well above. A light stop stays unheld, so nothing is clamped under a driver who is just easing to a halt. When the
+# car does not broadcast the force (nan) the hold arms as before.
+BRAKE_HOLD_MIN_FORCE = 1400.0  # N
 
 DISALLOWED_GEARS = (GearShifter.park, GearShifter.reverse)
 
@@ -57,6 +65,7 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     self.active = False
     self._counter = 0
     self._released = False
+    self._armed = False
     self._prev_brake_pressed = False
 
   def update(self, CS: structs.CarState, frame: int, packer) -> list:
@@ -69,12 +78,16 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
       # _prev_brake_pressed by the time standstill is reached, so it doesn't count as a release
       if CS.out.brakePressed and not self._prev_brake_pressed:
         self._released = True
+      force = getattr(CS, "brake_force", float("nan"))
+      if math.isnan(force) or force >= BRAKE_HOLD_MIN_FORCE:
+        self._armed = True
       self._counter += 1
-      self.active = self._counter > BRAKE_HOLD_ALLOWED_TIMER and not self._released
+      self.active = self._counter > BRAKE_HOLD_ALLOWED_TIMER and self._armed and not self._released
     else:
       self._counter = 0
       self.active = False
       self._released = False
+      self._armed = False
 
     self._prev_brake_pressed = CS.out.brakePressed
 

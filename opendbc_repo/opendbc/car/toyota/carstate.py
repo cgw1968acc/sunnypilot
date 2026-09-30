@@ -3,6 +3,7 @@ from enum import IntEnum
 import importlib
 
 from opendbc.can import CANDefine, CANParser
+from opendbc.can.dbc import DBC as DBCParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.common.filter_simple import FirstOrderFilter
@@ -98,6 +99,7 @@ class CarState(CarStateBase, CarStateExt):
 
     if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD:
       self.pre_collision_2 = {}
+    self.brake_force = float('nan')  # N, BRAKE (0xA6) BRAKE_FORCE: brake pressure as force; nan when not broadcast
 
     self._host_params = get_host_params()
     self.toyota_drive_mode = self._host_params is not None and self._host_params.get_bool('ToyotaDriveMode')
@@ -305,6 +307,8 @@ class CarState(CarStateBase, CarStateExt):
 
     if self.CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD:
       self.pre_collision_2 = copy.copy(cp_cam.vl["PRE_COLLISION_2"])
+      if "BRAKE" in cp.vl:
+        self.brake_force = float(cp.vl["BRAKE"]["BRAKE_FORCE"])
 
     self.frame += 1
 
@@ -321,6 +325,9 @@ class CarState(CarStateBase, CarStateExt):
     # skipped (nan) so a car without the message never invalidates CAN.
     if CP.flags & ToyotaFlags.HYBRID:
       pt_messages.append(("ENGINE_RPM", float('nan')))
+    # brake pressure (0xA6) so the auto brake hold can require a firm press, like the factory hold. Alive check skipped.
+    if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD and "BRAKE" in DBCParser(DBC[CP.carFingerprint][Bus.pt]).name_to_msg:
+      pt_messages.append(("BRAKE", float('nan')))
 
     cam_messages = [
       ("RSA1", 0),

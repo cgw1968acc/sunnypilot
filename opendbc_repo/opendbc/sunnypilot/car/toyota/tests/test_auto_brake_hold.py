@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from opendbc.car import structs
-from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController, BRAKE_HOLD_ALLOWED_TIMER, pcs_is_active
+from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController, BRAKE_HOLD_ALLOWED_TIMER, BRAKE_HOLD_MIN_FORCE, pcs_is_active
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
 GearShifter = structs.CarState.GearShifter
@@ -229,3 +229,26 @@ class TestPcsIsActive(unittest.TestCase):
 
 if __name__ == "__main__":
   unittest.main()
+
+
+@patch("opendbc.sunnypilot.car.toyota.auto_brake_hold.toyotacan.create_brake_hold_command")
+class TestAutoBrakeHoldFirmPress(unittest.TestCase):
+  def _run(self, forces):
+    ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
+    ctrl.update(FakeCarState(standstill=False, brake_pressed=True), 0, None)   # the press starts while still rolling
+    for i, f in enumerate(forces, 1):
+      cs = FakeCarState(brake_pressed=True)
+      cs.brake_force = f
+      ctrl.update(cs, i, None)
+    return ctrl
+
+  def test_light_stop_does_not_arm(self, mock_create):
+    ctrl = self._run([BRAKE_HOLD_MIN_FORCE * 0.6] * (BRAKE_HOLD_ALLOWED_TIMER + 50))
+    self.assertFalse(ctrl.active)
+
+  def test_firm_press_arms_even_if_eased_afterwards(self, mock_create):
+    forces = [BRAKE_HOLD_MIN_FORCE * 0.6] * 50 + [BRAKE_HOLD_MIN_FORCE * 1.1] * 10 + [BRAKE_HOLD_MIN_FORCE * 0.6] * (BRAKE_HOLD_ALLOWED_TIMER)
+    self.assertTrue(self._run(forces).active)
+
+  def test_missing_force_signal_keeps_the_old_behaviour(self, mock_create):
+    self.assertTrue(self._run([float("nan")] * (BRAKE_HOLD_ALLOWED_TIMER + 5)).active)
