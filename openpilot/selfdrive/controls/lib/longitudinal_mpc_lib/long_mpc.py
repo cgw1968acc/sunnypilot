@@ -78,6 +78,21 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
+# Close following below ~40 km/h (Altis driver 2026-10-01, aggressive personality: "braking below ~40 km/h is abrupt; to
+# be linear it has to start a little earlier and very lightly"). Closed-loop MPC runs on the C3X (lead at 35 km/h
+# braking -1.5 to a stop): a higher jerk weight made it start LATER and peak HIGHER (1.96 -> 2.13, min gap 3.5 -> 1.4 m),
+# so it is not used. What helps: (1) a slightly longer following time at low speed for the aggressive personality
+# only (withdrawn 2026-10-01, see AGGRESSIVE_T_FOLLOW_V), and (2) at low speed assume a braking lead keeps braking longer (smaller aLeadTau), so the reaction starts
+# earlier and builds more gradually. Both: onset 0.55 -> 0.50 s, peak 1.96 -> 1.72, min gap 3.5 -> 4.3 m; following
+# gap at 30 km/h +1.7 m (16.4 -> 18.1 m); above 50 km/h nothing changes.
+LOW_SPEED_FOLLOW_BP = [8.3, 13.9]  # m/s (30, 50 km/h), where the braking-lead tau below is blended out
+# Aggressive following time by speed. Driver 2026-10-01: keep a little more distance at 30-50 km/h, but the close
+# following of 1.25 s must not grow beyond ~1.27 s (the 1.45 s below 30 km/h from bec2387 is withdrawn for that reason).
+AGGRESSIVE_T_FOLLOW_BP = [8.3, 13.9, 19.4]  # m/s (30, 50, 70 km/h)
+AGGRESSIVE_T_FOLLOW_V = [1.27, 1.27, 1.25]  # s
+LEAD_BRAKE_TAU_LOW = 0.7           # aLeadTau used for a braking lead at low speed (radard default 1.5)
+
+
 def get_stopped_equivalence_factor(v_lead):
   return (v_lead**2) / (2 * COMFORT_BRAKE)
 
@@ -291,6 +306,9 @@ class LongitudinalMpc:
       v_lead = lead.vLead
       a_lead = lead.aLeadK
       a_lead_tau = lead.aLeadTau
+      if a_lead < 0.0:
+        # low speed: a braking lead is assumed to keep braking longer, so the reaction starts earlier and softer
+        a_lead_tau = min(a_lead_tau, float(np.interp(v_ego, LOW_SPEED_FOLLOW_BP, [LEAD_BRAKE_TAU_LOW, a_lead_tau])))
     else:
       # Fake a fast lead car, so mpc can keep running in the same mode
       x_lead = 50.0
@@ -309,6 +327,8 @@ class LongitudinalMpc:
 
   def update(self, radarstate, personality=log.LongitudinalPersonality.standard):
     t_follow = get_T_FOLLOW(personality)
+    if personality == log.LongitudinalPersonality.aggressive:
+      t_follow = float(np.interp(self.x0[1], AGGRESSIVE_T_FOLLOW_BP, AGGRESSIVE_T_FOLLOW_V))
 
     lead_xv_0 = self.process_lead(radarstate.leadOne)
     lead_xv_1 = self.process_lead(radarstate.leadTwo)
