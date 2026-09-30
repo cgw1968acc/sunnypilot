@@ -1,7 +1,8 @@
 import numpy as np
 
 from opendbc.car import rate_limit, DT_CTRL
-from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper, ENGAGE_T_BP, ENGAGE_J_UP, ONSET_J_DOWN, HARD_BRAKE_ACCEL
+from opendbc.sunnypilot.car.toyota.brake_onset import (BrakeOnsetShaper, EngageOnsetShaper, ENGAGE_T_BP, ENGAGE_J_UP, ONSET_J_DOWN,
+                                                       HARD_BRAKE_ACCEL, URGENT_T, URGENT_J)
 
 DT = DT_CTRL * 3
 STOCK_J = 4.0
@@ -13,7 +14,7 @@ def run(requests, a0=0.0, fcw=False):
   a = a0
   out = []
   for req in requests:
-    step = shaper.down_step(req, a, bypass=shaper.is_urgent(req, fcw))
+    step = shaper.down_step(req, a, bypass=fcw, urgent=shaper.is_urgent(req, False))
     a = rate_limit(req, a, step, UP_STEP)
     out.append(a)
   return np.array(out)
@@ -51,10 +52,12 @@ class TestBrakeOnset:
     assert at(out, t_switch + 0.21) > -0.6 - 0.25
     assert np.isclose(out[-1], -1.8, atol=1e-6)
 
-  def test_hard_brake_request_bypasses_the_schedule(self):
+  def test_hard_brake_request_gets_a_short_soft_start_then_stock(self):
     out = run([HARD_BRAKE_ACCEL - 0.5] * 20)
-    assert np.isclose(out[0], -STOCK_J * DT, atol=1e-6)
-    assert at(out, 0.3) <= -1.1
+    assert np.isclose(out[0], -URGENT_J * DT, atol=1e-6)          # first frame: 1.0 m/s^3, not the stock 4.0
+    assert at(out, URGENT_T) >= -URGENT_J * URGENT_T - 1e-6        # ~-0.1 after the soft 0.1 s
+    assert at(out, 0.35) <= -1.0                                   # and at stock rate right after: ~-1.1 by 0.35 s
+    assert np.isclose(out[-1] - out[-2], -STOCK_J * DT, atol=1e-6) or out[-1] <= HARD_BRAKE_ACCEL - 0.5 + 1e-6
 
   def test_fcw_bypasses_the_schedule(self):
     out = run([-1.5] * 20, fcw=True)

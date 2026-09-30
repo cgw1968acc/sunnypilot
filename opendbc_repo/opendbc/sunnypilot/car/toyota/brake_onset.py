@@ -28,7 +28,13 @@ ONSET_J_DOWN = [0.25, 0.6, 4.0]  # m/s^3 downward jerk limit: almost nothing for
 # the stock limit by 0.6 s. Road test 2026-09-27 11:22 (stopped car ahead): the earlier 1.5 s build-up was soft at
 # first but joined the normal brake too slowly and the rest of the stop felt uneven; the driver wants only the very
 # first touch softened and the normal force picked up as soon as possible after it.
-HARD_BRAKE_ACCEL = -2.0  # m/s^2, requests below this are urgent and get the stock limit straight away
+HARD_BRAKE_ACCEL = -2.0  # m/s^2, requests below this are urgent ...
+# ... and get a very short soft start instead of the stock limit straight away (driver 2026-09-30: the only stabs left
+# were the MPC's hard requests, 2 of 28 onsets in the 2026-09-27 data, at ~37 km/h with the lead 29 m away and TTC ~4 s):
+# URGENT_J for the first URGENT_T of the onset, then the stock limit. Costs ~0.05 m/s^2 of braking in that 0.1 s
+# (< 10 cm of stopping distance at 40 km/h). FCW still bypasses everything.
+URGENT_T = 0.1  # s
+URGENT_J = 1.0  # m/s^3
 
 
 class BrakeOnsetShaper:
@@ -46,17 +52,22 @@ class BrakeOnsetShaper:
     t3 = float(np.interp(v_ego, ONSET_V_BP, ONSET_T3_V))
     return [0.0, t1, t3]
 
-  def down_step(self, accel_request: float, prev_accel: float, bypass: bool = False, v_ego: float = 30.0) -> float:
-    """Negative per-frame step allowed for the command this cycle (feed as dw_step to rate_limit)."""
+  def down_step(self, accel_request: float, prev_accel: float, bypass: bool = False, v_ego: float = 30.0,
+                urgent: bool = False) -> float:
+    """Negative per-frame step allowed for the command this cycle (feed as dw_step to rate_limit).
+    bypass (FCW): stock limit at once. urgent (hard request): URGENT_J for the first URGENT_T, then stock."""
     if bypass:
       self.t_onset = 0.0
       return -self.stock_down_jerk * self.dt
 
-    t_bp = self.schedule_t(v_ego)
+    if urgent:
+      t_bp, j_bp = [0.0, URGENT_T], [URGENT_J, self.stock_down_jerk]
+    else:
+      t_bp, j_bp = self.schedule_t(v_ego), ONSET_J_DOWN
     gentlest_step = -ONSET_J_DOWN[0] * self.dt
     onset = (accel_request - prev_accel) < gentlest_step - 1e-9
     if onset:
-      j_down = float(np.interp(self.t_onset, t_bp, ONSET_J_DOWN))
+      j_down = float(np.interp(self.t_onset, t_bp, j_bp))
       self.t_onset = min(self.t_onset + self.dt, t_bp[-1])
     else:
       # a gentle or rising request lets the schedule wind back at real time, so a short pause in a brake
