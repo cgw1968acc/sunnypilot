@@ -27,6 +27,9 @@ BRAKE_HOLD_ALLOWED_TIMER = 200
 # well above. A light stop stays unheld, so nothing is clamped under a driver who is just easing to a halt. When the
 # car does not broadcast the force (nan) the hold arms as before.
 BRAKE_HOLD_MIN_FORCE = 1400.0  # N
+# ... and without a firm press the hold still engages once the car has stood still this long (driver 2026-09-30:
+# a long stop at a light should be held too, a short creep-stop should not)
+BRAKE_HOLD_LIGHT_TIMER = 250  # frames (2.5 s)
 
 DISALLOWED_GEARS = (GearShifter.park, GearShifter.reverse)
 
@@ -82,7 +85,8 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
       if math.isnan(force) or force >= BRAKE_HOLD_MIN_FORCE:
         self._armed = True
       self._counter += 1
-      self.active = self._counter > BRAKE_HOLD_ALLOWED_TIMER and self._armed and not self._released
+      held_long = self._counter > BRAKE_HOLD_LIGHT_TIMER
+      self.active = ((self._counter > BRAKE_HOLD_ALLOWED_TIMER and self._armed) or held_long) and not self._released
     else:
       self._counter = 0
       self.active = False
