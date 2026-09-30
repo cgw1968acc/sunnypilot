@@ -38,23 +38,23 @@ V_TAPER = 0.8  # m/s, below this the small creep-brake floor applies
 #   >= V_FIRM_IN            a_nom (constant, sized so the whole profile lands on the point)
 #   V_FIRM_IN -> V_FIRM     ramps up to a_firm = a_nom + A_FIRM_EXTRA
 #   V_FIRM -> V_FIRM_HOLD   holds a_firm
-#   V_FIRM_HOLD -> 0        eases step by step through A_5KPH, A_3KPH, A_2KPH, A_1KPH to A_0KPH. A_0KPH is the force the
-#                           car stops on, and (since 2026-09-29) the request longcontrol freezes at until the standstill
-#                           hold takes over 0.5 s (lead) / 0.8 s (no lead) later - so it also decides how much the hybrid
+#   V_FIRM_HOLD -> 0        eases step by step through A_3KPH, A_2KPH, A_1KPH to A_0KPH. A_0KPH is the force the car
+#                           stops on, and (since 2026-09-29) the request longcontrol freezes at until the standstill
+#                           hold takes over 0.8 s (lead) / 1.1 s (no lead) later - so it also decides how much the hybrid
 #                           creeps in that window (-0.3 m/s^2 crept ~0.1 m/s on 2026-09-29 08:28).
 V_FIRM_IN = 8.3  # m/s (30 km/h; was 20 - driver 2026-09-27: build the firmness up slowly from 30 for a smoother feel)
 V_FIRM = 4.2  # m/s (15 km/h)
-V_FIRM_HOLD = 7.0 / 3.6  # m/s (7 km/h): the firm force is held from V_FIRM down to here (2026-09-30)
+V_FIRM_HOLD = 4.0 / 3.6  # m/s (4 km/h): the firm force is held from V_FIRM down to here (2026-09-30: 7 -> 4, the easing from 7 let go too much)
 A_FIRM_EXTRA = 0.45  # m/s^2 (0.4 too light, 0.47 too firm on the 2026-09-27 tests)
 A_FIRM_MAX = 2.0  # m/s^2 (1.6 -> 2.0, 2026-09-27 21:05: a fast approach reaches 30 km/h with ~25-30 m left, a_nom fits at
                   # 1.0-1.5 and the old cap cut the +0.45 build-up to nothing - the stop felt like one straight line)
-# The easing below V_FIRM_HOLD, m/s^2 at each speed (linear in between). Tune these; a_firm at 7 km/h is ~1.15 when
-# a_nom is 0.7 (early engage) and up to 2.0 on a compressed fast approach.
-A_5KPH = 0.85
-A_3KPH = 0.60
-A_2KPH = 0.48
-A_1KPH = 0.40
-A_0KPH = 0.35
+# The easing below V_FIRM_HOLD, m/s^2 at each speed (linear in between). Tune these; a_firm at 4 km/h is ~1.15 when
+# a_nom is 0.7 (early engage) and up to 2.0 on a compressed fast approach. 2026-09-30 second test: 3 km/h 0.60 -> 0.80,
+# 1 km/h 0.40 -> 0.38, 0 km/h 0.35 -> 0.33 (driver's values); 2 km/h set on the line between them.
+A_3KPH = 0.80
+A_2KPH = 0.59
+A_1KPH = 0.38
+A_0KPH = 0.33
 V_END = 0.7  # m/s (2.5 km/h): below this the end floor applies
 A_END_FLOOR = 0.30  # m/s^2: the very end always brakes at least this much - arriving slow must not turn into a crawl
                     # (keep it below A_1KPH / A_0KPH so the curve above, not this floor, decides the feel)
@@ -71,8 +71,8 @@ DISENGAGE_MARGIN = 1.0
 
 def _decel_of_v(v: np.ndarray, a_nom: float) -> np.ndarray:
   a_firm = min(a_nom + A_FIRM_EXTRA, A_FIRM_MAX)
-  v_bp = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 5.0 / 3.6, V_FIRM_HOLD, V_FIRM, V_FIRM_IN]
-  a_v = [A_0KPH, A_1KPH, A_2KPH, A_3KPH, A_5KPH, a_firm, a_firm, a_nom]
+  v_bp = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, V_FIRM_HOLD, V_FIRM, V_FIRM_IN]
+  a_v = [A_0KPH, A_1KPH, A_2KPH, A_3KPH, a_firm, a_firm, a_nom]
   return np.interp(v, v_bp, a_v)
 
 

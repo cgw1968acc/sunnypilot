@@ -89,7 +89,10 @@ class TestStopGapGovernor(unittest.TestCase):
     r = run(5.0, STOP_GAP + 5.0 ** 2 / 2.0 + 2.0)
     near = r['targets'][(r['vs'] < 0.8) & (r['vs'] > 0.15)]
     self.assertTrue(len(near) > 2)
-    self.assertGreater(near.min(), -0.6)   # the glide is light, no firm grab at the end
+    self.assertGreater(near.min(), -1.0)   # lighter than the firm part (~1.15): no firm grab at the end
+    last = r['targets'][(r['vs'] < 0.3) & (r['vs'] > 0.05)]
+    if len(last):
+      self.assertGreater(last.mean(), near.min())   # and it keeps easing towards the stop
 
   def test_creeping_lead_is_followed_without_a_lurch(self):
     def lead_v(t):
