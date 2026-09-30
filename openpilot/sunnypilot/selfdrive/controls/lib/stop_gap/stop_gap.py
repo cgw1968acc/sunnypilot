@@ -22,10 +22,13 @@ import math
 import numpy as np
 
 STOP_GAP = 2.4  # m, radar target; the small coast onto the clamp point settles the stop near 3.0 m
-V_ENGAGE = 8.5  # m/s, ego speed below which the governor takes the stop over from the MPC
+V_ENGAGE = 11.1  # m/s (40 km/h), ego speed below which the governor takes the stop over from the MPC. Was 8.5 (30 km/h):
+                 # the driver felt the brake let go right at 30 km/h (2026-09-30), i.e. at the handover itself, where the
+                 # MPC eases just before the governor engages. Taking over at 40 km/h puts the handover above the
+                 # 30 km/h firm ramp and under the release limiter, so the approach is one monotonic curve from 40 km/h.
 A_ENGAGE = 0.85  # m/s^2, start braking when a constant stop at this deceleration is due (distance scales with speed)
 S_ENGAGE_BASE = 5.0  # m, added to that stopping distance (3 -> 5 on 2026-09-27 so the glide below 5 km/h fits inside)
-S_ENGAGE_MAX = 55.0  # m, hard cap on how far out it engages
+S_ENGAGE_MAX = 80.0  # m, hard cap on how far out it engages (55 -> 80 with the 40 km/h engage speed: 11.1^2 / 1.7 + 5 = 77 m)
 CREEP_LEAD_V = 2.0  # m/s, lead speed below which the governor manages the follow
 LEAD_STOPPED_V = 0.25  # m/s, lead speed below which it counts as fully stopped
 HANDBACK_V_REL = 0.2  # m/s, lead opening faster than ego by this much is a pull-away: hand back to the MPC
@@ -184,11 +187,13 @@ class StopGapGovernor:
       decel = float(np.clip(decel, lo, -A_NEG_MAX))
       a = -decel
 
-    # Never brake less than the MPC - except inside the governor's own soft phases (from 10 km/h down) behind a lead
-    # that is fully stopped: there the MPC (which aims 6 m short of the lead) would ask for ~0.3-1 m/s^2 and kill the
-    # glide, while the closing energy is tiny (<= 10 km/h, > 3 m to go) and the standstill clamp still applies.
-    governor_owns_brake = (self.profile is not None and s <= self.profile.s_soft and v_lead < LEAD_STOPPED_V
-                           and v_close <= V_FIRM_IN + 0.3)
+    # Never brake less than the MPC - except when the governor has a fitted profile behind a FULLY stopped lead: then it
+    # owns the brake for the whole episode. The profile lands on the point by construction (a_nom <= A_NOM_MAX, clip at
+    # A_NEG_MAX below), and letting the MPC's harder early braking through (as before: only inside the soft part from
+    # 30 km/h down) put the car ahead of the profile, so the velocity loop had to ease the brake right after the
+    # handover (rlog 2026-09-27 route 000000c3: -1.69 at 30 km/h -> -1.04 at 25 -> -1.94 at 22; driver 2026-09-30:
+    # "the brake lets go right at 30 km/h"). With a moving lead or no fitting profile the MPC's request still wins.
+    governor_owns_brake = self.profile is not None and v_lead < LEAD_STOPPED_V
     a = float(np.clip(a, A_NEG_MAX, 0.0))              # the governor's own profile never asks harder than A_NEG_MAX
     if not governor_owns_brake:
       # ... but it must never brake LESS than the MPC. The clip used to sit after this min(), so a lead braking hard
