@@ -79,7 +79,7 @@ class TestTerminalStop(OpenpilotTestCase):
           a = float(LoC.update(True, moving, 0.0, True, (-3.5, 1.5), has_lead=has_lead))
         assert a == -0.3
         a = [-0.3]
-        for _ in range(int(1.5 / DT_CTRL)):
+        for _ in range(int(2.5 / DT_CTRL)):
           a.append(float(LoC.update(True, still, 0.0, True, (-3.5, 1.5), has_lead=has_lead)))
         n_delay = int(delay / DT_CTRL)
         assert a[n_delay - 1] == -0.3                              # still frozen at the end of the wait
