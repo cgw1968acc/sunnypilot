@@ -18,8 +18,8 @@ STANDSTILL_HOLD_RATE = 1.0  # m/s^2/s
 # this long; until then the request keeps falling only at the gentle STOPPING_DECEL_RATE.
 # With a lead the hold matters more (creep towards it), without one the driver wants a longer settle first
 # (2026-09-29: "autohold still steps in too early on a stop with no car ahead", asked for 0.8 s).
-STANDSTILL_HOLD_DELAY_LEAD = 0.8  # s (0.5 -> 0.8, driver 2026-09-30 second test: about 0.3 s later still)
-STANDSTILL_HOLD_DELAY_NO_LEAD = 1.1  # s (0.8 -> 1.1)
+STANDSTILL_HOLD_DELAY_LEAD = 0.6  # s (0.5 -> 0.8 -> 0.6 over the 2026-09-30 tests: 0.8 was a little late)
+STANDSTILL_HOLD_DELAY_NO_LEAD = 0.9  # s (0.8 -> 1.1 -> 0.9)
 # Before that the request is frozen at the value the glide ended on: the driver wants the stop itself exactly as it
 # felt on the drives where the hold never ramped at all (stopAccel -0.02 days) and the extra force only once the
 # car is at rest. Safety net: if the car has not reached standstill within STOPPING_FREEZE_MAX of entering the
