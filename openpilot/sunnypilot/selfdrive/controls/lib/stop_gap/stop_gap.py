@@ -121,6 +121,11 @@ DISENGAGE_MARGIN = 1.0
 # 2026-09-30 and rejected: the ratio measured during the easing phase is dominated by the lag, so on a car that does
 # not over-deliver it still "learned" 1.3-1.5x, lightened the last metre, and the car crept and stopped 0.5 m short.)
 DELIVERY_LEAD = 0.25  # s
+# The governor only owns the brake (ignores a harder MPC request) for a comfortable stop. A profile that needs more than
+# this is an urgent stop: the profile does not model the brake onset shaping and the PCM lag, so the MPC's harder
+# request must be allowed through (device campaign 2026-10-01: owning a 2.7 m/s^2 profile from 30 km/h with the lead
+# 17 m ahead ended in contact; letting the MPC through stopped 0.6 m short of it).
+GOVERNOR_OWN_A_NOM_MAX = 2.0  # m/s^2
 # In the easing phase the velocity loop may add at most this much on top of the curve. Evening drive 2026-09-30 (route
 # 000000da): on compressed stops (lead 3.0-3.1 m at rest, a_firm at the 2.0 cap) the loop pushed the request to -1.08
 # at 1 km/h and the car delivered -1.74 with a -1.60 jolt, while the tuned curve says 0.38. Below 3 km/h the kinetic
@@ -255,7 +260,7 @@ class StopGapGovernor:
     # 30 km/h down) put the car ahead of the profile, so the velocity loop had to ease the brake right after the
     # handover (rlog 2026-09-27 route 000000c3: -1.69 at 30 km/h -> -1.04 at 25 -> -1.94 at 22; driver 2026-09-30:
     # "the brake lets go right at 30 km/h"). With a moving lead or no fitting profile the MPC's request still wins.
-    governor_owns_brake = self.profile is not None and v_lead < LEAD_STOPPED_V
+    governor_owns_brake = self.profile is not None and v_lead < LEAD_STOPPED_V and self.a_nom <= GOVERNOR_OWN_A_NOM_MAX
     a = float(np.clip(a, A_NEG_MAX, 0.0))              # the governor's own profile never asks harder than A_NEG_MAX
     if not governor_owns_brake:
       # ... but it must never brake LESS than the MPC. The clip used to sit after this min(), so a lead braking hard

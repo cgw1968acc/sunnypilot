@@ -17,24 +17,34 @@ onset on top of the brake already applied. Hard braking requests and FCW bypass 
 """
 import numpy as np
 
-ONSET_T_BP = [0.0, 0.15, 0.6]  # s since the request began falling faster than ONSET_J_DOWN[0] (at speed)
+ONSET_T_BP = [0.0, 0.15, 0.6]  # (superseded by schedule_t(v) - see ONSET_T1_V / ONSET_T3_V)  # s since the request began falling faster than ONSET_J_DOWN[0] (at speed)
 # At low speed the join is slower (Altis 2026-09-27 22:27, engage at 35 km/h behind a close lead: the ramp was at
 # ~1.7 m/s^3 by 0.3 s and the PCM over-delivered to -1.1 with -7.9 m/s^3 jerk). Below 40 km/h the schedule's time
 # points stretch to 0.3 / 1.2 s, above 60 km/h they are the stock 0.15 / 0.6 s, interpolated in between.
 ONSET_V_BP = [11.1, 16.7]  # m/s (40, 60 km/h)
-ONSET_T1_V = [0.3, 0.15]
-ONSET_T3_V = [1.2, 0.6]
-ONSET_J_DOWN = [0.25, 0.6, 4.0]  # m/s^3 downward jerk limit: almost nothing for the first instant, then one quick ramp to
+ONSET_T1_V = [0.1, 0.1]
+ONSET_T3_V = [0.3, 0.3]
+ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3 downward jerk limit: almost nothing for the first instant, then one quick ramp to
 # the stock limit by 0.6 s. Road test 2026-09-27 11:22 (stopped car ahead): the earlier 1.5 s build-up was soft at
 # first but joined the normal brake too slowly and the rest of the stop felt uneven; the driver wants only the very
 # first touch softened and the normal force picked up as soon as possible after it.
-HARD_BRAKE_ACCEL = -2.0  # m/s^2, requests below this are urgent ...
+# 2026-10-01 (driver: "a prepared human touches lightly for the first 0.1 s, then presses linearly harder to whatever
+# peak is needed - reach it as fast as possible but smoothly, never stomp, never drop it suddenly"; device campaign with
+# the shaper modelled): every brake onset now gets the same shape at every speed - 1.0 m/s^3 for 0.1 s (about -0.1 at
+# 0.1 s), then the jerk limit rises to the stock 4.0 m/s^3 by 0.3 s. The old low-speed schedule (0.25 -> 0.6 -> 4.0 over
+# 0.3 / 1.2 s below 40 km/h) delayed a stop so much that the governor had to catch up and ended 6 m short at 20-30 km/h;
+# with this shape the nominal stops land on 3.0 m and still end on the template.
+HARD_BRAKE_ACCEL = -1.5  # m/s^2, requests below this are urgent ...
 # ... and get a very short soft start instead of the stock limit straight away (driver 2026-09-30: the only stabs left
 # were the MPC's hard requests, 2 of 28 onsets in the 2026-09-27 data, at ~37 km/h with the lead 29 m away and TTC ~4 s):
 # URGENT_J for the first URGENT_T of the onset, then the stock limit. Costs ~0.05 m/s^2 of braking in that 0.1 s
 # (< 10 cm of stopping distance at 40 km/h). FCW still bypasses everything.
 URGENT_T = 0.1  # s
 URGENT_J = 1.0  # m/s^3
+# ... and the jerk limit then rises to the stock value over URGENT_T_RAMP instead of stepping, so the brake builds
+# linearly after the light first touch (driver 2026-10-01: "a prepared human touches lightly, then presses linearly
+# harder, up to -3.0 if needed - allow a higher peak but reach it smoothly")
+URGENT_T_RAMP = 0.1  # s
 
 
 class BrakeOnsetShaper:
@@ -61,7 +71,7 @@ class BrakeOnsetShaper:
       return -self.stock_down_jerk * self.dt
 
     if urgent:
-      t_bp, j_bp = [0.0, URGENT_T, URGENT_T + self.dt], [URGENT_J, URGENT_J, self.stock_down_jerk]   # hold 1.0 for 0.1 s, then stock
+      t_bp, j_bp = [0.0, URGENT_T, URGENT_T + max(URGENT_T_RAMP, self.dt)], [URGENT_J, URGENT_J, self.stock_down_jerk]
     else:
       t_bp, j_bp = self.schedule_t(v_ego), ONSET_J_DOWN
     gentlest_step = -ONSET_J_DOWN[0] * self.dt
