@@ -66,6 +66,13 @@ V_STOP_CLAMP = 0.3  # m/s, and only once nearly stopped
 A_CREEP_FLOOR = 0.06  # m/s^2, smallest brake kept near the stop so the hybrid never creeps off a dead stop
 S_MIN = 0.1  # m
 RELEASE_RATE = 1.0  # m/s^3, fastest the demand may get lighter, from the MPC's target at engage
+# ... but while still approaching (above V_FIRM_HOLD) the brake may only get lighter very slowly. The MPC hands over at
+# ~30 km/h braking harder than the governor's fitted constant part, and the velocity loop then eased the brake by up to
+# 0.6 m/s^2 before the firm ramp took it back up (rlog 2026-09-27 route 000000c3: -1.69 at 30 km/h, -1.04 at 25, -1.94
+# at 22; driver 2026-09-30: "between 50 and 15 km/h the brake lets go a little mid-way, not linear"). Holding the
+# release to this rate keeps the approach monotonic; the small extra distance it costs is absorbed by the loop lower
+# down, where releasing is by design.
+RELEASE_RATE_APPROACH = 0.25  # m/s^3
 DISENGAGE_MARGIN = 1.0
 
 
@@ -188,7 +195,8 @@ class StopGapGovernor:
       # (2026-09-27 21:05: MPC -2.8 at 35 km/h, lead 27 m closing 7 m/s) was capped to -2.0 and the stop ended 2.0 m
       # behind the lead. The MPC's harder request now passes through untouched.
       a = min(a, float(a_current))
-    a = min(a, self.a_prev + RELEASE_RATE * self.dt)   # never let the brake go with a jolt
+    release = RELEASE_RATE_APPROACH if v_ego > V_FIRM_HOLD else RELEASE_RATE
+    a = min(a, self.a_prev + release * self.dt)   # never let the brake go with a jolt (and barely at all while approaching)
     a = float(min(a, 0.0))
     self.a_prev = a
     # clamp for standstill once nearly stopped; the light taper above has already eased the car in near the point,
