@@ -1,7 +1,8 @@
 import numpy as np
 
 from opendbc.car import rate_limit, DT_CTRL
-from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper, ENGAGE_T_BP, ENGAGE_J_UP, ONSET_J_DOWN, HARD_BRAKE_ACCEL
+from opendbc.sunnypilot.car.toyota.brake_onset import (BrakeOnsetShaper, EngageOnsetShaper, ENGAGE_T_BP, ENGAGE_J_UP, ONSET_J_DOWN,
+                                                       HARD_BRAKE_ACCEL, URGENT_T, URGENT_J)
 
 DT = DT_CTRL * 3
 STOCK_J = 4.0
@@ -13,7 +14,7 @@ def run(requests, a0=0.0, fcw=False):
   a = a0
   out = []
   for req in requests:
-    step = shaper.down_step(req, a, bypass=shaper.is_urgent(req, fcw))
+    step = shaper.down_step(req, a, bypass=fcw, urgent=shaper.is_urgent(req, False))
     a = rate_limit(req, a, step, UP_STEP)
     out.append(a)
   return np.array(out)
@@ -25,12 +26,12 @@ def at(out, t):
 
 class TestBrakeOnset:
   def test_step_brake_eases_in_only_for_the_first_instant(self):
+    # 2026-10-01 shape: 1.0 m/s^3 for the first 0.1 s (light touch), then a linear build to the stock 4.0 m/s^3 by 0.3 s
     out = run([-1.5] * 60)
-    assert at(out, 0.09) > -0.06  # first 0.15 s: barely anything
-    assert at(out, 0.21) > -0.12  # 0.2 s: still very light
-    assert -0.50 < at(out, 0.36) < -0.15  # ~0.35 s: the quick ramp is under way
-    assert -1.30 < at(out, 0.60) < -0.80  # 0.6 s: most of the way, at the stock limit now
-    assert np.isclose(at(out, 1.0), -1.5, atol=1e-6)  # settled well before 1 s
+    assert at(out, 0.09) >= -0.12            # first 0.1 s: a light touch
+    assert -0.45 < at(out, 0.21) < -0.12     # the linear build is under way
+    assert at(out, 0.51) < -0.9              # most of the way by 0.5 s
+    assert np.isclose(at(out, 0.81), -1.5, atol=1e-6)  # the full request by ~0.8 s
 
   def test_jerk_follows_the_schedule_and_never_exceeds_stock(self):
     out = run([-1.9] * 60, a0=1.0)  # large step, still above the hard-brake bypass
@@ -47,14 +48,16 @@ class TestBrakeOnset:
     out = run(reqs)
     t_switch = 70 * DT
     assert np.isclose(at(out, t_switch), -0.6, atol=1e-6)
-    assert at(out, t_switch + 0.09) > -0.6 - 0.05
-    assert at(out, t_switch + 0.21) > -0.6 - 0.25
+    assert at(out, t_switch + 0.09) >= -0.6 - 0.12
     assert np.isclose(out[-1], -1.8, atol=1e-6)
 
-  def test_hard_brake_request_bypasses_the_schedule(self):
-    out = run([HARD_BRAKE_ACCEL - 0.5] * 20)
-    assert np.isclose(out[0], -STOCK_J * DT, atol=1e-6)
-    assert at(out, 0.3) <= -1.1
+  def test_hard_brake_request_gets_a_short_soft_start_then_stock(self):
+    out = run([HARD_BRAKE_ACCEL - 1.0] * 30)
+    assert np.isclose(out[0], -URGENT_J * DT, atol=1e-6)          # first frame: 1.0 m/s^3, not the stock 4.0
+    assert at(out, URGENT_T) >= -URGENT_J * URGENT_T - 0.03        # ~-0.1 after the light 0.1 s
+    assert at(out, 0.36) <= -0.8                                   # then a linear build at the stock rate
+    jerks = np.diff(np.concatenate([[0.0], out])) / DT
+    assert jerks.min() >= -STOCK_J - 1e-6
 
   def test_fcw_bypasses_the_schedule(self):
     out = run([-1.5] * 20, fcw=True)
@@ -146,16 +149,14 @@ class TestLowSpeedOnset:
       out.append(cmd)
     return out
 
-  def test_low_speed_join_is_slower_than_at_speed(self):
+  def test_same_shape_at_every_speed(self):
+    # the old slower low-speed join delayed stops so much that the governor had to catch up (device campaign 2026-10-01)
     slow = self._sim(30 / 3.6)
     fast = self._sim(80 / 3.6)
-    i = int(0.5 / self.DT)
-    assert slow[i] > fast[i] + 0.1          # less brake half a second in at 30 km/h
-    assert slow[int(1.5 / self.DT)] <= -1.5 + 1e-9   # but the request is still reached by 1.5 s
-    assert BrakeOnsetShaper.schedule_t(30 / 3.6)[-1] == 1.2
-    assert BrakeOnsetShaper.schedule_t(80 / 3.6)[-1] == 0.6
+    assert np.allclose(slow, fast)
+    assert slow[int(0.9 / self.DT)] <= -1.5 + 1e-9
 
   def test_first_instant_is_the_same_lightest_touch_at_any_speed(self):
     for v in (20 / 3.6, 50 / 3.6, 100 / 3.6):
       out = self._sim(v)
-      assert out[int(0.09 / self.DT)] > -0.05
+      assert out[int(0.09 / self.DT)] >= -0.12
