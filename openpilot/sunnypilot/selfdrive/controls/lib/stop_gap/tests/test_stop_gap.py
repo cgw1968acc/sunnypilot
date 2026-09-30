@@ -14,17 +14,17 @@ def mpc_like(v_close, s):
   return -float(np.clip(v_close * v_close / (2.0 * max(s, 0.5)), 0.3, 1.2)) if v_close > 0 else -0.05
 
 
-def run(v0, gap0, lead_v=None, secs=22.0, lag=0.4, gain=1.6, creep=0.06):
+def run(v0, gap0, lead_v=None, secs=22.0, lag=0.4, gain=1.6, creep=0.06, gov=None):
   """Closed loop against a lagged plant that brakes `gain`x the request below 1.5 m/s and creeps at +creep when the
   delivered brake is lighter than the creep torque. longcontrol's stopping state is modelled: it latches on the
   governor's should_stop, then holds the last output and ramps it toward STOP_ACCEL."""
   if lead_v is None:
     lead_v = lambda t: 0.0  # noqa: E731
-  gov = StopGapGovernor(DT)
+  gov = gov or StopGapGovernor(DT)
   v, gap = v0, gap0
   a = mpc_like(v0 - lead_v(0.0), gap0 - STOP_GAP)
   out = a
-  targets, gaps, vs = [], [], []
+  targets, gaps, vs, accels = [], [], [], []
   t = 0.0
   t_stop = None
   gap_stop = None
@@ -52,6 +52,7 @@ def run(v0, gap0, lead_v=None, secs=22.0, lag=0.4, gain=1.6, creep=0.06):
     targets.append(target)
     gaps.append(gap)
     vs.append(v)
+    accels.append(a)
     delivered = out * gain if (out < 0 and v < 1.5) else out
     net = delivered + (creep if delivered > -creep else 0.0)
     a += (net - a) * DT / lag
@@ -64,7 +65,7 @@ def run(v0, gap0, lead_v=None, secs=22.0, lag=0.4, gain=1.6, creep=0.06):
       hold = out
       break
   return {"gap": gap_stop if gap_stop is not None else gap, "hold": hold, "crept": crept,
-          "targets": np.array(targets), "gaps": np.array(gaps), "vs": np.array(vs)}
+          "targets": np.array(targets), "gaps": np.array(gaps), "vs": np.array(vs), "accels": np.array(accels)}
 
 
 class TestStopGapGovernor(unittest.TestCase):
@@ -158,3 +159,14 @@ def test_mpc_request_harder_than_the_cap_passes_through():
   a, _ = out
   assert a <= -2.8 + 1e-9
   assert a < A_NEG_MAX
+
+
+def test_last_metre_deceleration_follows_the_tuned_curve_despite_the_lag():
+  # lagged, over-delivering plant (0.4 s, 1.6x): the actual deceleration between 3 and 1 km/h must stay well below the
+  # firm value it eases from (~1.15 at a_nom 0.7), i.e. the easing is felt by the car, not only requested
+  from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import A_3KPH
+  for v0 in (8.0, 4.0):
+    r = run(v0, STOP_GAP + v0 ** 2 / (2.0 * A_ENGAGE) + S_ENGAGE_BASE)
+    m = (r['vs'] < 3.0 / 3.6) & (r['vs'] > 1.0 / 3.6)
+    assert -r['accels'][m].mean() < A_3KPH + 0.35, -r['accels'][m].mean()
+    assert not r['crept'] and STOP_GAP - 0.5 < r['gap'] < STOP_GAP + 0.8

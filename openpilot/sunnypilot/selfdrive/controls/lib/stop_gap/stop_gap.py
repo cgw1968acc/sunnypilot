@@ -21,8 +21,9 @@ firm standstill hold is longcontrol + the (firm) hybrid stopAccel, not this modu
 import math
 import numpy as np
 
-STOP_GAP = 2.9  # m, radar target; the small coast onto the clamp point settles the stop ~0.6 m further (2.4 landed ~3.0 m;
-                # driver 2026-09-30: every stop should end 3.5 m behind the lead)
+STOP_GAP = 3.0  # m, radar target; the small coast onto the clamp point settles the stop ~0.5 m further (2.4 landed ~3.0 m;
+                # driver 2026-09-30: every stop should end 3.5 m behind the lead; +0.1 with the easing-phase lead compensation,
+                # which lands ~0.1 m closer in the plant)
 V_ENGAGE = 11.1  # m/s (40 km/h), ego speed below which the governor takes the stop over from the MPC. Was 8.5 (30 km/h):
                  # the driver felt the brake let go right at 30 km/h (2026-09-30), i.e. at the handover itself, where the
                  # MPC eases just before the governor engages. Taking over at 40 km/h puts the handover above the
@@ -75,7 +76,9 @@ A_PAST = 1.0  # m/s^2, firm (not full-force) brake once past the point
 V_STOP_CLAMP = 0.3  # m/s, and only once nearly stopped
 A_CREEP_FLOOR = 0.06  # m/s^2, smallest brake kept near the stop so the hybrid never creeps off a dead stop
 S_MIN = 0.1  # m
-RELEASE_RATE = 1.0  # m/s^3, fastest the demand may get lighter, from the MPC's target at engage
+RELEASE_RATE = 2.0  # m/s^3, fastest the demand may get lighter below V_FIRM_HOLD (1.0 -> 2.0 on 2026-09-30: at 1.0 the easing
+                    # from a_firm at 4 km/h to A_0KPH could not follow the tuned curve in the ~1 s the last metre takes,
+                    # so the last-metre request was set by this limiter instead of A_3KPH..A_0KPH)
 # ... but while still approaching (above V_FIRM_HOLD) the brake may only get lighter very slowly. The MPC hands over at
 # ~30 km/h braking harder than the governor's fitted constant part, and the velocity loop then eased the brake by up to
 # 0.6 m/s^2 before the firm ramp took it back up (rlog 2026-09-27 route 000000c3: -1.69 at 30 km/h, -1.04 at 25, -1.94
@@ -84,6 +87,15 @@ RELEASE_RATE = 1.0  # m/s^3, fastest the demand may get lighter, from the MPC's 
 # down, where releasing is by design.
 RELEASE_RATE_APPROACH = 0.25  # m/s^3
 DISENGAGE_MARGIN = 1.0
+
+# Easing-phase lag compensation (driver 2026-09-30: "read each deceleration and make the last 1 -> 0 km/h silky").
+# Route 000000d9 (16:58): with a -0.37 request the car delivered -0.67 to -0.78 at 0.5-1 km/h. Most of that is the
+# PCM's response lag, not a gain: at crawl speed the curve changes faster than the PCM follows, so the deceleration the
+# car does at each speed is the one that was requested ~0.7 km/h earlier. The feed-forward is therefore read at the
+# distance the car will be at DELIVERY_LEAD later. (A learned delivered/commanded gain was tried in the plant on
+# 2026-09-30 and rejected: the ratio measured during the easing phase is dominated by the lag, so on a car that does
+# not over-deliver it still "learned" 1.3-1.5x, lightened the last metre, and the car crept and stopped 0.5 m short.)
+DELIVERY_LEAD = 0.25  # s
 
 
 def _decel_of_v(v: np.ndarray, a_nom: float) -> np.ndarray:
@@ -189,6 +201,10 @@ class StopGapGovernor:
       a = -A_PAST
     else:
       v_prof, a_ff = self.profile.at(s) if self.profile is not None else _profile_single(s, self.a_nom)
+      if self.profile is not None and v_ego < V_FIRM_HOLD:
+        # read the curve where the car will be once the PCM has responded, so what the car actually does in the
+        # last metre is the tuned curve rather than the curve ~0.7 km/h behind it
+        _, a_ff = self.profile.at(max(s - v_close * DELIVERY_LEAD, 0.0))
       decel = a_ff + (v_close - v_prof) / TAU_V   # feed-forward profile decel + pull onto the profile
       # keep a small brake floor near the stop (v_ego < V_TAPER) so the car never fully releases and creeps off a
       # dead stop; above that the profile can still ease to zero. The firm standstill clamp (stopAccel) does the hold.
