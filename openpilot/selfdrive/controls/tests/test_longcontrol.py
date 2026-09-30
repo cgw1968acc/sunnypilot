@@ -1,7 +1,7 @@
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import custom
 from openpilot.selfdrive.controls.lib.drive_helpers import STOPPING_SPEED, should_stop
-from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, STOPPING_EXIT_DEBOUNCE, STOPPING_FOLLOW_MIN, END_TAPER_V_START, end_taper_decel, LongControl, \
+from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, STOPPING_EXIT_DEBOUNCE, STOPPING_FOLLOW_MIN, END_TAPER_V_START, end_taper_decel, CREEP_RATE_BASE, LongControl, \
   LongCtrlState, long_control_state_trans
 
 
@@ -177,3 +177,29 @@ class TestTerminalStop(OpenpilotTestCase):
     LoC.long_control_state = LongCtrlState.pid
     a_up = float(LoC.update(True, car.CarState.new_message(vEgo=1.0 / 3.6, aEgo=0.0), 0.6, False, (-3.5, 1.5)))
     assert a_up > 0.5, a_up
+
+  def test_creep_after_the_stop_adds_brake_gently_then_more(self):
+    from opendbc.car.structs import car
+    from openpilot.common.realtime import DT_CTRL
+    CP = car.CarParams.new_message(stopAccel=-1.0)
+    LoC = LongControl(CP, custom.CarParamsSP.new_message())
+    LoC.long_control_state = LongCtrlState.stopping
+    LoC.last_output_accel = -0.20
+    still = car.CarState.new_message(vEgo=0.0, standstill=True)
+    creep = car.CarState.new_message(vEgo=0.08, standstill=False)
+    for _ in range(10):
+      a = float(LoC.update(True, still, -0.1, True, (-3.5, 1.5), has_lead=True))
+    assert abs(a + 0.20) < 1e-6, a                              # stopped: frozen
+    a0 = a
+    for _ in range(int(0.25 / DT_CTRL)):
+      a = float(LoC.update(True, creep, -0.1, True, (-3.5, 1.5), has_lead=True))
+    first = a0 - a                                              # brake added in the first 0.25 s of creep
+    assert 0.0 < first < 0.2, first                             # a little
+    for _ in range(int(0.25 / DT_CTRL)):
+      a2 = float(LoC.update(True, creep, -0.1, True, (-3.5, 1.5), has_lead=True))
+    second = a - a2
+    assert second > first * 1.5, (first, second)                # more if it keeps creeping
+    for _ in range(5):
+      a3 = float(LoC.update(True, still, -0.1, True, (-3.5, 1.5), has_lead=True))
+    assert abs(a3 - a2) < 1e-6                                  # stopped again: held where it is
+    assert CREEP_RATE_BASE > 0.0

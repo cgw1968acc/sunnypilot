@@ -37,6 +37,14 @@ STOPPING_EXIT_DEBOUNCE = 0.2  # s
 # frozen at -0.40 while the plan fell -0.37 -> -0.16; IMU decel flat at 0.75 to the stop, rebound +0.52 - the nod).
 # The good stops (22:13:45 openpilot, the driver's own seamless ones) all taper in the last 0.3 s. A target above
 # STOPPING_FOLLOW_MIN is not followed (a released brake at 0.5 km/h would lurch), and the easing is rate-limited.
+# Creep response (driver 2026-09-30 night: the goal stays smoothness, so if the lighter end lets the car creep after
+# it has stopped, add brake only a little, and more only if it keeps creeping). After the wheels have stopped once in
+# this stopping episode, while the car is moving again and before the standstill hold has taken over, the request is
+# deepened at CREEP_RATE_BASE plus CREEP_RATE_GROWTH per second of continued creep; as soon as the wheels stop again
+# the request is held where it is and the normal delayed hold continues.
+CREEP_V_MIN = 0.03  # m/s, below this the car counts as stopped for the creep response
+CREEP_RATE_BASE = 0.3  # m/s^2/s
+CREEP_RATE_GROWTH = 1.5  # m/s^2/s per second of creep
 STOPPING_FOLLOW_MIN = -0.10  # m/s^2
 STOPPING_FOLLOW_RATE = 2.0  # m/s^3
 # Universal end-of-stop taper (driver 2026-09-30 night: the 'taper' in the last 0.3 s is what makes a stop seamless, a
@@ -96,6 +104,8 @@ class LongControl:
     self.standstill_t = 0.0  # s of continuous CS.standstill
     self.stopping_t = 0.0  # s in the stopping state
     self.go_t = 0.0  # s the go condition has held while stopping at standstill
+    self.stopped_once = False  # the wheels have stopped in this stopping episode
+    self.creep_t = 0.0  # s of creep after that
 
   def reset(self):
     self.pid.reset()
@@ -118,6 +128,12 @@ class LongControl:
       self.go_t = 0.0
     self.standstill_t = self.standstill_t + DT_CTRL if CS.standstill else 0.0
     self.stopping_t = self.stopping_t + DT_CTRL if self.long_control_state == LongCtrlState.stopping else 0.0
+    if self.long_control_state != LongCtrlState.stopping:
+      self.stopped_once = False
+    elif CS.standstill:
+      self.stopped_once = True
+    creeping = self.stopped_once and not CS.standstill and CS.vEgo > CREEP_V_MIN
+    self.creep_t = self.creep_t + DT_CTRL if creeping else 0.0
 
     if self.long_control_state == LongCtrlState.off:
       self.reset()
@@ -127,13 +143,15 @@ class LongControl:
       output_accel = self.last_output_accel
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
-        if not CS.standstill and a_target < STOPPING_FOLLOW_MIN and a_target > output_accel:
+        if not CS.standstill and not self.stopped_once and a_target < STOPPING_FOLLOW_MIN and a_target > output_accel:
           # still rolling: keep easing with the plan's own end-of-stop curve (lighter only, rate-limited)
           output_accel = min(a_target, output_accel + STOPPING_FOLLOW_RATE * DT_CTRL)
         # TODO: can we just go straight to stopAccel?
         hold_delay = STANDSTILL_HOLD_DELAY_LEAD if has_lead else STANDSTILL_HOLD_DELAY_NO_LEAD
         if self.standstill_t >= hold_delay:
           rate = STANDSTILL_HOLD_RATE
+        elif creeping:
+          rate = min(CREEP_RATE_BASE + CREEP_RATE_GROWTH * self.creep_t, STANDSTILL_HOLD_RATE)
         elif self.stopping_t >= STOPPING_FREEZE_MAX:
           rate = STOPPING_DECEL_RATE
         else:
@@ -146,7 +164,8 @@ class LongControl:
       output_accel = self.pid.update(error, speed=CS.vEgo,
                                      feedforward=a_target)
 
-    if active and not CS.standstill and CS.vEgo < END_TAPER_V_START and a_target < 0.0 and not CS.brakePressed:
+    if active and not CS.standstill and CS.vEgo < END_TAPER_V_START and a_target < 0.0 and not CS.brakePressed and \
+       not (self.long_control_state == LongCtrlState.stopping and self.stopped_once):
       output_accel = max(output_accel, -end_taper_decel(CS.vEgo, CS.aEgo))
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
