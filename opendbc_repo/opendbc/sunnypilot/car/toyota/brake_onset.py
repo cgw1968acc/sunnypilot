@@ -61,7 +61,7 @@ class BrakeOnsetShaper:
       return -self.stock_down_jerk * self.dt
 
     if urgent:
-      t_bp, j_bp = [0.0, URGENT_T], [URGENT_J, self.stock_down_jerk]
+      t_bp, j_bp = [0.0, URGENT_T, URGENT_T + self.dt], [URGENT_J, URGENT_J, self.stock_down_jerk]   # hold 1.0 for 0.1 s, then stock
     else:
       t_bp, j_bp = self.schedule_t(v_ego), ONSET_J_DOWN
     gentlest_step = -ONSET_J_DOWN[0] * self.dt
