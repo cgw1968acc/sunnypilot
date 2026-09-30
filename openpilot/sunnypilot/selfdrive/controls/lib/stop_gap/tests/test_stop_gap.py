@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import (StopGapGovernor, STOP_GAP, V_ENGAGE,
-                                                                          CREEP_LEAD_V, RELEASE_RATE, A_ENGAGE, S_ENGAGE_BASE)
+                                                                          CREEP_LEAD_V, RELEASE_RATE, A_ENGAGE, S_ENGAGE_BASE, HANDBACK_TIME)
 
 DT = 0.05
 STOP_ACCEL = -1.0          # hybrid stopAccel (Toyota interface)
@@ -111,8 +111,18 @@ class TestStopGapGovernor(unittest.TestCase):
   def test_hands_back_when_the_lead_pulls_away(self):
     gov = StopGapGovernor(DT)
     self.assertIsNotNone(gov.update(True, 0.5, True, 5.0, 0.3, -0.3))
-    self.assertIsNone(gov.update(True, 0.5, True, 5.0, 1.5, 0.4))
+    self.assertIsNone(gov.update(True, 0.5, True, 5.0, 1.5, 0.4))          # clearly driving off: at once
     self.assertIsNone(gov.update(True, 1.0, True, 5.0, CREEP_LEAD_V + 0.5, 0.4))
+
+  def test_a_radar_flicker_does_not_hand_back(self):
+    gov = StopGapGovernor(DT)
+    self.assertIsNotNone(gov.update(True, 0.0, True, 5.3, 0.0, -0.1))
+    self.assertIsNotNone(gov.update(True, 0.0, True, 5.3, 0.25, -0.1))     # one sample of +0.25 m/s: still holding
+    self.assertIsNotNone(gov.update(True, 0.0, True, 5.3, 0.0, -0.1))
+    n = 0
+    while gov.update(True, 0.0, True, 5.3, 0.3, -0.1) is not None and n < 100:
+      n += 1
+    self.assertAlmostEqual(n * DT, HANDBACK_TIME, delta=DT * 1.5)          # a sustained slow pull-away hands back after HANDBACK_TIME
 
   def test_only_ever_adds_braking_relative_to_the_mpc(self):
     gov = StopGapGovernor(DT)

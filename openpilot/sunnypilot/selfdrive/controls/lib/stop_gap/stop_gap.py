@@ -21,7 +21,8 @@ firm standstill hold is longcontrol + the (firm) hybrid stopAccel, not this modu
 import math
 import numpy as np
 
-STOP_GAP = 2.4  # m, radar target; the small coast onto the clamp point settles the stop near 3.0 m
+STOP_GAP = 2.9  # m, radar target; the small coast onto the clamp point settles the stop ~0.6 m further (2.4 landed ~3.0 m;
+                # driver 2026-09-30: every stop should end 3.5 m behind the lead)
 V_ENGAGE = 11.1  # m/s (40 km/h), ego speed below which the governor takes the stop over from the MPC. Was 8.5 (30 km/h):
                  # the driver felt the brake let go right at 30 km/h (2026-09-30), i.e. at the handover itself, where the
                  # MPC eases just before the governor engages. Taking over at 40 km/h puts the handover above the
@@ -31,7 +32,13 @@ S_ENGAGE_BASE = 5.0  # m, added to that stopping distance (3 -> 5 on 2026-09-27 
 S_ENGAGE_MAX = 80.0  # m, hard cap on how far out it engages (55 -> 80 with the 40 km/h engage speed: 11.1^2 / 1.7 + 5 = 77 m)
 CREEP_LEAD_V = 2.0  # m/s, lead speed below which the governor manages the follow
 LEAD_STOPPED_V = 0.25  # m/s, lead speed below which it counts as fully stopped
-HANDBACK_V_REL = 0.2  # m/s, lead opening faster than ego by this much is a pull-away: hand back to the MPC
+HANDBACK_V_REL = 0.2  # m/s, lead opening faster than ego by this much is a pull-away: hand back to the MPC ...
+# ... but only once it has lasted HANDBACK_TIME, unless it is a clear departure (HANDBACK_V_REL_FAST). Route 000000d9 seg 12
+# (2026-09-30 16:58, stopped 2.4 m behind a stopped lead): one radar sample read the lead at +0.2 m/s, the governor handed
+# back for a single frame, the MPC asked +1.17, longcontrol left its stopping state for that frame and the hold was
+# released - the car lurched 0.3 m/s forward and the driver had to brake.
+HANDBACK_TIME = 0.3  # s
+HANDBACK_V_REL_FAST = 0.8  # m/s, a lead clearly driving off hands back at once
 A_NOM = 0.7  # m/s^2 (0.8 -> 0.7, 2026-09-27: a touch lighter stop), least deceleration of the constant-deceleration (fast) part of the profile
 A_NOM_MAX = 1.6  # m/s^2, most it steepens to for a fast/close arrival
 V_TAPER = 0.8  # m/s, below this the small creep-brake floor applies
@@ -144,12 +151,14 @@ class StopGapGovernor:
     self.a_prev = 0.0
     self.a_nom = A_NOM
     self.profile: StopProfile | None = None
+    self.pull_away_t = 0.0
 
   def reset(self) -> None:
     self.engaged = False
     self.a_prev = 0.0
     self.a_nom = A_NOM
     self.profile: StopProfile | None = None
+    self.pull_away_t = 0.0
 
   def update(self, allowed: bool, v_ego: float, lead_present: bool, d_rel: float, v_lead: float,
              a_current: float) -> tuple[float, bool] | None:
@@ -157,7 +166,9 @@ class StopGapGovernor:
     s = d_rel - STOP_GAP
     lead_slow = lead_present and v_lead < CREEP_LEAD_V
     v_close = v_ego - max(v_lead, 0.0)
-    if not allowed or not lead_slow or v_close < -HANDBACK_V_REL:
+    self.pull_away_t = self.pull_away_t + self.dt if (self.engaged and v_close < -HANDBACK_V_REL) else 0.0
+    pull_away = v_close < -HANDBACK_V_REL_FAST or (v_close < -HANDBACK_V_REL and self.pull_away_t >= HANDBACK_TIME)
+    if not allowed or not lead_slow or pull_away:
       self.reset()
       return None
 
