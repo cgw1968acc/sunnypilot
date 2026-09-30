@@ -25,6 +25,11 @@ STANDSTILL_HOLD_DELAY_NO_LEAD = 0.9  # s (0.8 -> 1.1 -> 0.9)
 # car is at rest. Safety net: if the car has not reached standstill within STOPPING_FREEZE_MAX of entering the
 # stopping state (request too light to finish the stop, e.g. a creep), the upstream STOPPING_DECEL_RATE ramp resumes.
 STOPPING_FREEZE_MAX = 2.0  # s
+# Leaving the stopping state while standing still needs the "go" condition to hold for this long. Route 000000d9 seg 12
+# (2026-09-30 16:58): a one-sample radar flicker made the planner drop should_stop for a single frame, the state went to
+# pid for that frame (request +1.17), the hold was released and the car lurched forward at a stopped lead. A real
+# departure (lead start assist confirms 0.25 s of motion, resume press) easily outlasts this.
+STOPPING_EXIT_DEBOUNCE = 0.2  # s
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -68,6 +73,7 @@ class LongControl:
     self.last_output_accel = 0.0
     self.standstill_t = 0.0  # s of continuous CS.standstill
     self.stopping_t = 0.0  # s in the stopping state
+    self.go_t = 0.0  # s the go condition has held while stopping at standstill
 
   def reset(self):
     self.pid.reset()
@@ -77,9 +83,17 @@ class LongControl:
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
 
+    prev_state = self.long_control_state
     self.long_control_state = long_control_state_trans(self.CP_SP, active, self.long_control_state,
                                                        should_stop, CS.brakePressed,
                                                        CS.cruiseState.standstill)
+    if prev_state == LongCtrlState.stopping and self.long_control_state == LongCtrlState.pid and CS.standstill:
+      # standing still: only leave the hold once the go condition has held for STOPPING_EXIT_DEBOUNCE
+      self.go_t += DT_CTRL
+      if self.go_t < STOPPING_EXIT_DEBOUNCE:
+        self.long_control_state = LongCtrlState.stopping
+    else:
+      self.go_t = 0.0
     self.standstill_t = self.standstill_t + DT_CTRL if CS.standstill else 0.0
     self.stopping_t = self.stopping_t + DT_CTRL if self.long_control_state == LongCtrlState.stopping else 0.0
 

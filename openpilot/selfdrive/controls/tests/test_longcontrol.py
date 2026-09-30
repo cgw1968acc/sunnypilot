@@ -1,7 +1,7 @@
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import custom
 from openpilot.selfdrive.controls.lib.drive_helpers import STOPPING_SPEED, should_stop
-from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, LongControl, \
+from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, STOPPING_EXIT_DEBOUNCE, LongControl, \
   LongCtrlState, long_control_state_trans
 
 
@@ -115,3 +115,26 @@ class TestTerminalStop(OpenpilotTestCase):
       LoC.update(True, still, 0.0, True, (-3.5, 1.5))
     LoC.update(True, moving, 0.0, True, (-3.5, 1.5))
     assert LoC.standstill_t == 0.0
+
+  def test_one_frame_go_does_not_release_the_hold_at_standstill(self):
+    from opendbc.car.structs import car
+    from openpilot.common.realtime import DT_CTRL
+    CP = car.CarParams.new_message(stopAccel=-1.0)
+    CP.longitudinalTuning.kiBP = [0.0]
+    CP.longitudinalTuning.kiV = [0.0]
+    LoC = LongControl(CP, custom.CarParamsSP.new_message())
+    still = car.CarState.new_message(vEgo=0.0, standstill=True)
+    LoC.long_control_state = LongCtrlState.stopping
+    LoC.last_output_accel = -1.0
+    for _ in range(200):
+      LoC.update(True, still, 0.0, True, (-3.5, 1.5), has_lead=True)
+    a = float(LoC.update(True, still, 1.2, False, (-3.5, 1.5), has_lead=True))   # one frame of "go"
+    assert LoC.long_control_state == LongCtrlState.stopping and a <= -0.99, (LoC.long_control_state, a)
+    for _ in range(5):
+      a = float(LoC.update(True, still, 0.0, True, (-3.5, 1.5), has_lead=True))  # stop again
+    assert a <= -0.99
+    # a sustained go leaves the hold after the debounce
+    n = 0
+    while LoC.long_control_state == LongCtrlState.stopping and n < 100:
+      LoC.update(True, still, 1.2, False, (-3.5, 1.5), has_lead=True); n += 1
+    assert abs(n * DT_CTRL - STOPPING_EXIT_DEBOUNCE) < 0.03, n
