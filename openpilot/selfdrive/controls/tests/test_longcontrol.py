@@ -1,7 +1,7 @@
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import custom
 from openpilot.selfdrive.controls.lib.drive_helpers import STOPPING_SPEED, should_stop
-from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, STOPPING_EXIT_DEBOUNCE, LongControl, \
+from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, STOPPING_EXIT_DEBOUNCE, STOPPING_FOLLOW_MIN, LongControl, \
   LongCtrlState, long_control_state_trans
 
 
@@ -138,3 +138,20 @@ class TestTerminalStop(OpenpilotTestCase):
     while LoC.long_control_state == LongCtrlState.stopping and n < 100:
       LoC.update(True, still, 1.2, False, (-3.5, 1.5), has_lead=True); n += 1
     assert abs(n * DT_CTRL - STOPPING_EXIT_DEBOUNCE) < 0.03, n
+
+  def test_request_keeps_easing_with_the_plan_before_the_wheels_stop(self):
+    from opendbc.car.structs import car
+    CP = car.CarParams.new_message(stopAccel=-1.0)
+    LoC = LongControl(CP, custom.CarParamsSP.new_message())
+    LoC.long_control_state = LongCtrlState.stopping
+    LoC.last_output_accel = -0.40
+    rolling = car.CarState.new_message(vEgo=0.2, standstill=False)
+    for _ in range(30):
+      a = float(LoC.update(True, rolling, -0.20, True, (-3.5, 1.5), has_lead=True))   # plan eases to -0.20
+    assert abs(a + 0.20) < 1e-6, a                                                   # followed (lighter)
+    a = float(LoC.update(True, rolling, -0.60, True, (-3.5, 1.5), has_lead=True))     # plan firmer: not followed
+    assert abs(a + 0.20) < 1e-6, a
+    for _ in range(10):
+      a = float(LoC.update(True, rolling, 0.0, True, (-3.5, 1.5), has_lead=True))     # plan at 0 (flicker): not followed
+    assert abs(a + 0.20) < 1e-6, a
+    assert STOPPING_FOLLOW_MIN < 0.0

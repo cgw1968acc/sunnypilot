@@ -30,6 +30,14 @@ STOPPING_FREEZE_MAX = 2.0  # s
 # pid for that frame (request +1.17), the hold was released and the car lurched forward at a stopped lead. A real
 # departure (lead start assist confirms 0.25 s of motion, resume press) easily outlasts this.
 STOPPING_EXIT_DEBOUNCE = 0.2  # s
+# Before the wheels stop, the request may keep EASING with the planner's target (never firming): the stopping state
+# starts at 0.9 km/h (STOPPING_SPEED) and freezing there kept the request at the curve's 1.2 km/h value, so the tuned
+# last-metre easing (A_1KPH -> A_0KPH) never reached the car (2026-09-30 22:54:30, route 000000e0 seg 15: request
+# frozen at -0.40 while the plan fell -0.37 -> -0.16; IMU decel flat at 0.75 to the stop, rebound +0.52 - the nod).
+# The good stops (22:13:45 openpilot, the driver's own seamless ones) all taper in the last 0.3 s. A target above
+# STOPPING_FOLLOW_MIN is not followed (a released brake at 0.5 km/h would lurch), and the easing is rate-limited.
+STOPPING_FOLLOW_MIN = -0.10  # m/s^2
+STOPPING_FOLLOW_RATE = 2.0  # m/s^3
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -105,6 +113,9 @@ class LongControl:
       output_accel = self.last_output_accel
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
+        if not CS.standstill and a_target < STOPPING_FOLLOW_MIN and a_target > output_accel:
+          # still rolling: keep easing with the plan's own end-of-stop curve (lighter only, rate-limited)
+          output_accel = min(a_target, output_accel + STOPPING_FOLLOW_RATE * DT_CTRL)
         # TODO: can we just go straight to stopAccel?
         hold_delay = STANDSTILL_HOLD_DELAY_LEAD if has_lead else STANDSTILL_HOLD_DELAY_NO_LEAD
         if self.standstill_t >= hold_delay:
