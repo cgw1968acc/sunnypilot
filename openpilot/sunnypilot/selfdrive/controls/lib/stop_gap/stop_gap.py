@@ -59,15 +59,23 @@ V_FIRM_HOLD = 4.0 / 3.6  # m/s (4 km/h): the firm force is held from V_FIRM down
 A_FIRM_EXTRA = 0.45  # m/s^2 (0.4 too light, 0.47 too firm on the 2026-09-27 tests)
 A_FIRM_MAX = 2.0  # m/s^2 (1.6 -> 2.0, 2026-09-27 21:05: a fast approach reaches 30 km/h with ~25-30 m left, a_nom fits at
                   # 1.0-1.5 and the old cap cut the +0.45 build-up to nothing - the stop felt like one straight line)
+# What "seamless" means in numbers (IMU, not the wheel-speed aEgo whose stop-instant spike is an artifact of the wheel
+# sensors snapping to zero): the deceleration still present in the last 0.2 s before wheel-stop is what drops to zero
+# at the stop and is felt as the nod, and the pitch rebound after it scales with it. 2026-09-27 Altis logs: driver
+# stops median 0.77 m/s^2 (rebound +0.27), openpilot median 0.63 (+0.24); the gentlest openpilot endings 0.0-0.2 had
+# rebounds of 0.02-0.07 and the gentlest driver endings 0.15-0.36 had 0.13-0.17. Corolla Cross driver stops end at
+# 0.45 - that is why it feels easier to stop smoothly. Target: <= 0.2 m/s^2 in the last 0.2 s.
 # The easing below V_FIRM_HOLD, m/s^2 at each speed (linear in between). Tune these; a_firm at 4 km/h is ~1.15 when
 # a_nom is 0.7 (early engage) and up to 2.0 on a compressed fast approach. 2026-09-30 second test: 3 km/h 0.60 -> 0.80,
-# 1 km/h 0.40 -> 0.38, 0 km/h 0.35 -> 0.33 (driver's values); 2 km/h set on the line between them.
+# 1 km/h 0.40 -> 0.38, 0 km/h 0.35 -> 0.33 (driver's values); 2 km/h set on the line between them. 2026-09-30 night, from
+# the IMU analysis above: 1 km/h 0.28, 0 km/h 0.20, end floor 0.15, so the car arrives at wheel-stop with ~0.2-0.4 left
+# (plant with 0.4 s lag: 0.64 -> 0.43 in the last 0.2 s, last half metre 0.7 -> 1.0 s, landing 3.61 m, no creep).
 A_3KPH = 0.80
 A_2KPH = 0.59
-A_1KPH = 0.38
-A_0KPH = 0.33
+A_1KPH = 0.28
+A_0KPH = 0.20
 V_END = 0.7  # m/s (2.5 km/h): below this the end floor applies
-A_END_FLOOR = 0.30  # m/s^2: the very end always brakes at least this much - arriving slow must not turn into a crawl
+A_END_FLOOR = 0.15  # m/s^2: the very end always brakes at least this much - arriving slow must not turn into a crawl
                     # (keep it below A_1KPH / A_0KPH so the curve above, not this floor, decides the feel)
 PROFILE_DV = 0.02  # m/s, integration step for the distance table
 TAU_V = 0.6  # s, velocity-loop time constant that pulls ego onto the profile
