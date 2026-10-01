@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import os
 import numpy as np
 
 import openpilot.cereal.messaging as messaging
@@ -18,6 +19,11 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import StopGapGovernor
+
+# A/B switch for the stop-gap governor (driver 2026-10-02, after rav4kumar's review that it is unnecessary): when this
+# file exists on the device the governor is bypassed and stops are left to the MPC + longcontrol. Checked once a second,
+# switched only while the governor is not running a stop. Create/remove it over SSH: touch / rm /data/tn_no_stop_gap
+STOP_GAP_OFF_FLAG = "/data/tn_no_stop_gap"
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
@@ -80,6 +86,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.allow_throttle = True
     self.lead_start_assist = LeadStartAssist(self.dt)
     self.stop_gap = StopGapGovernor(self.dt)
+    self.stop_gap_enabled = True
+    self._stop_gap_flag_t = 0.0
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -181,7 +189,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     long_allowed = (not long_control_off and not force_decel and not sm['carState'].brakePressed and
                     not sm['carState'].gasPressed)
     stop_gap_out = None
-    if self.mpc.source == LongitudinalPlanSource.lead0:
+    self._stop_gap_flag_t += self.dt
+    if self._stop_gap_flag_t >= 1.0:
+      self._stop_gap_flag_t = 0.0
+      want = not os.path.exists(STOP_GAP_OFF_FLAG)
+      if want != self.stop_gap_enabled and not self.stop_gap.engaged:
+        self.stop_gap_enabled = want
+        self.stop_gap.reset()
+        cloudlog.warning(f"stop gap governor {'enabled' if want else 'DISABLED (A/B flag)'}")
+    if self.mpc.source == LongitudinalPlanSource.lead0 and self.stop_gap_enabled:
       stop_gap_out = self.stop_gap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, output_a_target_mpc,
                                         a_lead=lead_one.aLeadK)
     else:
