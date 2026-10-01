@@ -243,8 +243,8 @@ class TestAutoBrakeHoldFirmPress(unittest.TestCase):
     return ctrl
 
   def test_light_stop_is_held_only_after_the_longer_wait(self, mock_create):
-    self.assertFalse(self._run([BRAKE_HOLD_MIN_FORCE * 0.6] * BRAKE_HOLD_LIGHT_TIMER).active)
-    self.assertTrue(self._run([BRAKE_HOLD_MIN_FORCE * 0.6] * (BRAKE_HOLD_LIGHT_TIMER + 1)).active)
+    self.assertFalse(self._run([BRAKE_HOLD_MIN_FORCE * 0.7] * BRAKE_HOLD_LIGHT_TIMER).active)
+    self.assertTrue(self._run([BRAKE_HOLD_MIN_FORCE * 0.7] * (BRAKE_HOLD_LIGHT_TIMER + 1)).active)
 
   def test_firm_press_engages_one_timer_after_the_press(self, mock_create):
     light, firm = BRAKE_HOLD_MIN_FORCE * 0.6, BRAKE_HOLD_MIN_FORCE * 1.1
@@ -268,7 +268,7 @@ class TestAutoBrakeHoldRealStop(unittest.TestCase):
   restart until the car really stands."""
   def test_creep_restarts_the_timers(self, mock_create):
     ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
-    light = BRAKE_HOLD_MIN_FORCE * 0.6
+    light = BRAKE_HOLD_MIN_FORCE * 0.7
     for i in range(500):
       creeping = (i % 70) < 10          # every 0.7 s the pulse counter shows motion for a moment
       cs = FakeCarState(standstill=not creeping, brake_pressed=True)
@@ -280,3 +280,33 @@ class TestAutoBrakeHoldRealStop(unittest.TestCase):
       cs.brake_force = light
       ctrl.update(cs, 500 + i, None)
     self.assertTrue(ctrl.active)
+
+
+@patch("opendbc.sunnypilot.car.toyota.auto_brake_hold.toyotacan.create_brake_hold_command")
+class TestAutoBrakeHoldLightMinForce(unittest.TestCase):
+  """2026-10-02: the 2.5 s light-stop path needs >= BRAKE_HOLD_LIGHT_MIN_FORCE at that moment, and latches."""
+  def _ctrl(self):
+    ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
+    ctrl.update(FakeCarState(standstill=False, brake_pressed=True), 0, None)
+    return ctrl
+
+  def _step(self, ctrl, i, force, pressed=True):
+    cs = FakeCarState(brake_pressed=pressed)
+    cs.brake_force = force
+    ctrl.update(cs, i, None)
+    return ctrl.active
+
+  def test_very_light_hold_waits(self, mock_create):
+    from opendbc.sunnypilot.car.toyota.auto_brake_hold import BRAKE_HOLD_LIGHT_MIN_FORCE
+    ctrl = self._ctrl()
+    for i in range(1, 600):
+      self.assertFalse(self._step(ctrl, i, BRAKE_HOLD_LIGHT_MIN_FORCE - 100))
+    self.assertTrue(self._step(ctrl, 600, BRAKE_HOLD_LIGHT_MIN_FORCE + 50))   # presses a little more: engages
+
+  def test_engaged_hold_latches_when_the_pedal_lightens(self, mock_create):
+    ctrl = self._ctrl()
+    for i in range(1, BRAKE_HOLD_LIGHT_TIMER + 2):
+      self._step(ctrl, i, 960.0)
+    self.assertTrue(ctrl.active)
+    for i in range(BRAKE_HOLD_LIGHT_TIMER + 2, BRAKE_HOLD_LIGHT_TIMER + 50):
+      self.assertTrue(self._step(ctrl, i, 200.0))   # the foot lifts: still held
