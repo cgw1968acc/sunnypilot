@@ -13,6 +13,7 @@ from opendbc.car.toyota.values import ToyotaFlags, CAR, DBC, STEER_THRESHOLD, NO
 from opendbc.sunnypilot.car.toyota.carstate_ext import CarStateExt
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarState
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
+from opendbc.sunnypilot.car.toyota.wheel_pulse import WheelPulseCreep
 
 ButtonType = structs.CarState.ButtonEvent.Type
 SteerControlType = structs.CarParams.SteerControlType
@@ -100,6 +101,8 @@ class CarState(CarStateBase, CarStateExt):
     if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD:
       self.pre_collision_2 = {}
     self.brake_force = float('nan')  # N, BRAKE (0xA6) BRAKE_FORCE: brake pressure as force; nan when not broadcast
+    self.wheel_encoder = float('nan')  # SPEED (0xB4) ENCODER: wheel pulse counter, still counts below the ~0.5 km/h speed floor
+    self.wheel_pulse = WheelPulseCreep()
 
     self._host_params = get_host_params()
     self.toyota_drive_mode = self._host_params is not None and self._host_params.get_bool('ToyotaDriveMode')
@@ -182,6 +185,13 @@ class CarState(CarStateBase, CarStateExt):
     # crawling and standstill stay exact. Tunables: CLUSTER_SPEED_GAIN, CLUSTER_SPEED_OFFSET_KPH.
     ret.vEgoCluster = cluster_speed(ret.vEgo)
 
+    # below the ~0.5 km/h speed floor the wheel pulse counter still shows a creeping car (wheel_pulse.py)
+    if "SPEED" in cp.vl:
+      self.wheel_encoder = float(cp.vl["SPEED"]["ENCODER"])
+    creep_v = self.wheel_pulse.update(self.wheel_encoder, abs(ret.vEgoRaw) < 1e-3)
+    if creep_v > 0.0:
+      ret.vEgoRaw = creep_v
+      ret.vEgo = max(ret.vEgo, creep_v)
     ret.standstill = abs(ret.vEgoRaw) < 1e-3
 
     ret.vehicleSensorsInvalid = any(cp.vl["WHEEL_SPEEDS"][f"WHEEL_SPEED_{whl}_FAULT"]
@@ -328,6 +338,10 @@ class CarState(CarStateBase, CarStateExt):
     # brake pressure (0xA6) so the auto brake hold can require a firm press, like the factory hold. Alive check skipped.
     if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD and "BRAKE" in DBCParser(DBC[CP.carFingerprint][Bus.pt]).name_to_msg:
       pt_messages.append(("BRAKE", float('nan')))
+    # wheel pulse counter (0xB4 ENCODER): the wheel speeds read 0 below ~0.5 km/h, the encoder still counts, so a
+    # slow creep is not mistaken for a stop (wheel_pulse.py). Alive check skipped.
+    if "SPEED" in DBCParser(DBC[CP.carFingerprint][Bus.pt]).name_to_msg:
+      pt_messages.append(("SPEED", float('nan')))
 
     cam_messages = [
       ("RSA1", 0),

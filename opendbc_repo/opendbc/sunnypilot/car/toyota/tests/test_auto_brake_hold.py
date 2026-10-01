@@ -259,3 +259,24 @@ class TestAutoBrakeHoldFirmPress(unittest.TestCase):
 
   def test_missing_force_signal_keeps_the_old_behaviour(self, mock_create):
     self.assertTrue(self._run([float("nan")] * (BRAKE_HOLD_ALLOWED_TIMER + 5)).active)
+
+
+
+@patch("opendbc.sunnypilot.car.toyota.auto_brake_hold.toyotacan.create_brake_hold_command")
+class TestAutoBrakeHoldRealStop(unittest.TestCase):
+  """2026-10-01 22:30: a creep below the wheel-speed floor is no longer standstill (wheel_pulse.py), so the timers
+  restart until the car really stands."""
+  def test_creep_restarts_the_timers(self, mock_create):
+    ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
+    light = BRAKE_HOLD_MIN_FORCE * 0.6
+    for i in range(500):
+      creeping = (i % 70) < 10          # every 0.7 s the pulse counter shows motion for a moment
+      cs = FakeCarState(standstill=not creeping, brake_pressed=True)
+      cs.brake_force = light
+      ctrl.update(cs, i, None)
+      self.assertFalse(ctrl.active)
+    for i in range(BRAKE_HOLD_LIGHT_TIMER + 1):
+      cs = FakeCarState(brake_pressed=True)
+      cs.brake_force = light
+      ctrl.update(cs, 500 + i, None)
+    self.assertTrue(ctrl.active)
