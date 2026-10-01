@@ -5,6 +5,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import end_decel, DELIVERY_LEAD
+import openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap as stop_gap_mod
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
@@ -48,6 +49,11 @@ CREEP_RATE_BASE = 0.3  # m/s^2/s
 CREEP_RATE_GROWTH = 1.5  # m/s^2/s per second of creep
 CREEP_RATE_MAX = 1.0  # m/s^2/s
 STOPPING_FOLLOW_MIN = -0.10  # m/s^2
+# While still rolling in the stopping state the request is at least this firm: below 2.5 km/h the hybrid's creep torque
+# eats ~0.2 of a request (27 stops), so a lighter request glides instead of stopping (route 000000e4 11:37:20: -0.35 at
+# 1.6 km/h held the speed for 0.6 s and the car braked a second time). 0.42 delivers ~0.22-0.3, the lightest perfect
+# manual stop's final level.
+STOPPING_ROLLING_MIN = -0.42  # m/s^2
 STOPPING_FOLLOW_RATE = 2.0  # m/s^3
 # Universal end-of-stop taper (driver 2026-09-30 night: the 'taper' in the last 0.3 s is what makes a stop seamless, a
 # human cannot repeat it every time, the code must). Whatever produced the request - the stop-gap governor, the lead
@@ -148,9 +154,16 @@ class LongControl:
       output_accel = self.last_output_accel
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
-        if not CS.standstill and not self.stopped_once and a_target < STOPPING_FOLLOW_MIN and a_target > output_accel:
+        # below stop_gap.FINAL_V the driver's fixed final request replaces the rolling minimum (2026-10-01 night)
+        final = CS.vEgo < stop_gap_mod.FINAL_V
+        follow_min = stop_gap_mod.FINAL_REQUEST if final else STOPPING_FOLLOW_MIN
+        rolling_min = stop_gap_mod.FINAL_REQUEST if final else STOPPING_ROLLING_MIN
+        if not CS.standstill and not self.stopped_once and a_target <= follow_min and a_target > output_accel:
           # still rolling: keep easing with the plan's own end-of-stop curve (lighter only, rate-limited)
-          output_accel = min(a_target, output_accel + STOPPING_FOLLOW_RATE * DT_CTRL)
+          output_accel = min(a_target, rolling_min, output_accel + STOPPING_FOLLOW_RATE * DT_CTRL)
+        if not CS.standstill and not self.stopped_once and output_accel > rolling_min:
+          # never so light that creep torque holds the car rolling; ease up to the minimum at the hold rate
+          output_accel = max(rolling_min, output_accel - STANDSTILL_HOLD_RATE * DT_CTRL)
         # TODO: can we just go straight to stopAccel?
         hold_delay = STANDSTILL_HOLD_DELAY_LEAD if has_lead else STANDSTILL_HOLD_DELAY_NO_LEAD
         if self.standstill_t >= hold_delay:

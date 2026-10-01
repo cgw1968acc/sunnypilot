@@ -136,9 +136,28 @@ class TestStopGapGovernor(unittest.TestCase):
 
   def test_release_from_the_mpc_is_rate_limited(self):
     gov = StopGapGovernor(DT)
-    gov.update(True, 0.4, True, STOP_GAP + 2.5, 0.0, -0.9)
-    a1, _ = gov.update(True, 0.4, True, STOP_GAP + 2.5, 0.0, -0.1)
-    self.assertAlmostEqual(a1, -0.9 + RELEASE_RATE * DT, places=6)
+    a0, _ = gov.update(True, 0.4, True, STOP_GAP + 1.2, 0.0, -0.9)     # within REAPPROACH_MIN: no creeping closer
+    self.assertAlmostEqual(a0, -0.9 + RELEASE_RATE * DT, places=6)     # already easing toward the need (RECOVER_*)
+    a1, _ = gov.update(True, 0.4, True, STOP_GAP + 1.2, 0.0, -0.1)
+    self.assertAlmostEqual(a1, a0 + RELEASE_RATE * DT, places=6)
+
+  def test_creeps_closer_without_stopping_when_far_from_the_point(self):
+    from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import REAPPROACH_ACCEL
+    gov = StopGapGovernor(DT)
+    out = None
+    for _ in range(20):
+      out = gov.update(True, 0.3, True, STOP_GAP + 3.0, 0.0, -0.4)    # 1.1 km/h, 3 m of room, lead stopped
+    a, stop = out
+    self.assertAlmostEqual(a, REAPPROACH_ACCEL, places=6)
+    self.assertFalse(stop)
+    gov = StopGapGovernor(DT)
+    for _ in range(20):
+      a, stop = gov.update(True, 0.3, True, STOP_GAP + 1.0, 0.0, -0.4)   # only 1 m of room: keep braking
+    self.assertLess(a, 0.0)
+    gov = StopGapGovernor(DT)
+    for _ in range(20):
+      out = gov.update(True, 0.3, True, STOP_GAP + 3.0, 0.5, -0.4)       # lead still rolling: never creep closer
+    self.assertTrue(out is None or out[0] <= 0.0)
 
   def test_engages_earlier_at_higher_speed(self):
     gov = StopGapGovernor(DT)
@@ -184,3 +203,22 @@ def test_tight_stop_still_ends_on_the_tuned_curve():
   m = (r['vs'] < 1.5 / 3.6) & (r['vs'] > 0.1)
   assert len(r['targets'][m]) and -r['targets'][m].mean() <= A_1KPH + EASING_LOOP_MAX + 0.15, -r['targets'][m].mean()
   assert r['gap'] > STOP_GAP - 1.0 and not r['crept'], r['gap']
+
+
+def test_lead_braking_to_a_stop_no_hard_brake_far_out():
+  # route 000000e5 2026-10-01 13:25:59 (four-bookmark stop): ego ~40 km/h, lead 51 m ahead still rolling at 5.5 km/h and
+  # braking -2.4 to a stop. The profile used to be fitted once while the lead still moved and the velocity loop then
+  # asked A_NEG_MAX (-2.5) 45 m from the lead. It must refit to where the lead stops and ask only the ~1.3 needed.
+  from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import StopGapGovernor
+  g = StopGapGovernor(0.05)
+  rows = [(40.0, 53.2, 7.3, -2.4, -0.17), (39.9, 51.3, 5.5, -2.4, -0.22), (39.8, 49.4, 3.8, -2.4, -1.01),
+          (39.3, 47.3, 2.1, -2.4, -1.41), (38.4, 45.2, 0.4, -2.4, -1.62), (37.1, 43.1, 0.0, 0.0, -1.74), (35.6, 41.1, 0.0, 0.0, -1.81)]
+  outs = []
+  for v, d, vl, al, mpc in rows:
+    for _ in range(4):
+      out = g.update(True, v / 3.6, True, d, vl / 3.6, mpc, a_lead=al)
+      if out is not None:
+        outs.append(out[0])
+  assert len(outs) > 0
+  # never harder than what is needed (~1.3) plus the MPC's own request (which wins while the lead still moves)
+  assert min(outs) > -1.65, min(outs)

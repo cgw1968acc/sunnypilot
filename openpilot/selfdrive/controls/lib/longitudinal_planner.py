@@ -161,7 +161,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     is_e2e = self.is_e2e(sm)
 
-    max_accel_override = self.get_max_accel_override(v_ego, sm['carStateSP'].engineOff)
+    max_accel_override = self.get_max_accel_override(v_ego, sm['carStateSP'].engineOff, sm['radarState'].leadOne)
     # accel_coast is ACCEL_MAX when the orientation is not valid; pass it only when it is a real (negative) coast value
     v_cruise = self.get_cruise_target_override(v_ego, v_cruise, force_decel, accel_coast if accel_coast < 0.0 else None)
     a_cruise_prev = self.a_cruise
@@ -182,7 +182,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                     not sm['carState'].gasPressed)
     stop_gap_out = None
     if self.mpc.source == LongitudinalPlanSource.lead0:
-      stop_gap_out = self.stop_gap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, output_a_target_mpc)
+      stop_gap_out = self.stop_gap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, output_a_target_mpc,
+                                        a_lead=lead_one.aLeadK)
     else:
       self.stop_gap.reset()
     if stop_gap_out is not None:
