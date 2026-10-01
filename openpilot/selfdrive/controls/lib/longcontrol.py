@@ -158,8 +158,12 @@ class LongControl:
         final = CS.vEgo < stop_gap_mod.FINAL_V
         follow_min = stop_gap_mod.FINAL_REQUEST if final else STOPPING_FOLLOW_MIN
         rolling_min = stop_gap_mod.FINAL_REQUEST if final else STOPPING_ROLLING_MIN
-        if not CS.standstill and not self.stopped_once and a_target <= follow_min and a_target > output_accel:
-          # still rolling: keep easing with the plan's own end-of-stop curve (lighter only, rate-limited)
+        if (not CS.standstill and not self.stopped_once and a_target <= follow_min and a_target > output_accel and
+            self.stopping_t < STOPPING_FREEZE_MAX):
+          # still rolling: keep easing with the plan's own end-of-stop curve (lighter only, rate-limited). Not once the
+          # STOPPING_FREEZE_MAX safety net is ramping: following a lighter plan there undid the ramp every step and the
+          # car settled where the request just balanced the creep torque, crawling on (device campaign 2026-10-02
+          # without the stop-gap governor: -0.20 vs creep 0.20, 0.45 km/h into the lead)
           output_accel = min(a_target, rolling_min, output_accel + STOPPING_FOLLOW_RATE * DT_CTRL)
         if not CS.standstill and not self.stopped_once and output_accel > rolling_min:
           # never so light that creep torque holds the car rolling; ease up to the minimum at the hold rate

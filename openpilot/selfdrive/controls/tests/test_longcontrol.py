@@ -156,6 +156,19 @@ class TestTerminalStop(OpenpilotTestCase):
     assert abs(a - STOPPING_ROLLING_MIN) < 1e-6, a                                   # never below it while rolling (creep)
     assert STOPPING_FOLLOW_MIN < 0.0
 
+  def test_slow_stop_firms_up_after_freeze_max_even_if_the_plan_is_lighter(self):
+    # 2026-10-02: without the stop governor a plan of -0.20 balanced the creep torque and the car crawled on forever
+    from opendbc.car.structs import car
+    from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_FREEZE_MAX
+    CP = car.CarParams.new_message(stopAccel=-1.0)
+    LoC = LongControl(CP, custom.CarParamsSP.new_message())
+    LoC.long_control_state = LongCtrlState.stopping
+    LoC.last_output_accel = -0.20
+    rolling = car.CarState.new_message(vEgo=0.14, standstill=False)
+    for _ in range(int((STOPPING_FREEZE_MAX + 2.0) / 0.01)):
+      a = float(LoC.update(True, rolling, -0.20, True, (-3.5, 1.5), has_lead=True))
+    assert a < -0.45, a   # firms up to the end-taper cap (end_decel floor 0.52), well past the ~0.2 creep torque
+
   def test_final_request_below_1kph(self):
     # driver 2026-10-01 night: the last 0-1 km/h uses the fixed stop_gap.FINAL_REQUEST (-0.021) as the rolling minimum
     from opendbc.car.structs import car
