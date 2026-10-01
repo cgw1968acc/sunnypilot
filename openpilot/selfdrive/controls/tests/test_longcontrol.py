@@ -169,6 +169,25 @@ class TestTerminalStop(OpenpilotTestCase):
       a = float(LoC.update(True, rolling, -0.20, True, (-3.5, 1.5), has_lead=True))
     assert a < -0.45, a   # firms up to the end-taper cap (end_decel floor 0.52), well past the ~0.2 creep torque
 
+  def test_end_taper_never_starves_an_emergency_stop(self):
+    # 2026-10-02 campaign: 30 km/h, stopped car at 17 m: the taper capped -3.15 to -1.65 at 3.6 km/h with 0.46 m left
+    from opendbc.car.structs import car
+    from openpilot.selfdrive.controls.lib.longcontrol import stop_decel_floor, end_taper_decel
+    CP = car.CarParams.new_message(stopAccel=-1.0)
+    CP.longitudinalTuning.kiBP = [0.0]
+    CP.longitudinalTuning.kiV = [0.0]
+    v = 3.6 / 3.6
+    cs = car.CarState.new_message(vEgo=v, aEgo=-2.4, standstill=False)   # braking hard: the taper reads 0.25 s ahead
+    floor = stop_decel_floor(v, True, 1.46, 0.0)
+    assert floor > end_taper_decel(v, -2.4)
+    LoC = LongControl(CP, custom.CarParamsSP.new_message())
+    LoC.long_control_state = LongCtrlState.pid
+    LoC.last_output_accel = -3.0
+    a = float(LoC.update(True, cs, -3.15, False, (-3.5, 1.5), has_lead=True, decel_floor=floor))
+    assert a <= -floor + 1e-6, (a, floor)
+    # a normal stop (2 m to spare at 1 km/h) is not affected
+    assert stop_decel_floor(1 / 3.6, True, 5.0, 0.0) < 0.05
+
   def test_final_request_below_1kph(self):
     # driver 2026-10-01 night: the last 0-1 km/h uses the fixed stop_gap.FINAL_REQUEST (-0.021) as the rolling minimum
     from opendbc.car.structs import car
