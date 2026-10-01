@@ -30,6 +30,10 @@ BRAKE_HOLD_MIN_FORCE = 1400.0  # N
 # ... and without a firm press the hold still engages once the car has stood still this long (driver 2026-09-30:
 # a long stop at a light should be held too, a short creep-stop should not)
 BRAKE_HOLD_LIGHT_TIMER = 250  # frames (2.5 s)
+# Both timers count from the REAL stop (driver 2026-10-01 22:30, four bookmarks: a very slow, very gentle manual stop
+# and the hold "suddenly cut in" while the car still rolled below the ~0.5 km/h wheel-speed floor). The standstill flag
+# now comes from the wheel pulse counter as well (wheel_pulse.py): while the car still creeps it is not standstill, so
+# these timers restart until it really stands.
 
 DISALLOWED_GEARS = (GearShifter.park, GearShifter.reverse)
 
