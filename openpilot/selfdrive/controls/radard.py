@@ -109,6 +109,12 @@ class Track:
     return ret
 
 
+STATIONARY_TRACK_V = 1.0   # m/s, radar point counted as stationary
+VISION_MOVING_V = 4.0      # m/s, camera lead counted as clearly moving
+MATCH_MAX_Y_OFFSET = 2.5   # m, lateral radar/camera disagreement beyond which such a match is rejected
+                           # (|dy| p90 0.55 m, p99 3.2 m over 22k matched frames; the misfires sat at 2.6-9 m in turns)
+
+
 def laplacian_pdf(x: float, mu: float, b: float):
   b = max(b, 1e-4)
   return math.exp(-abs(x-mu)/b)
@@ -131,7 +137,14 @@ def match_vision_to_track(v_ego: float, lead: capnp._DynamicStructReader, tracks
   # stationary radar points can be false positives
   dist_sane = abs(track.dRel - offset_vision_dist) < max([(offset_vision_dist)*.25, 5.0])
   vel_sane = (abs(track.vRel + v_ego - lead.v[0]) < 10) or (v_ego + track.vRel > 3)
-  if dist_sane and vel_sane:
+  # A stationary radar point well off to the side of a lead the camera sees clearly moving is a roadside object, not
+  # the lead (C3X route 000000e5 2026-10-01 13:31:59: mid left turn at 20 km/h, vision lead 11 m ahead at 23 km/h,
+  # radar matched a stationary point 8.9 m to the left (vision: 3.0 m) and the MPC asked -2.5 for a full second).
+  # Both conditions are required: in a normal stop behind a stopped car the radar and camera agree laterally, so a
+  # noisy camera speed alone never drops the radar lead.
+  side_object = (v_ego + track.vRel < STATIONARY_TRACK_V and lead.v[0] > VISION_MOVING_V and
+                 abs(track.yRel + lead.y[0]) > MATCH_MAX_Y_OFFSET)
+  if dist_sane and vel_sane and not side_object:
     return track
   else:
     return None
