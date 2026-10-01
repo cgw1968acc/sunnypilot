@@ -358,6 +358,15 @@ class StopGapGovernor:
     if s <= 0.0:
       a = -A_PAST
     else:
+      if self.profile is not None and v_ego > V_FIRM_HOLD and v_close > self.profile.at(s + STOP_WINDOW_LONG)[0]:
+        # ahead of the profile (e.g. the first second after engaging, while the PCM is still building the brake):
+        # re-plan from where the car is - the constant deceleration that now lands on the point - instead of letting
+        # the velocity loop escalate (C3X route 000000ea 2026-10-02 00:09:20: engaged at 32.7 km/h, 45 m from a
+        # stopped car, a_nom 0.97; while the brake built up the loop ramped the request -0.97 -> -1.71 in 0.7 s and the
+        # PCM then delivered ~3.1). This is the driver's own law: brake by the need of the moment.
+        refit = _fit_profile(v_close, s)
+        if refit is not None and refit.a_nom > self.a_nom:
+          self.profile, self.a_nom = refit, refit.a_nom
       v_prof, a_ff = self.profile.at(s) if self.profile is not None else _profile_single(s, self.a_nom)
       if self.profile is not None:
         # pull onto the profile only when it would land outside the band [STOP_WINDOW short, STOP_WINDOW_LONG long]
