@@ -30,6 +30,12 @@ BRAKE_HOLD_MIN_FORCE = 1400.0  # N
 # ... and without a firm press the hold still engages once the car has stood still this long (driver 2026-09-30:
 # a long stop at a light should be held too, a short creep-stop should not)
 BRAKE_HOLD_LIGHT_TIMER = 250  # frames (2.5 s)
+# ... but only if the driver is holding the car with at least this force at that moment (driver 2026-10-02, after the
+# 22:30 four-bookmark stop): pressing ~760-800 N the brake only just balanced the hybrid's creep torque, so when the hold
+# clamped to its fixed ~1360 N the body rocked (IMU +0.61 / -0.42); at 960 N (21:17:44, 00:13:48) the same clamp was not
+# felt. Lighter than this the hold waits (it engages as soon as the driver presses a little more); released lightly, the
+# car creeps as it would without the hold. Once engaged the hold stays on whatever the pedal does.
+BRAKE_HOLD_LIGHT_MIN_FORCE = 900.0  # N
 # Both timers count from the REAL stop (driver 2026-10-01 22:30, four bookmarks: a very slow, very gentle manual stop
 # and the hold "suddenly cut in" while the car still rolled below the ~0.5 km/h wheel-speed floor). The standstill flag
 # now comes from the wheel pulse counter as well (wheel_pulse.py): while the car still creeps it is not standstill, so
@@ -75,6 +81,7 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     self._armed = False
     self._firm_frame = 0
     self._prev_brake_pressed = False
+    self._engaged = False
 
   def update(self, CS: structs.CarState, frame: int, packer) -> list:
     relay_blocked = (CS.out.standstill and CS.out.cruiseState.available and not CS.out.cruiseState.enabled and
@@ -92,13 +99,16 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
         self._armed = True
         self._firm_frame = self._counter
       firm_ready = self._armed and self._counter - self._firm_frame >= BRAKE_HOLD_ALLOWED_TIMER
-      held_long = self._counter > BRAKE_HOLD_LIGHT_TIMER
-      self.active = (firm_ready or held_long) and not self._released
+      held_long = self._counter > BRAKE_HOLD_LIGHT_TIMER and (math.isnan(force) or force >= BRAKE_HOLD_LIGHT_MIN_FORCE)
+      if (firm_ready or held_long) and not self._released:
+        self._engaged = True
+      self.active = self._engaged and not self._released
     else:
       self._counter = 0
       self.active = False
       self._released = False
       self._armed = False
+      self._engaged = False
 
     self._prev_brake_pressed = CS.out.brakePressed
 
