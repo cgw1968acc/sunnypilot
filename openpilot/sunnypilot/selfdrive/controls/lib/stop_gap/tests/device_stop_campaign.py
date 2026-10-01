@@ -42,7 +42,7 @@ def run(v0, lead_x0, lead_v0, lead_decel, lead_start_t=0.0, see_dist=250.0, secs
       vt = np.interp(ModelConstants.T_IDXS[:CONTROL_N], T_IDXS, mpc.v_solution); at = np.interp(ModelConstants.T_IDXS[:CONTROL_N], T_IDXS, mpc.a_solution)
       a_mpc = get_accel_from_plan(vt, at, ModelConstants.T_IDXS[:CONTROL_N], action_t=0.05 + DT_MDL)
       stop_mpc = should_stop(v, a_mpc)
-      out = gov.update(True, v, seen, xl - x, vl, a_mpc) if seen else None
+      out = gov.update(True, v, seen, xl - x, vl, a_mpc, a_lead=al) if seen else None
       if out is None: gov_active=False
       else: a_mpc, stop_mpc = out; gov_active=True
       a_tgt, stop = float(np.clip(a_mpc, -3.5, 2.0)), stop_mpc
@@ -124,6 +124,11 @@ for V in ((20, 30, 40, 48)):
   for dec in (1.0, 2.0):
     L = run(v0, d, v0, dec, lead_start_t=2.0); r = metrics(L)
     rows.append((f"{V} km/h following, lead brakes -{dec:.0f} to stop", r))
+# a lead braking hard to a stop well ahead (2026-10-01 13:25:59 four-bookmark: ego ~40 km/h, lead 55 m at ~9 km/h braking
+# -2.4, seen from far): the governor takes over while the lead is still rolling
+for v_kmh, d0, vl_kmh, dec in ((40, 55, 9, 2.4), (52, 80, 45, 2.8), (45, 60, 30, 2.5), (35, 40, 20, 3.0)):
+  L = run(v_kmh / 3.6, d0, vl_kmh / 3.6, dec, lead_start_t=0.0); r = metrics(L)
+  rows.append((f"{v_kmh} km/h, lead {d0} m at {vl_kmh} km/h brakes -{dec}", r))
 for d_start in (6.6, 5.0, 4.2):
   L = run(0.0, d_start, 0.0, 0.0, see_dist=d_start + 0.5, secs=20); t_, v_, a_, cmd_, gap_ = L.T
   moved = v_.max() > 0.05

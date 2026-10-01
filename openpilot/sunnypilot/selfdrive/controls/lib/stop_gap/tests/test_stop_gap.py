@@ -202,3 +202,22 @@ def test_tight_stop_still_ends_on_the_tuned_curve():
   m = (r['vs'] < 1.5 / 3.6) & (r['vs'] > 0.1)
   assert len(r['targets'][m]) and -r['targets'][m].mean() <= A_1KPH + EASING_LOOP_MAX + 0.15, -r['targets'][m].mean()
   assert r['gap'] > STOP_GAP - 1.0 and not r['crept'], r['gap']
+
+
+def test_lead_braking_to_a_stop_no_hard_brake_far_out():
+  # route 000000e5 2026-10-01 13:25:59 (four-bookmark stop): ego ~40 km/h, lead 51 m ahead still rolling at 5.5 km/h and
+  # braking -2.4 to a stop. The profile used to be fitted once while the lead still moved and the velocity loop then
+  # asked A_NEG_MAX (-2.5) 45 m from the lead. It must refit to where the lead stops and ask only the ~1.3 needed.
+  from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import StopGapGovernor
+  g = StopGapGovernor(0.05)
+  rows = [(40.0, 53.2, 7.3, -2.4, -0.17), (39.9, 51.3, 5.5, -2.4, -0.22), (39.8, 49.4, 3.8, -2.4, -1.01),
+          (39.3, 47.3, 2.1, -2.4, -1.41), (38.4, 45.2, 0.4, -2.4, -1.62), (37.1, 43.1, 0.0, 0.0, -1.74), (35.6, 41.1, 0.0, 0.0, -1.81)]
+  outs = []
+  for v, d, vl, al, mpc in rows:
+    for _ in range(4):
+      out = g.update(True, v / 3.6, True, d, vl / 3.6, mpc, a_lead=al)
+      if out is not None:
+        outs.append(out[0])
+  assert len(outs) > 0
+  # never harder than what is needed (~1.3) plus the MPC's own request (which wins while the lead still moves)
+  assert min(outs) > -1.65, min(outs)

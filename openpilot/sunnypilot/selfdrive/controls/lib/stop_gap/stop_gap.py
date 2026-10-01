@@ -33,6 +33,16 @@ S_ENGAGE_BASE = 5.0  # m, added to that stopping distance (3 -> 5 on 2026-09-27 
 S_ENGAGE_MAX = 80.0  # m, hard cap on how far out it engages (55 -> 80 with the 40 km/h engage speed: 11.1^2 / 1.7 + 5 = 77 m)
 CREEP_LEAD_V = 2.0  # m/s, lead speed below which the governor manages the follow
 LEAD_STOPPED_V = 0.25  # m/s, lead speed below which it counts as fully stopped
+# A lead still braking to a stop (C3X route 000000e5 2026-10-01 13:25:59, the four-bookmark stop): ego re-engaged at
+# 39.5 km/h, lead 53 m ahead at 6 km/h braking -2.2. The governor fitted its profile to the closing speed (ego - lead
+# = 9.3 m/s), but the lead stopped ~0.6 m later and the closing speed jumped to ego's own 11 m/s at the same distance:
+# the velocity loop read 1.6 m/s 'too fast' and asked A_NEG_MAX (-2.5, delivered -3.8) 45 m from the lead.
+# Plan against where the lead will stop instead: distance + the lead's own stopping distance, at ego's full speed.
+# Blended in by how clearly the lead is braking, so a lead crawling at a steady walking pace keeps the old geometry.
+LEAD_BRAKE_A_LO = 0.3    # m/s^2 lead deceleration where the projection starts to blend in ...
+LEAD_BRAKE_A_HI = 0.8    # ... and where it is fully in
+LEAD_BRAKE_A_MAX = 3.0   # m/s^2 cap on the lead deceleration used for its stopping distance
+LEAD_A_TAU = 0.3         # s, low-pass on the radar lead acceleration (aLeadK jumps -3 -> 0 -> -3 between samples)
 HANDBACK_V_REL = 0.2  # m/s, lead opening faster than ego by this much is a pull-away: hand back to the MPC ...
 # ... but only once it has lasted HANDBACK_TIME, unless it is a clear departure (HANDBACK_V_REL_FAST). Route 000000d9 seg 12
 # (2026-09-30 16:58, stopped 2.4 m behind a stopped lead): one radar sample read the lead at +0.2 m/s, the governor handed
@@ -114,6 +124,12 @@ REAPPROACH_ACCEL = 0.1   # m/s^2 request while creeping up to speed (+ ~0.2 cree
                     # (keep it below A_1KPH / A_0KPH so the curve above, not this floor, decides the feel)
 PROFILE_DV = 0.02  # m/s, integration step for the distance table
 TAU_V = 0.6  # s, velocity-loop time constant that pulls ego onto the profile
+STOP_WINDOW = 0.5  # m: any stop within +-0.5 m of the point is on target (driver 2026-10-01: "anywhere 3-4 m behind the lead is
+                   # fine, 3.5 best; chasing exactly 3.5 m makes the system add brake force and that is what feels jerky").
+                   # The velocity loop only corrects once the profile would land outside this window.
+STOP_WINDOW_LONG = 0.0  # m, on the near side (closer to the lead) there is no slack: the window is one-sided, so the loop
+                        # lets the car end up to 0.5 m short but never closer than the point (device campaign 2026-10-01:
+                        # 0.5 landed 2.4 m behind a lead that braked to a stop; 0.0 keeps every non-emergency stop at 3.0-4.1 m)
 A_NEG_MAX = -2.5  # m/s^2, hardest braking the governor asks for (-2.0 -> -2.5 with A_NOM_MAX 2.2; a harder MPC request still passes)
 A_PAST = 1.0  # m/s^2, firm (not full-force) brake once past the point
 V_STOP_CLAMP = 0.3  # m/s, and only once nearly stopped
@@ -180,6 +196,10 @@ class StopProfile:
       return math.sqrt(self.v[-1] ** 2 + 2.0 * self.a_nom * (s - self.s[-1])), self.a_nom
     return float(np.interp(s, self.s, self.v)), float(np.interp(s, self.s, self.a))
 
+  def a_of_v(self, v: float) -> float:
+    """The profile's deceleration at speed v (the speed-scheduled law itself, independent of where the car is)."""
+    return float(np.interp(v, self.v, self.a)) if v <= self.v[-1] else self.a_nom
+
   def distance_to_stop(self, v: float) -> float:
     return float(np.interp(v, self.v, self.s)) if v <= self.v[-1] else self.s[-1] + (v ** 2 - self.v[-1] ** 2) / (2.0 * self.a_nom)
 
@@ -224,6 +244,7 @@ class StopGapGovernor:
     self.reapproach = False
     self.reapproach_braking = False
     self.s_min = 1e9
+    self.a_lead_f = 0.0
 
   def reset(self) -> None:
     self.engaged = False
@@ -235,9 +256,10 @@ class StopGapGovernor:
     self.reapproach = False
     self.reapproach_braking = False
     self.s_min = 1e9
+    self.a_lead_f = 0.0
 
   def update(self, allowed: bool, v_ego: float, lead_present: bool, d_rel: float, v_lead: float,
-             a_current: float) -> tuple[float, bool] | None:
+             a_current: float, a_lead: float = 0.0) -> tuple[float, bool] | None:
     """Returns (accel_target, should_stop), or None when the MPC should keep control."""
     s = d_rel - STOP_GAP
     lead_slow = lead_present and v_lead < CREEP_LEAD_V
@@ -247,6 +269,17 @@ class StopGapGovernor:
     if not allowed or not lead_slow or pull_away:
       self.reset()
       return None
+
+    # a lead still braking: aim at where it will stop, closing at ego's own speed (see LEAD_BRAKE_A_*)
+    if self.engaged:
+      self.a_lead_f += (float(a_lead) - self.a_lead_f) * min(self.dt / LEAD_A_TAU, 1.0)
+    else:
+      self.a_lead_f = float(a_lead)   # no filter lag on the profile fitted at engage
+    lead_brake = -self.a_lead_f
+    w = float(np.clip((lead_brake - LEAD_BRAKE_A_LO) / (LEAD_BRAKE_A_HI - LEAD_BRAKE_A_LO), 0.0, 1.0))
+    if w > 0.0 and v_lead > 0.0:
+      s += w * v_lead ** 2 / (2.0 * min(max(lead_brake, LEAD_BRAKE_A_LO), LEAD_BRAKE_A_MAX))
+      v_close = v_ego - (1.0 - w) * v_lead
 
     v_lim = V_ENGAGE + (DISENGAGE_MARGIN if self.engaged else 0.0)
     s_engage = min(v_ego ** 2 / (2.0 * A_ENGAGE) + S_ENGAGE_BASE, S_ENGAGE_MAX) + (DISENGAGE_MARGIN if self.engaged else 0.0)
@@ -260,6 +293,13 @@ class StopGapGovernor:
       self.a_nom = self.profile.a_nom if self.profile is not None else float(np.clip(v_close ** 2 / (2.0 * max(s, S_MIN)), A_NOM, A_NOM_MAX))
       self.a_prev = float(a_current)
       self.engaged = True
+    elif v_lead >= LEAD_STOPPED_V and self.profile is not None and not self.reapproach:
+      # the lead is still rolling: its stopping point (and so the closing speed and distance) keeps changing, so refit
+      # the profile to the latest geometry instead of correcting a stale one with the velocity loop (route 000000e5
+      # 13:25:59: a profile fixed while the lead still did 6 km/h asked A_NEG_MAX 45 m out once it had stopped)
+      prof = _fit_profile(v_close, s)
+      if prof is not None:
+        self.profile, self.a_nom = prof, prof.a_nom
 
     # re-approach: stood still behind a fully stopped lead with too much room left -> creep forward and stop again lightly
     still = v_ego < 0.05 and v_lead < LEAD_STOPPED_V
@@ -289,11 +329,22 @@ class StopGapGovernor:
       a = -A_PAST
     else:
       v_prof, a_ff = self.profile.at(s) if self.profile is not None else _profile_single(s, self.a_nom)
-      loop = (v_close - v_prof) / TAU_V   # pull onto the profile
+      if self.profile is not None:
+        # pull onto the profile only when it would land outside the band [STOP_WINDOW short, STOP_WINDOW_LONG long]
+        v_short = self.profile.at(max(s - STOP_WINDOW, 0.0))[0]   # slowest speed that still ends <= 0.5 m short
+        v_long = self.profile.at(s + STOP_WINDOW_LONG)[0]          # fastest speed that still ends no closer than allowed
+        loop = (max(v_close - v_long, 0.0) + min(v_close - v_short, 0.0)) / TAU_V
+        # feed-forward by SPEED, not by distance: inside the band the car simply follows the speed-scheduled law (the
+        # driver's template), so a car running a little behind the profile gets the lighter force of its own speed
+        # instead of the firm force the profile had planned for that distance (equal on the profile; continuous at
+        # the band edges)
+        a_ff = self.profile.a_of_v(v_close)
+      else:
+        loop = (v_close - v_prof) / TAU_V   # pull onto the profile
       if self.profile is not None and v_ego < V_FIRM_HOLD:
         # read the curve where the car will be once the PCM has responded, so what the car actually does in the
         # last metre is the tuned curve rather than the curve ~0.7 km/h behind it, and let the loop add only a little
-        _, a_ff = self.profile.at(max(s - v_close * DELIVERY_LEAD, 0.0))
+        a_ff = self.profile.a_of_v(max(v_close - a_ff * DELIVERY_LEAD, 0.0))
         loop = min(loop, EASING_LOOP_MAX)
       decel = a_ff + loop   # feed-forward profile decel + pull onto the profile
       # keep a small brake floor near the stop (v_ego < V_TAPER) so the car never fully releases and creeps off a

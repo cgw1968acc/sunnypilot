@@ -182,7 +182,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                     not sm['carState'].gasPressed)
     stop_gap_out = None
     if self.mpc.source == LongitudinalPlanSource.lead0:
-      stop_gap_out = self.stop_gap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, output_a_target_mpc)
+      stop_gap_out = self.stop_gap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, output_a_target_mpc,
+                                        a_lead=lead_one.aLeadK)
     else:
       self.stop_gap.reset()
     if stop_gap_out is not None:
