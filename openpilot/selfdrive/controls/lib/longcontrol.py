@@ -5,6 +5,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import end_decel, DELIVERY_LEAD
+import openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap as stop_gap_mod
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
@@ -153,12 +154,16 @@ class LongControl:
       output_accel = self.last_output_accel
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
-        if not CS.standstill and not self.stopped_once and a_target < STOPPING_FOLLOW_MIN and a_target > output_accel:
+        # below stop_gap.FINAL_V the driver's fixed final request replaces the rolling minimum (2026-10-01 night)
+        final = CS.vEgo < stop_gap_mod.FINAL_V
+        follow_min = stop_gap_mod.FINAL_REQUEST if final else STOPPING_FOLLOW_MIN
+        rolling_min = stop_gap_mod.FINAL_REQUEST if final else STOPPING_ROLLING_MIN
+        if not CS.standstill and not self.stopped_once and a_target <= follow_min and a_target > output_accel:
           # still rolling: keep easing with the plan's own end-of-stop curve (lighter only, rate-limited)
-          output_accel = min(a_target, STOPPING_ROLLING_MIN, output_accel + STOPPING_FOLLOW_RATE * DT_CTRL)
-        if not CS.standstill and not self.stopped_once and output_accel > STOPPING_ROLLING_MIN:
+          output_accel = min(a_target, rolling_min, output_accel + STOPPING_FOLLOW_RATE * DT_CTRL)
+        if not CS.standstill and not self.stopped_once and output_accel > rolling_min:
           # never so light that creep torque holds the car rolling; ease up to the minimum at the hold rate
-          output_accel = max(STOPPING_ROLLING_MIN, output_accel - STANDSTILL_HOLD_RATE * DT_CTRL)
+          output_accel = max(rolling_min, output_accel - STANDSTILL_HOLD_RATE * DT_CTRL)
         # TODO: can we just go straight to stopAccel?
         hold_delay = STANDSTILL_HOLD_DELAY_LEAD if has_lead else STANDSTILL_HOLD_DELAY_NO_LEAD
         if self.standstill_t >= hold_delay:

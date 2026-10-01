@@ -160,6 +160,27 @@ DELIVERY_LEAD = 0.25  # s
 # request must be allowed through (device campaign 2026-10-01: owning a 2.7 m/s^2 profile from 30 km/h with the lead
 # 17 m ahead ended in contact; letting the MPC through stopped 0.6 m short of it).
 GOVERNOR_OWN_A_NOM_MAX = 2.0  # m/s^2
+# Recovery after an urgent stop (C3X route 000000e6 2026-10-01 21:13:15, driver: "harder decelerations still brake in
+# two stages"): a stopped car appeared 47 m ahead at 50 km/h, no profile fitted, the MPC's -3.0 (IMU ~4) passed through
+# down to 4 km/h; the MPC aims ~6 m back, so the car was at 2.3 km/h 5.3 m from the lead, the brake came off, the
+# hybrid crept to 3.5 km/h and a second brake (~1.1) stopped it at 3.3 m. Once a stop from here fits a profile no
+# firmer than GOVERNOR_OWN_A_NOM_MAX (the urgency is over), the governor takes the stop back and eases the hard brake at
+# this rate (a smooth exit from the peak), so the car rolls on to the 3-4 m window in one motion.
+RECOVER_RELEASE_RATE = 1.0  # m/s^3
+# ... and while the MPC is still braking harder than the rest of the stop needs, ease it toward that need DURING the hard
+# braking (driver 2026-10-01 night: "during a hard stop the brake has to get gradually lighter so it merges smoothly into
+# the final stop"): the brake is capped at RECOVER_MARGIN x the constant deceleration that stops on the point from here,
+# eased at RECOVER_RELEASE_RATE. In a real emergency the need itself exceeds the MPC's request, so nothing is capped.
+RECOVER_MARGIN = 1.15
+RECOVER_S_MIN = 1.0  # m, not this close to the point (the terminal band owns the last metre)
+# Last 0-1 km/h (driver 2026-10-01 night: "make the final stop lighter again; try a fixed -0.021 for the last 0-1 km/h").
+# Below FINAL_V the request is FINAL_REQUEST unless stopping on the point needs more (v^2 / 2s). NOTE: the hybrid's
+# creep torque eats ~0.2 of a request below 2.5 km/h, so this delivers a slight push rather than a brake; longcontrol's
+# creep response and the standstill hold still stop the car. Set FINAL_V = 0 to return to the terminal band.
+FINAL_V = 1.0 / 3.6     # m/s
+FINAL_REQUEST = -0.021  # m/s^2
+# Creep closer while still rolling (same stop): hold the speed (cancel the creep torque) instead of re-accelerating.
+CRAWL_HOLD_V = 0.4  # m/s (1.4 km/h): at or above this the creep-closer request only cancels the creep torque
 # In the easing phase the velocity loop may add at most this much on top of the curve. Evening drive 2026-09-30 (route
 # 000000da): on compressed stops (lead 3.0-3.1 m at rest, a_firm at the 2.0 cap) the loop pushed the request to -1.08
 # at 1 km/h and the car delivered -1.74 with a -1.60 jolt, while the tuned curve says 0.38. Below 3 km/h the kinetic
@@ -245,6 +266,7 @@ class StopGapGovernor:
     self.reapproach_braking = False
     self.s_min = 1e9
     self.a_lead_f = 0.0
+    self.recovering = False
 
   def reset(self) -> None:
     self.engaged = False
@@ -257,6 +279,7 @@ class StopGapGovernor:
     self.reapproach_braking = False
     self.s_min = 1e9
     self.a_lead_f = 0.0
+    self.recovering = False
 
   def update(self, allowed: bool, v_ego: float, lead_present: bool, d_rel: float, v_lead: float,
              a_current: float, a_lead: float = 0.0) -> tuple[float, bool] | None:
@@ -300,6 +323,13 @@ class StopGapGovernor:
       prof = _fit_profile(v_close, s)
       if prof is not None:
         self.profile, self.a_nom = prof, prof.a_nom
+    elif (v_lead < LEAD_STOPPED_V and not self.reapproach and not self.recovering and
+          (self.profile is None or self.a_nom > GOVERNOR_OWN_A_NOM_MAX)):
+      # urgent stop that the MPC has been braking: take it back once the rest of the stop fits (see RECOVER_*)
+      prof = _fit_profile(v_close, s)
+      if prof is not None and prof.a_nom <= GOVERNOR_OWN_A_NOM_MAX:
+        self.profile, self.a_nom = prof, prof.a_nom
+        self.recovering = True
 
     # re-approach: stood still behind a fully stopped lead with too much room left -> creep forward and stop again lightly
     still = v_ego < 0.05 and v_lead < LEAD_STOPPED_V
@@ -362,7 +392,14 @@ class StopGapGovernor:
         else:
           lo = max(lo, float(np.clip(need, TERM_A_LO, TERM_A_HI)) + CREEP_COMP)
       decel = float(np.clip(decel, lo, -A_NEG_MAX))
-      a = REAPPROACH_ACCEL if creep_closer else -decel
+      if v_ego < FINAL_V and not creep_closer and s > 0.0:
+        # the fixed final request, firmer only when the remaining distance needs it
+        decel = float(np.clip(max(-FINAL_REQUEST, v_close ** 2 / (2.0 * max(s, 0.2))), 0.0, -A_NEG_MAX))
+      if creep_closer:
+        # at walking pace keep rolling at the same speed (cancel the creep torque); only gain speed from (nearly) still
+        a = -CREEP_COMP if v_close >= CRAWL_HOLD_V else REAPPROACH_ACCEL
+      else:
+        a = -decel
 
     # Never brake less than the MPC - except when the governor has a fitted profile behind a FULLY stopped lead: then it
     # owns the brake for the whole episode. The profile lands on the point by construction (a_nom <= A_NOM_MAX, clip at
@@ -378,8 +415,15 @@ class StopGapGovernor:
       # ... but it must never brake LESS than the MPC. The clip used to sit after this min(), so a lead braking hard
       # (2026-09-27 21:05: MPC -2.8 at 35 km/h, lead 27 m closing 7 m/s) was capped to -2.0 and the stop ended 2.0 m
       # behind the lead. The MPC's harder request now passes through untouched.
+      a_gov = a
       a = min(a, float(a_current))
-    release = RELEASE_RATE_APPROACH if v_ego > V_FIRM_HOLD else RELEASE_RATE
+      if v_lead < LEAD_STOPPED_V and s > RECOVER_S_MIN and not creep_closer:
+        # ... except behind a FULLY stopped lead, once the MPC brakes harder than the rest of the stop needs (RECOVER_*)
+        need = RECOVER_MARGIN * v_close ** 2 / (2.0 * s)
+        if need <= A_NOM_MAX and a < -need:
+          a = max(a, min(a_gov, -need))
+          self.recovering = True
+    release = (RECOVER_RELEASE_RATE if self.recovering else RELEASE_RATE_APPROACH) if v_ego > V_FIRM_HOLD else RELEASE_RATE
     a = min(a, self.a_prev + release * self.dt)   # never let the brake go with a jolt (and barely at all while approaching)
     a = float(min(a, REAPPROACH_ACCEL if creep_closer else 0.0))
     self.a_prev = a

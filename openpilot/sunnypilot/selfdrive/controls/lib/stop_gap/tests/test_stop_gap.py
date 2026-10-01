@@ -136,9 +136,10 @@ class TestStopGapGovernor(unittest.TestCase):
 
   def test_release_from_the_mpc_is_rate_limited(self):
     gov = StopGapGovernor(DT)
-    gov.update(True, 0.4, True, STOP_GAP + 1.2, 0.0, -0.9)     # within REAPPROACH_MIN: no creeping closer
+    a0, _ = gov.update(True, 0.4, True, STOP_GAP + 1.2, 0.0, -0.9)     # within REAPPROACH_MIN: no creeping closer
+    self.assertAlmostEqual(a0, -0.9 + RELEASE_RATE * DT, places=6)     # already easing toward the need (RECOVER_*)
     a1, _ = gov.update(True, 0.4, True, STOP_GAP + 1.2, 0.0, -0.1)
-    self.assertAlmostEqual(a1, -0.9 + RELEASE_RATE * DT, places=6)
+    self.assertAlmostEqual(a1, a0 + RELEASE_RATE * DT, places=6)
 
   def test_creeps_closer_without_stopping_when_far_from_the_point(self):
     from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import REAPPROACH_ACCEL

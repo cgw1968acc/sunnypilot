@@ -145,7 +145,7 @@ class TestTerminalStop(OpenpilotTestCase):
     LoC = LongControl(CP, custom.CarParamsSP.new_message())
     LoC.long_control_state = LongCtrlState.stopping
     LoC.last_output_accel = -0.80
-    rolling = car.CarState.new_message(vEgo=0.2, standstill=False)
+    rolling = car.CarState.new_message(vEgo=0.35, standstill=False)   # 1.3 km/h: above stop_gap.FINAL_V
     for _ in range(30):
       a = float(LoC.update(True, rolling, -0.50, True, (-3.5, 1.5), has_lead=True))   # plan eases to -0.50
     assert abs(a + 0.50) < 1e-6, a                                                   # followed (lighter)
@@ -155,6 +155,19 @@ class TestTerminalStop(OpenpilotTestCase):
       a = float(LoC.update(True, rolling, -0.20, True, (-3.5, 1.5), has_lead=True))   # plan lighter than the rolling minimum
     assert abs(a - STOPPING_ROLLING_MIN) < 1e-6, a                                   # never below it while rolling (creep)
     assert STOPPING_FOLLOW_MIN < 0.0
+
+  def test_final_request_below_1kph(self):
+    # driver 2026-10-01 night: the last 0-1 km/h uses the fixed stop_gap.FINAL_REQUEST (-0.021) as the rolling minimum
+    from opendbc.car.structs import car
+    from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import FINAL_REQUEST, FINAL_V
+    CP = car.CarParams.new_message(stopAccel=-1.0)
+    LoC = LongControl(CP, custom.CarParamsSP.new_message())
+    LoC.long_control_state = LongCtrlState.stopping
+    LoC.last_output_accel = -0.42
+    rolling = car.CarState.new_message(vEgo=0.8 * FINAL_V, standstill=False)
+    for _ in range(50):
+      a = float(LoC.update(True, rolling, FINAL_REQUEST, True, (-3.5, 1.5), has_lead=True))
+    assert abs(a - FINAL_REQUEST) < 1e-6, a
 
   def test_every_stop_tapers_in_the_last_metre_whatever_the_planner_asks(self):
     from opendbc.car.structs import car

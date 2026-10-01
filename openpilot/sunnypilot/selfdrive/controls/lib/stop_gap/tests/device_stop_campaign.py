@@ -19,6 +19,7 @@ DT_MDL, DT_CTRL = 0.05, 0.01
 RELEASE_J = 4.0
 LAG = 0.3        # s, calibrated from 27 real stops (delivered ~= request 0.25-0.35 s later)
 CREEP = 0.06     # m/s^2 hybrid creep when the delivered brake is lighter
+HARD_GAIN = 1.0  # delivered/requested above 2.5 m/s^2 (route 000000e6 21:13:16: -3.0 requested, IMU ~4: ~1.3)
 class Lead:
   def __init__(s, d, v, a, present=True): s.dRel, s.vLead, s.aLeadK, s.aLeadTau, s.status, s.present, s.modelProb, s.aRel = d, v, a, 1.5, present, present, 1.0, 0.0
 class RS:
@@ -53,7 +54,8 @@ def run(v0, lead_x0, lead_v0, lead_decel, lead_start_t=0.0, see_dist=250.0, secs
       cmd = float(np.clip(a_out, cmd + step, cmd + (RELEASE_J if cmd < 0 else 4.0) * 0.03))
       if first_cmd_t is None and cmd < -0.05: first_cmd_t = t
     creep = float(np.interp(v, [0.0, 0.7, 2.0], [0.20, 0.20, 0.0]))   # measured: request - delivered ~0.2 below 2.5 km/h
-    delivered = cmd + creep
+    over = 1.0 + (HARD_GAIN - 1.0) * float(np.clip((-cmd - 1.5) / 1.0, 0.0, 1.0))   # real PCM over-delivers hard requests
+    delivered = cmd * over + creep
     a += (delivered - a) * DT_CTRL / LAG
     v = max(v + a * DT_CTRL, 0.0)
     if v == 0.0 and a > 0 and cmd + creep <= 0.0: a = 0.0
@@ -94,9 +96,10 @@ def metrics(L):
     t90 = float((np.argmax(dec[b0:i] >= 0.9 * pk)) * DT_CTRL)
   else: on01, t90 = 0.0, 0.0
   jerk = np.diff(a) / DT_CTRL
+  vv = v[:i]; reacc = float(np.max(vv - np.minimum.accumulate(vv))) * 3.6 if len(vv) else 0.0   # km/h regained after slowing
   return dict(gap=gap[i], second=again, peak=float(dec[:i].max()), early=early_peak, late=late_peak, bump=bump, rms3=rms, last=last02,
               d3=float(np.interp(3.0, kmh[:i][::-1], dec[:i][::-1])), d1=float(np.interp(1.0, kmh[:i][::-1], dec[:i][::-1])),
-              d05=float(np.interp(0.5, kmh[:i][::-1], dec[:i][::-1])), maxjerk=float(np.abs(jerk[:i]).max()), on01=on01, t90=t90, mingap=float(gap[:i].min()))
+              d05=float(np.interp(0.5, kmh[:i][::-1], dec[:i][::-1])), maxjerk=float(np.abs(jerk[:i]).max()), reacc=reacc, on01=on01, t90=t90, mingap=float(gap[:i].min()))
 
 import openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap as sg
 VARIANT = sys.argv[1] if len(sys.argv) > 1 else "current"
@@ -109,11 +112,13 @@ if VARIANT != "current":
     if k == "ONSET_FAST" and float(val) == 2:
       bo.ONSET_T1_V = [0.1, 0.1]; bo.ONSET_T3_V = [0.5, 0.5]; bo.ONSET_J_DOWN = [0.5, 0.5, 4.0]
     if k == "RELEASE_J": globals()["RELEASE_J"] = float(val)
-  for kv in [x for x in VARIANT.split(",") if not (x.startswith("ONSET_FAST") or x.startswith("RELEASE_J"))]:
+  for kv in [x for x in VARIANT.split(",") if x.startswith("HARD_GAIN")]:
+    globals()["HARD_GAIN"] = float(kv.split("=")[1])
+  for kv in [x for x in VARIANT.split(",") if not (x.startswith("ONSET_FAST") or x.startswith("RELEASE_J") or x.startswith("HARD_GAIN"))]:
     k, val = kv.split("=")
     setattr(lcm if k.startswith("END_TAPER") else (bo if (k.startswith("URGENT") or k.startswith("HARD_")) else sg), k, float(val))
 print("variant:", VARIANT)
-print(f"{'scenario':46s} gap  mingap 2nd  peak  t90  d@0.1s  d1   d0.5 last0.2")
+print(f"{'scenario':46s} gap  mingap 2nd  peak  t90  d@0.1s  d1   d0.5 last0.2 reacc")
 rows=[]
 for V in ((20, 30, 40, 48)):
   v0 = V / 3.6
@@ -129,6 +134,10 @@ for V in ((20, 30, 40, 48)):
 for v_kmh, d0, vl_kmh, dec in ((40, 55, 9, 2.4), (52, 80, 45, 2.8), (45, 60, 30, 2.5), (35, 40, 20, 3.0)):
   L = run(v_kmh / 3.6, d0, vl_kmh / 3.6, dec, lead_start_t=0.0); r = metrics(L)
   rows.append((f"{v_kmh} km/h, lead {d0} m at {vl_kmh} km/h brakes -{dec}", r))
+# a stopped car appears late (route 000000e6 21:13:15: 50 km/h, 47 m) - urgent first, then the stop must still be one motion
+for v_kmh, d0 in ((50, 47), (45, 36), (35, 24), (30, 17)):
+  L = run(v_kmh / 3.6, d0 + 1e-3, 0.0, 0.0, see_dist=d0 + 0.5); r = metrics(L)
+  rows.append((f"{v_kmh} km/h, stopped car appears at {d0} m", r))
 for d_start in (6.6, 5.0, 4.2):
   L = run(0.0, d_start, 0.0, 0.0, see_dist=d_start + 0.5, secs=20); t_, v_, a_, cmd_, gap_ = L.T
   moved = v_.max() > 0.05
@@ -137,4 +146,4 @@ for d_start in (6.6, 5.0, 4.2):
         (f"{-a_[max(0, np.where(v_ > 0.01)[0][-1]-30):np.where(v_ > 0.01)[0][-1]].mean():.2f}" if moved else "-"))
 for name, r in rows:
   if r is None: print(f"{name:46s} did not stop"); continue
-  print(f"{name:46s} {r['gap']:4.1f} {r['mingap']:5.1f}  {'YES' if r['second'] else ' no'} {r['peak']:4.2f} {r['t90']:4.2f}  {r['on01']:5.2f}  {r['d1']:4.2f} {r['d05']:4.2f} {r['last']:4.2f}")
+  print(f"{name:46s} {r['gap']:4.1f} {r['mingap']:5.1f}  {'YES' if r['second'] else ' no'} {r['peak']:4.2f} {r['t90']:4.2f}  {r['on01']:5.2f}  {r['d1']:4.2f} {r['d05']:4.2f} {r['last']:4.2f} {r['reacc']:4.1f}")
