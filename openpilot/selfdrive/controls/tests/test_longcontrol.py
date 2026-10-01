@@ -1,7 +1,7 @@
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import custom
 from openpilot.selfdrive.controls.lib.drive_helpers import STOPPING_SPEED, should_stop
-from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, STOPPING_EXIT_DEBOUNCE, STOPPING_FOLLOW_MIN, END_TAPER_V_START, end_taper_decel, CREEP_RATE_BASE, LongControl, \
+from openpilot.selfdrive.controls.lib.longcontrol import STOPPING_DECEL_RATE, STANDSTILL_HOLD_RATE, STANDSTILL_HOLD_DELAY_LEAD, STANDSTILL_HOLD_DELAY_NO_LEAD, STOPPING_FREEZE_MAX, STOPPING_EXIT_DEBOUNCE, STOPPING_FOLLOW_MIN, STOPPING_ROLLING_MIN, END_TAPER_V_START, end_taper_decel, CREEP_RATE_BASE, LongControl, \
   LongCtrlState, long_control_state_trans
 
 
@@ -73,17 +73,17 @@ class TestTerminalStop(OpenpilotTestCase):
         moving = car.CarState.new_message(vEgo=0.2, standstill=False)
         still = car.CarState.new_message(vEgo=0.0, standstill=True)
         LoC.long_control_state = LongCtrlState.stopping
-        LoC.last_output_accel = -0.3
+        LoC.last_output_accel = -0.5
         # 0.5 s of stopping state before the wheels read zero: nothing changes
         for _ in range(int(0.5 / DT_CTRL)):
           a = float(LoC.update(True, moving, 0.0, True, (-3.5, 1.5), has_lead=has_lead))
-        assert a == -0.3
-        a = [-0.3]
+        assert a == -0.5
+        a = [-0.5]
         for _ in range(int(2.5 / DT_CTRL)):
           a.append(float(LoC.update(True, still, 0.0, True, (-3.5, 1.5), has_lead=has_lead)))
         n_delay = int(delay / DT_CTRL)
-        assert a[n_delay - 1] == -0.3                              # still frozen at the end of the wait
-        assert a[n_delay + 5] < -0.3                               # and falling right after it
+        assert a[n_delay - 1] == -0.5                              # still frozen at the end of the wait
+        assert a[n_delay + 5] < -0.5                               # and falling right after it
         late = (a[n_delay] - a[n_delay + 50]) / (50 * DT_CTRL)
         assert abs(late - STANDSTILL_HOLD_RATE) < 0.05, late      # fast once the delay has passed
     assert STANDSTILL_HOLD_DELAY_NO_LEAD > STANDSTILL_HOLD_DELAY_LEAD
@@ -94,14 +94,14 @@ class TestTerminalStop(OpenpilotTestCase):
     CP = car.CarParams.new_message(stopAccel=-1.0)
     LoC = LongControl(CP, custom.CarParamsSP.new_message())
     LoC.long_control_state = LongCtrlState.stopping
-    LoC.last_output_accel = -0.1
+    LoC.last_output_accel = -0.5
     creeping = car.CarState.new_message(vEgo=0.15, standstill=False)
     for _ in range(int(STOPPING_FREEZE_MAX / DT_CTRL) - 1):
       a = float(LoC.update(True, creeping, 0.0, True, (-3.5, 1.5)))
-    assert a == -0.1                                           # frozen for the whole grace period
+    assert a == -0.5                                           # frozen for the whole grace period
     for _ in range(int(1.0 / DT_CTRL)):
       a = float(LoC.update(True, creeping, 0.0, True, (-3.5, 1.5)))
-    assert abs((-0.1 - a) - STOPPING_DECEL_RATE) < 0.02        # then the upstream ramp
+    assert abs((-0.5 - a) - STOPPING_DECEL_RATE) < 0.02        # then the upstream ramp
 
   def test_standstill_hold_timer_resets_when_the_car_moves(self):
     from opendbc.car.structs import car
@@ -144,16 +144,16 @@ class TestTerminalStop(OpenpilotTestCase):
     CP = car.CarParams.new_message(stopAccel=-1.0)
     LoC = LongControl(CP, custom.CarParamsSP.new_message())
     LoC.long_control_state = LongCtrlState.stopping
-    LoC.last_output_accel = -0.40
+    LoC.last_output_accel = -0.80
     rolling = car.CarState.new_message(vEgo=0.2, standstill=False)
     for _ in range(30):
-      a = float(LoC.update(True, rolling, -0.20, True, (-3.5, 1.5), has_lead=True))   # plan eases to -0.20
-    assert abs(a + 0.20) < 1e-6, a                                                   # followed (lighter)
-    a = float(LoC.update(True, rolling, -0.60, True, (-3.5, 1.5), has_lead=True))     # plan firmer: not followed
-    assert abs(a + 0.20) < 1e-6, a
-    for _ in range(10):
-      a = float(LoC.update(True, rolling, 0.0, True, (-3.5, 1.5), has_lead=True))     # plan at 0 (flicker): not followed
-    assert abs(a + 0.20) < 1e-6, a
+      a = float(LoC.update(True, rolling, -0.50, True, (-3.5, 1.5), has_lead=True))   # plan eases to -0.50
+    assert abs(a + 0.50) < 1e-6, a                                                   # followed (lighter)
+    a = float(LoC.update(True, rolling, -0.90, True, (-3.5, 1.5), has_lead=True))     # plan firmer: not followed
+    assert abs(a + 0.50) < 1e-6, a
+    for _ in range(30):
+      a = float(LoC.update(True, rolling, -0.20, True, (-3.5, 1.5), has_lead=True))   # plan lighter than the rolling minimum
+    assert abs(a - STOPPING_ROLLING_MIN) < 1e-6, a                                   # never below it while rolling (creep)
     assert STOPPING_FOLLOW_MIN < 0.0
 
   def test_every_stop_tapers_in_the_last_metre_whatever_the_planner_asks(self):

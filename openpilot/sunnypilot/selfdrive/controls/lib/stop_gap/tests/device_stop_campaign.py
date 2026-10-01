@@ -3,6 +3,7 @@
 # THE DEVICE, offroad:  /usr/local/venv/bin/python <this file> [CONST=value,...]  (stop_gap / END_TAPER_* overrides)
 # The brake onset shaper runs between LongControl and the plant at 33 Hz like the carcontroller. Extra overrides:
 # ONSET_FAST=1|2 (onset schedules), RELEASE_J=<m/s^3> (brake release rate).
+# Plant creep torque is the measured ~0.2 m/s^2 below 2.5 km/h; also runs re-approach cases (stopped short behind a stopped lead).
 import sys, types, numpy as np
 sys.path.insert(0, "/data/openpilot")
 from openpilot.cereal import log, custom
@@ -51,10 +52,11 @@ def run(v0, lead_x0, lead_v0, lead_decel, lead_start_t=0.0, see_dist=250.0, secs
       step = shaper.down_step(a_out, cmd, bypass=False, v_ego=v, urgent=shaper.is_urgent(a_out, False))
       cmd = float(np.clip(a_out, cmd + step, cmd + (RELEASE_J if cmd < 0 else 4.0) * 0.03))
       if first_cmd_t is None and cmd < -0.05: first_cmd_t = t
-    delivered = cmd + (CREEP if cmd > -CREEP and v < 2.0 else 0.0)
+    creep = float(np.interp(v, [0.0, 0.7, 2.0], [0.20, 0.20, 0.0]))   # measured: request - delivered ~0.2 below 2.5 km/h
+    delivered = cmd + creep
     a += (delivered - a) * DT_CTRL / LAG
     v = max(v + a * DT_CTRL, 0.0)
-    if v == 0.0 and a > 0 and a_out < 0: a = 0.0
+    if v == 0.0 and a > 0 and cmd + creep <= 0.0: a = 0.0
     x += v * DT_CTRL
     if k % 5 == 0:
       vl = max(vl + (-lead_decel if (t >= lead_start_t and vl > 0) else 0.0) * DT_MDL, 0.0)
@@ -122,6 +124,12 @@ for V in ((20, 30, 40, 48)):
   for dec in (1.0, 2.0):
     L = run(v0, d, v0, dec, lead_start_t=2.0); r = metrics(L)
     rows.append((f"{V} km/h following, lead brakes -{dec:.0f} to stop", r))
+for d_start in (6.6, 5.0, 4.2):
+  L = run(0.0, d_start, 0.0, 0.0, see_dist=d_start + 0.5, secs=20); t_, v_, a_, cmd_, gap_ = L.T
+  moved = v_.max() > 0.05
+  print(f"stopped {d_start:.1f} m behind a stopped lead: re-approached={moved}, final gap {gap_[-1]:.2f} m, top speed {v_.max()*3.6:.1f} km/h, "
+        f"max accel {a_.max():.2f}, max decel {-a_.min():.2f}, decel in the last 0.3 s of motion " +
+        (f"{-a_[max(0, np.where(v_ > 0.01)[0][-1]-30):np.where(v_ > 0.01)[0][-1]].mean():.2f}" if moved else "-"))
 for name, r in rows:
   if r is None: print(f"{name:46s} did not stop"); continue
   print(f"{name:46s} {r['gap']:4.1f} {r['mingap']:5.1f}  {'YES' if r['second'] else ' no'} {r['peak']:4.2f} {r['t90']:4.2f}  {r['on01']:5.2f}  {r['d1']:4.2f} {r['d05']:4.2f} {r['last']:4.2f}")

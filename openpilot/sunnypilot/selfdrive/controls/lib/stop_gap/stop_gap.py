@@ -79,7 +79,10 @@ A_FIRM_MAX = 2.0  # m/s^2 (1.6 -> 2.0, 2026-09-27 21:05: a fast approach reaches
 # knee the driver brakes at a steady level (2.1-2.4 from 21 down to 9.6 km/h) - front-loaded, not a firm hump near the
 # end. The brake pedal itself was held CONSTANT (760 N) through the last 0.8 s; the fade is the car's.
 END_TAU = 0.65         # s
-END_FLOOR = 0.15       # m/s^2, least deceleration kept to the stop (the template ended at 0.19-0.38 delivered)
+END_FLOOR = 0.52       # m/s^2 REQUEST kept to the stop: the lightest perfect stop (2026-10-01 11:43:58, pedal held at 800 N)
+                       # delivered 0.26-0.38 in its last second, and below 2.5 km/h the hybrid's creep torque eats ~0.2 of
+                       # a request (27 stops: request - delivered median +0.15..+0.22 at 0.4-2.5 km/h; 11:37:20 glided at
+                       # 1.6 km/h on -0.35). 0.15 let the car glide and brake a second time.
 
 
 def end_decel(v: float) -> float:
@@ -92,7 +95,21 @@ A_2KPH = end_decel(2.0 / 3.6)  # 0.85
 A_1KPH = end_decel(1.0 / 3.6)  # 0.43
 A_0KPH = END_FLOOR             # 0.15
 V_END = 0.7  # m/s (2.5 km/h): below this the end floor applies
-A_END_FLOOR = 0.15  # m/s^2: the very end always brakes at least this much - arriving slow must not turn into a crawl
+A_END_FLOOR = 0.15  # m/s^2: (superseded below 2.5 km/h by the terminal band)
+# Terminal band (driver 2026-10-01: "take the lightest final force of the perfect stops and hold it; the car then stops
+# smoothly by itself, and small up/down adjustments of that light force control the distance"). Below V_END the
+# delivered deceleration target is the kinematic need to stop on the point, kept inside a narrow light band, and the
+# request adds the creep torque the car loses there.
+TERM_A_LO = 0.22   # m/s^2 delivered
+TERM_A_HI = 0.45   # m/s^2 delivered
+CREEP_COMP = 0.20  # m/s^2 added to the request below V_END
+# Re-approach (driver's four-bookmark example 2026-10-01 11:45:37: after stopping 5.7 m short he let the car creep to
+# ~2.6 km/h with the brake partly released, then held ~0.35 m/s^2 to stop at 3.1 m). Only behind a fully stopped,
+# steadily tracked lead, when the car has stood still for REAPPROACH_WAIT with more than REAPPROACH_MIN of room left.
+REAPPROACH_MIN = 1.5   # m beyond the stop point
+REAPPROACH_WAIT = 1.0  # s stopped (and the room steady) before creeping forward
+REAPPROACH_V = 0.7     # m/s (2.5 km/h) most it creeps
+REAPPROACH_ACCEL = 0.1   # m/s^2 request while creeping up to speed (+ ~0.2 creep torque = ~0.3, as in the example)
                     # (keep it below A_1KPH / A_0KPH so the curve above, not this floor, decides the feel)
 PROFILE_DV = 0.02  # m/s, integration step for the distance table
 TAU_V = 0.6  # s, velocity-loop time constant that pulls ego onto the profile
@@ -202,6 +219,9 @@ class StopGapGovernor:
     self.a_nom = A_NOM
     self.profile: StopProfile | None = None
     self.pull_away_t = 0.0
+    self.stopped_t = 0.0
+    self.reapproach = False
+    self.s_min = 1e9
 
   def reset(self) -> None:
     self.engaged = False
@@ -209,6 +229,9 @@ class StopGapGovernor:
     self.a_nom = A_NOM
     self.profile: StopProfile | None = None
     self.pull_away_t = 0.0
+    self.stopped_t = 0.0
+    self.reapproach = False
+    self.s_min = 1e9
 
   def update(self, allowed: bool, v_ego: float, lead_present: bool, d_rel: float, v_lead: float,
              a_current: float) -> tuple[float, bool] | None:
@@ -235,6 +258,27 @@ class StopGapGovernor:
       self.a_prev = float(a_current)
       self.engaged = True
 
+    # re-approach: stood still behind a fully stopped lead with too much room left -> creep forward and stop again lightly
+    still = v_ego < 0.05 and v_lead < LEAD_STOPPED_V
+    self.stopped_t = self.stopped_t + self.dt if still else 0.0
+    self.s_min = min(self.s_min, s) if still else 1e9
+    if (not self.reapproach and self.stopped_t >= REAPPROACH_WAIT and s > REAPPROACH_MIN and
+        abs(s - self.s_min) < 0.3):
+      self.reapproach = True
+    if self.reapproach:
+      v_cap = min(REAPPROACH_V, float(np.sqrt(2.0 * TERM_A_HI * max(s, 0.0))))
+      if s <= 0.3 or v_lead >= LEAD_STOPPED_V:
+        self.reapproach = False
+      elif v_ego < 0.8 * v_cap and (v_ego < 0.1 or self.a_prev >= 0.0):
+        self.a_prev = REAPPROACH_ACCEL
+        return REAPPROACH_ACCEL, False          # creep forward (brake released) up to v_cap
+      else:
+        need = v_close ** 2 / (2.0 * max(s, 0.2))
+        a = -(float(np.clip(need, TERM_A_LO, TERM_A_HI)) + CREEP_COMP)
+        a = max(a, self.a_prev - 1.0 * self.dt)  # ease the light brake in
+        self.a_prev = a
+        return a, v_ego < V_STOP_CLAMP and s < 0.6
+
     if s <= 0.0:
       a = -A_PAST
     else:
@@ -249,8 +293,10 @@ class StopGapGovernor:
       # keep a small brake floor near the stop (v_ego < V_TAPER) so the car never fully releases and creeps off a
       # dead stop; above that the profile can still ease to zero. The firm standstill clamp (stopAccel) does the hold.
       lo = A_CREEP_FLOOR if v_ego < V_TAPER else 0.0
-      if self.profile is not None and v_ego < V_END:
-        lo = max(lo, A_END_FLOOR)   # the very end always brakes: arriving slow must not turn into a crawl
+      if v_ego < V_END:
+        # terminal band: the light final force, nudged up or down to stop on the point, plus the creep the car loses
+        need = v_close ** 2 / (2.0 * max(s, 0.2))
+        lo = max(lo, float(np.clip(need, TERM_A_LO, TERM_A_HI)) + CREEP_COMP)
       decel = float(np.clip(decel, lo, -A_NEG_MAX))
       a = -decel
 
