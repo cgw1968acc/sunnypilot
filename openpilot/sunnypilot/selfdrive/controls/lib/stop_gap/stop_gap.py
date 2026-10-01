@@ -178,7 +178,7 @@ RECOVER_S_MIN = 1.0  # m, not this close to the point (the terminal band owns th
 # creep torque eats ~0.2 of a request below 2.5 km/h, so this delivers a slight push rather than a brake; longcontrol's
 # creep response and the standstill hold still stop the car. Set FINAL_V = 0 to return to the terminal band.
 FINAL_V = 1.0 / 3.6     # m/s
-FINAL_REQUEST = -0.021  # m/s^2
+FINAL_REQUEST = -0.026  # m/s^2 (driver 2026-10-01: -0.021 crept in the campaign -> -0.026)
 # Creep closer while still rolling (same stop): hold the speed (cancel the creep torque) instead of re-accelerating.
 CRAWL_HOLD_V = 0.4  # m/s (1.4 km/h): at or above this the creep-closer request only cancels the creep torque
 # In the easing phase the velocity loop may add at most this much on top of the curve. Evening drive 2026-09-30 (route
