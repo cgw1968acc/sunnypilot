@@ -136,9 +136,27 @@ class TestStopGapGovernor(unittest.TestCase):
 
   def test_release_from_the_mpc_is_rate_limited(self):
     gov = StopGapGovernor(DT)
-    gov.update(True, 0.4, True, STOP_GAP + 2.5, 0.0, -0.9)
-    a1, _ = gov.update(True, 0.4, True, STOP_GAP + 2.5, 0.0, -0.1)
+    gov.update(True, 0.4, True, STOP_GAP + 1.2, 0.0, -0.9)     # within REAPPROACH_MIN: no creeping closer
+    a1, _ = gov.update(True, 0.4, True, STOP_GAP + 1.2, 0.0, -0.1)
     self.assertAlmostEqual(a1, -0.9 + RELEASE_RATE * DT, places=6)
+
+  def test_creeps_closer_without_stopping_when_far_from_the_point(self):
+    from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import REAPPROACH_ACCEL
+    gov = StopGapGovernor(DT)
+    out = None
+    for _ in range(20):
+      out = gov.update(True, 0.3, True, STOP_GAP + 3.0, 0.0, -0.4)    # 1.1 km/h, 3 m of room, lead stopped
+    a, stop = out
+    self.assertAlmostEqual(a, REAPPROACH_ACCEL, places=6)
+    self.assertFalse(stop)
+    gov = StopGapGovernor(DT)
+    for _ in range(20):
+      a, stop = gov.update(True, 0.3, True, STOP_GAP + 1.0, 0.0, -0.4)   # only 1 m of room: keep braking
+    self.assertLess(a, 0.0)
+    gov = StopGapGovernor(DT)
+    for _ in range(20):
+      out = gov.update(True, 0.3, True, STOP_GAP + 3.0, 0.5, -0.4)       # lead still rolling: never creep closer
+    self.assertTrue(out is None or out[0] <= 0.0)
 
   def test_engages_earlier_at_higher_speed(self):
     gov = StopGapGovernor(DT)

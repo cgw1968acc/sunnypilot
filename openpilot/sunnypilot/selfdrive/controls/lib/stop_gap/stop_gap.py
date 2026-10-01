@@ -103,8 +103,9 @@ A_END_FLOOR = 0.15  # m/s^2: (superseded below 2.5 km/h by the terminal band)
 TERM_A_LO = 0.22   # m/s^2 delivered
 TERM_A_HI = 0.45   # m/s^2 delivered
 CREEP_COMP = 0.20  # m/s^2 added to the request below V_END
-# Re-approach (driver's four-bookmark example 2026-10-01 11:45:37: after stopping 5.7 m short he let the car creep to
-# ~2.6 km/h with the brake partly released, then held ~0.35 m/s^2 to stop at 3.1 m). Only behind a fully stopped,
+# Re-approach (driver's four-bookmark example 2026-10-01 11:45:37: slowed to ~0.6 km/h 5.7 m short - NOT a stop, the
+# wheel sensors only read 0 below ~0.5 km/h - let the car creep to ~2.6 km/h with the brake partly released, then held
+# ~0.35 m/s^2 to stop at 3.1 m). The rolling case is handled in the terminal band; the case below covers a real stop. Only behind a fully stopped,
 # steadily tracked lead, when the car has stood still for REAPPROACH_WAIT with more than REAPPROACH_MIN of room left.
 REAPPROACH_MIN = 1.5   # m beyond the stop point
 REAPPROACH_WAIT = 1.0  # s stopped (and the room steady) before creeping forward
@@ -221,6 +222,7 @@ class StopGapGovernor:
     self.pull_away_t = 0.0
     self.stopped_t = 0.0
     self.reapproach = False
+    self.reapproach_braking = False
     self.s_min = 1e9
 
   def reset(self) -> None:
@@ -231,6 +233,7 @@ class StopGapGovernor:
     self.pull_away_t = 0.0
     self.stopped_t = 0.0
     self.reapproach = False
+    self.reapproach_braking = False
     self.s_min = 1e9
 
   def update(self, allowed: bool, v_ego: float, lead_present: bool, d_rel: float, v_lead: float,
@@ -267,18 +270,21 @@ class StopGapGovernor:
       self.reapproach = True
     if self.reapproach:
       v_cap = min(REAPPROACH_V, float(np.sqrt(2.0 * TERM_A_HI * max(s, 0.0))))
-      if s <= 0.3 or v_lead >= LEAD_STOPPED_V:
+      if s <= 0.3 or v_lead >= LEAD_STOPPED_V or (self.reapproach_braking and v_ego < 0.05):
         self.reapproach = False
-      elif v_ego < 0.8 * v_cap and (v_ego < 0.1 or self.a_prev >= 0.0):
+        self.reapproach_braking = False
+      elif not self.reapproach_braking and v_ego < 0.8 * v_cap:
         self.a_prev = REAPPROACH_ACCEL
         return REAPPROACH_ACCEL, False          # creep forward (brake released) up to v_cap
       else:
+        self.reapproach_braking = True
         need = v_close ** 2 / (2.0 * max(s, 0.2))
         a = -(float(np.clip(need, TERM_A_LO, TERM_A_HI)) + CREEP_COMP)
         a = max(a, self.a_prev - 1.0 * self.dt)  # ease the light brake in
         self.a_prev = a
-        return a, v_ego < V_STOP_CLAMP and s < 0.6
+        return a, v_ego < V_STOP_CLAMP
 
+    creep_closer = False
     if s <= 0.0:
       a = -A_PAST
     else:
@@ -296,9 +302,16 @@ class StopGapGovernor:
       if v_ego < V_END:
         # terminal band: the light final force, nudged up or down to stop on the point, plus the creep the car loses
         need = v_close ** 2 / (2.0 * max(s, 0.2))
-        lo = max(lo, float(np.clip(need, TERM_A_LO, TERM_A_HI)) + CREEP_COMP)
+        v_cap = min(REAPPROACH_V, float(np.sqrt(2.0 * TERM_A_HI * max(s, 0.0))))
+        if s > REAPPROACH_MIN and need < TERM_A_LO and v_close < 0.8 * v_cap and v_lead < LEAD_STOPPED_V:
+          # too far from the point to keep braking: ease the brake off and let the car creep closer without stopping
+          # (the four-bookmark example: it slowed to ~0.6 km/h 5.7 m short, never stopped, crept to 2.6 km/h and then
+          # held ~0.35 to stop at 3.1 m; the wheel sensors read 0 below ~0.5 km/h there, so 'standstill' is not proof)
+          creep_closer = True
+        else:
+          lo = max(lo, float(np.clip(need, TERM_A_LO, TERM_A_HI)) + CREEP_COMP)
       decel = float(np.clip(decel, lo, -A_NEG_MAX))
-      a = -decel
+      a = REAPPROACH_ACCEL if creep_closer else -decel
 
     # Never brake less than the MPC - except when the governor has a fitted profile behind a FULLY stopped lead: then it
     # owns the brake for the whole episode. The profile lands on the point by construction (a_nom <= A_NOM_MAX, clip at
@@ -307,7 +320,9 @@ class StopGapGovernor:
     # handover (rlog 2026-09-27 route 000000c3: -1.69 at 30 km/h -> -1.04 at 25 -> -1.94 at 22; driver 2026-09-30:
     # "the brake lets go right at 30 km/h"). With a moving lead or no fitting profile the MPC's request still wins.
     governor_owns_brake = self.profile is not None and v_lead < LEAD_STOPPED_V and self.a_nom <= GOVERNOR_OWN_A_NOM_MAX
-    a = float(np.clip(a, A_NEG_MAX, 0.0))              # the governor's own profile never asks harder than A_NEG_MAX
+    # creeping closer to a fully stopped lead at walking pace: the MPC (which aims ~6 m back) must not hold it short
+    governor_owns_brake = governor_owns_brake or creep_closer
+    a = float(np.clip(a, A_NEG_MAX, REAPPROACH_ACCEL if creep_closer else 0.0))   # never harder than A_NEG_MAX
     if not governor_owns_brake:
       # ... but it must never brake LESS than the MPC. The clip used to sit after this min(), so a lead braking hard
       # (2026-09-27 21:05: MPC -2.8 at 35 km/h, lead 27 m closing 7 m/s) was capped to -2.0 and the stop ended 2.0 m
@@ -315,9 +330,9 @@ class StopGapGovernor:
       a = min(a, float(a_current))
     release = RELEASE_RATE_APPROACH if v_ego > V_FIRM_HOLD else RELEASE_RATE
     a = min(a, self.a_prev + release * self.dt)   # never let the brake go with a jolt (and barely at all while approaching)
-    a = float(min(a, 0.0))
+    a = float(min(a, REAPPROACH_ACCEL if creep_closer else 0.0))
     self.a_prev = a
     # clamp for standstill once nearly stopped; the light taper above has already eased the car in near the point,
-    # so this latches smoothly instead of grabbing the car short
-    should_stop = v_ego < V_STOP_CLAMP
+    # so this latches smoothly instead of grabbing the car short (not while deliberately creeping closer)
+    should_stop = v_ego < V_STOP_CLAMP and not creep_closer
     return a, should_stop
