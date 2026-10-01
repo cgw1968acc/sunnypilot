@@ -160,3 +160,11 @@ class TestLowSpeedOnset:
     for v in (20 / 3.6, 50 / 3.6, 100 / 3.6):
       out = self._sim(v)
       assert out[int(0.09 / self.DT)] >= -0.12
+
+
+def test_handover_scale_flattens_only_the_3_to_5_kph_bite():
+  from opendbc.sunnypilot.car.toyota.brake_onset import handover_scale
+  assert handover_scale(10 / 3.6, -0.7) == -0.7          # untouched above the handover
+  assert handover_scale(1.5 / 3.6, -0.5) == -0.5         # untouched in the final crawl (-0.026 lock lives below 1 km/h)
+  assert -0.6 < handover_scale(4.5 / 3.6, -0.7) < -0.5   # ~0.78-0.84 in the 3.8-4.8 km/h band
+  assert handover_scale(4.5 / 3.6, 0.3) == 0.3           # throttle never scaled

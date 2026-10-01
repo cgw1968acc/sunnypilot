@@ -12,7 +12,7 @@ from opendbc.car.toyota.values import CAR, NO_STOP_TIMER_CAR, TSS2_CAR, \
                                         CarControllerParams, ToyotaFlags
 from opendbc.can import CANPacker
 from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController
-from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper
+from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper, handover_scale
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
@@ -245,6 +245,9 @@ class CarController(CarControllerBase, GasInterceptorCarController):
         # the downward step follows the brake onset schedule so a new brake request eases in like a driver's foot
         # the upward step is likewise eased for the first 0.6 s after engaging (gas side of the same request)
         pcm_accel_cmd = actuators.accel
+        if CC.longActive and self.CP.flags & ToyotaFlags.HYBRID:
+          # the hybrid bites harder where regen hands over to the friction brakes (3-5 km/h): flatten it
+          pcm_accel_cmd = handover_scale(CS.out.vEgo, pcm_accel_cmd)
         if CC.longActive:
           # a hard request bypasses the soft brake onset, except in the first 0.6 s after engaging (FCW always does)
           urgent = self.brake_onset.is_urgent(pcm_accel_cmd, False) and not self.engage_onset.in_engage_window

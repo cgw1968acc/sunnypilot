@@ -128,3 +128,21 @@ class EngageOnsetShaper:
       return self.stock_up_jerk * self.dt
     j_up = float(np.interp(self.t_engaged, ENGAGE_T_BP, ENGAGE_J_UP))
     return min(j_up, self.stock_up_jerk) * self.dt
+
+
+# Hybrid regen -> friction brake handover (Corolla Altis Hybrid). Tonight's 13 openpilot stops (routes 000000e6-ea,
+# 2026-10-01/02), delivered IMU deceleration / request 0.3 s earlier, by speed: ~0.9 above 5.5 km/h and below 2.5 km/h,
+# 1.01 at 4.5-5.5, 1.21 at 3.5-4.5, 1.12 at 2.5-3.5 km/h - the car bites ~20-35% harder exactly where the regen share
+# hands over to the friction brakes, the "brakes, lets go, brakes again" bump just before the stop (22:49: delivered
+# 0.13 at 5.0 km/h then 0.85 at 3.5 km/h for a steady ~0.7 request). The braking request is scaled down there so the
+# delivered deceleration stays flat. Breakpoints are the speed at which the request is SENT; it is delivered ~0.3 s
+# later, ~0.8 km/h slower. Driver 2026-10-02: "13 stops are enough data, change it".
+HANDOVER_V_BP = [2.8 / 3.6, 3.8 / 3.6, 4.8 / 3.6, 5.8 / 3.6, 6.8 / 3.6]   # m/s
+HANDOVER_SCALE = [1.0, 0.84, 0.78, 0.91, 1.0]
+
+
+def handover_scale(v_ego: float, accel: float) -> float:
+  """Braking request after the regen->friction handover compensation (positive requests unchanged)."""
+  if accel >= 0.0:
+    return accel
+  return accel * float(np.interp(v_ego, HANDOVER_V_BP, HANDOVER_SCALE))
