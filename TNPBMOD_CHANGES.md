@@ -1,7 +1,7 @@
 # tnpbmod: pristine sunnypilot prebuilt + every tnpb1 commit, annotated
 
 `tnpbmod` is the Toyota Corolla Altis Hybrid (2023, TSS2, comma three X) tune `tnpb1`, based on the untouched
-sunnypilot `tn-prebuilt` base (5c37fd3ced, v2026.09.01-4826). Its code tree matches `tnpb1` at ad03cc0448
+sunnypilot `tn-prebuilt` base (5c37fd3ced, v2026.09.01-4826). Its code tree matches `tnpb1` at 9744f4a7ca
 (2026-09-29, see the section at the end for the commits after 456c8481c3); the branch history has been regrouped into feature-level commits so each feature and its tests land
 together. This document retains the original replay's 77-commit annotations as provenance, not as the current
 branch commit list. The original replay commits remain available from the pre-squash backup/remote ref.
@@ -138,7 +138,7 @@ These counts describe the 77 annotated source changes above, not the current fea
 * **Logging & processes** (2): 12, 17
 * **Docs** (1): 42
 
-## Annotated source changes 78-123 (2026-09-29/10-01)
+## Annotated source changes 78-125 (2026-09-29/10-01)
 
 These rows preserve the pre-group replay hashes and their matching source commits from `tnpb1`. The changes are now
 grouped by feature in the current branch history; these replay hashes are historical references, not current commit IDs.
@@ -191,3 +191,11 @@ grouped by feature in the current branch history; these replay hashes are histor
 | 121 | 172b7f1d40 | a2c65a9e94 | stop: every stop from 20-48 km/h ends on the driver's template - validated by a full-chain device campaign | device_stop_campaign.py (real MPC + governor + LongControl + 0.3 s lag, 20 scenarios); A_NOM_MAX 2.2, A_NEG_MAX -2.5, taper from 10 km/h with 3.0 m/s^3 release: 20/20 scenarios on the template (1 km/h 0.39-0.47 vs law 0.43), no second stop. | Stop gap |
 | 122 | dc6e5f3819 | b8293c0f12 | brake onset: light 0.1 s touch, then a linear build to the needed peak at every speed; urgent stops keep the MPC | One onset shape at all speeds (1.0 m/s^3 for 0.1 s, stock 4.0 by 0.3 s; hard threshold -1.5); governor owns the brake only for a_nom <= 2.0 so urgent stops let the MPC through; peak stays -2.5. Device campaign with the shaper modelled: nominal stops back to 3.0 m and on the template. | Toyota car config |
 | 123 | a1ed23ef67 | ad03cc0448 | long_mpc: aggressive following time 1.27 s from 30 to 50 km/h (was 1.45 s below 30), 1.25 s again from 70 km/h | Driver caps close following at ~1.27 s; the low-speed 1.45 s of 119 is withdrawn, the braking-lead anticipation stays. | Longitudinal |
+| 124 | 741b39162b | e65978f2d4 | stop: hold the lightest final force with creep compensation, nudge it for distance, and re-approach when stopped short | Terminal band 0.22-0.45 delivered + 0.2 creep compensation below 2.5 km/h; rolling minimum -0.42 in the stopping state (no glide); re-approach at ~+0.3 to 2.5 km/h when stopped >1.5 m short behind a stopped lead (driver's 4-bookmark example). | Stop gap |
+| 125 | 4ea113cffc | 9744f4a7ca | stop gap: creep closer without stopping when a low-speed stop is still far from the point | The 4-bookmark example was never a stop (wheel sensors read 0 below ~0.5 km/h; IMU: ~0.6 km/h). Below 2.5 km/h with >1.5 m of room behind a stopped lead the brake eases off to ~+0.3 and the car creeps closer in one motion, then the terminal band stops it on the point. Campaign: all stops one motion, 2.7-4.1 m. | Stop gap |
+| 126 | 97c8bf96fe | 28cfa812ad | radard: reject a stationary side object matched to a clearly moving camera lead | Mid-turn phantom braking (2026-10-01 13:31:59: radar matched a parked object 8.9 m to the side while the camera lead drove 23 km/h, MPC -2.5 for 1 s). Rejected only when the radar point is stationary, the camera lead moves > 4 m/s and they disagree laterally by > 2.5 m; the camera lead is used instead. | Longitudinal |
+| 127 | e07dc67c00 | 14d2820acb | stop gap: plan against where a braking lead will stop, refit while it rolls, one-sided 0.5 m stop window | Fixes hard braking far from a lead that is still braking to a stop (profile fixed on a stale closing speed -> -2.5 at 45 m). Lead stopping distance from aLeadK added, profile refitted while the lead rolls, loop idle while the stop lands within 0.5 m short / 0 m long of the point, feed-forward by speed. Campaign: all non-emergency stops 3.0-4.1 m, lead-braking peaks 2.46 -> 1.47-1.80. | Stop gap |
+| 128 | 267dfcaefb | ffeb419d92 | stop: ease a hard stop into the final stop while braking, roll on instead of re-accelerating, fixed -0.021 below 1 km/h | Behind a stopped lead the MPC's harder-than-needed brake is capped at 1.15x the need and eased at 1.0 m/s^3 during the hard braking; the governor takes the stop back once it fits a_nom <= 2.0; creep-closer at >= 1.4 km/h holds speed; driver test value FINAL_REQUEST -0.021 below 1 km/h (FINAL_V = 0 disables). Campaign: late-stopped-car two-stage stops 8.0/7.2 m -> 3.7/3.6 m one motion. | Stop gap |
+| 129 | c497417e58 | cc34cf5fed | eco: smooth temporary boost below 80 km/h while a detected lead pulls away | Eco max accel + up to 0.35 m/s^2 scaled by lead pull-away speed, faded out 70-80 km/h, capped at the normal line, rate-limited in/out; no lead = unchanged. | Longitudinal |
+| 130 | b2f3a27ee4 | f6967da4a1 | stop: final 0-1 km/h request -0.021 -> -0.026 | Driver: raise the fixed final request if -0.021 creeps. | Stop gap |
+| 131 | 4370416f28 | 38b594178a | long_mpc: aggressive following time back to the stock fixed 1.25 s | Driver: don't change T_FOLLOW; the 1.27 s at 30-50 km/h of 123 is withdrawn. Braking-lead anticipation stays. | Longitudinal |
