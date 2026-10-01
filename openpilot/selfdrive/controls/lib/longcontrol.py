@@ -67,6 +67,23 @@ END_TAPER_RELEASE_JERK = 3.0  # m/s^3, fastest the taper may lighten the brake (
                               # follows v/0.65 from 10 km/h, so it eases in instead of cutting at 3 km/h as on 00:07:28)
 
 
+# The end taper softens the end of every stop, but never below what still stops the car short of a (nearly) stopped
+# lead: device campaign 2026-10-02, 30 km/h, stopped car appearing 17 m ahead, PCM delivering 1:1: the planner asked
+# -3.15 at 3.6 km/h with 0.46 m left and the taper capped it at -1.65; the stop ended 0.2 m from the lead (governor)
+# or in contact (MPC alone). controlsd passes the deceleration that stops EMERGENCY_GAP behind the radar lead
+# (x EMERGENCY_MARGIN for the PCM lag); a normal stop needs ~0.0-0.1 there, so its tuned end is unchanged.
+EMERGENCY_GAP = 1.0     # m from the lead's rear
+EMERGENCY_MARGIN = 1.2
+EMERGENCY_LEAD_V = 1.0  # m/s: only a (nearly) stopped lead
+
+
+def stop_decel_floor(v_ego: float, lead_present: bool, d_rel: float, v_lead: float) -> float:
+  """Deceleration (positive) needed to stop EMERGENCY_GAP short of a nearly stopped lead; 0 when there is none."""
+  if not lead_present or v_lead > EMERGENCY_LEAD_V or v_ego <= 0.0:
+    return 0.0
+  return EMERGENCY_MARGIN * v_ego ** 2 / (2.0 * max(d_rel - EMERGENCY_GAP, 0.3))
+
+
 def end_taper_decel(v_ego: float, a_ego: float) -> float:
   """Largest deceleration (positive number) allowed this close to the stop."""
   v_future = max(v_ego + min(a_ego, 0.0) * END_TAPER_LEAD, 0.0)
@@ -121,7 +138,7 @@ class LongControl:
   def reset(self):
     self.pid.reset()
 
-  def update(self, active, CS, a_target, should_stop, accel_limits, has_lead=False):
+  def update(self, active, CS, a_target, should_stop, accel_limits, has_lead=False, decel_floor=0.0):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
@@ -188,7 +205,7 @@ class LongControl:
 
     if active and not CS.standstill and CS.vEgo < END_TAPER_V_START and a_target < 0.0 and not CS.brakePressed and \
        not (self.long_control_state == LongCtrlState.stopping and self.stopped_once):
-      capped = max(output_accel, -end_taper_decel(CS.vEgo, CS.aEgo))
+      capped = max(output_accel, -max(end_taper_decel(CS.vEgo, CS.aEgo), decel_floor))
       if capped > output_accel:
         # never let the brake go faster than END_TAPER_RELEASE_JERK: a sudden release lets creep torque push the car on
         capped = min(capped, self.last_output_accel + END_TAPER_RELEASE_JERK * DT_CTRL)

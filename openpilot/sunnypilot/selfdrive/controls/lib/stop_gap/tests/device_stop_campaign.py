@@ -55,7 +55,9 @@ def run(v0, lead_x0, lead_v0, lead_decel, lead_start_t=0.0, see_dist=250.0, secs
       else: a_mpc, stop_mpc = out; gov_active=True
       a_tgt, stop = float(np.clip(a_mpc, -3.5, 2.0)), stop_mpc
     CS = car.CarState.new_message(vEgo=v, aEgo=a, standstill=v < 1e-3)
-    a_out = float(loc.update(True, CS, a_tgt, stop, (-3.5, 2.0), has_lead=True))
+    floor_fn = getattr(sys.modules[LongControl.__module__], "stop_decel_floor", None)
+    floor = floor_fn(v, (xl - x) < see_dist, xl - x, vl) if floor_fn else 0.0
+    a_out = float(loc.update(True, CS, a_tgt, stop, (-3.5, 2.0), has_lead=True, **({"decel_floor": floor} if floor_fn else {})))
     if k % 3 == 0:   # carcontroller at 33 Hz: brake onset shaper + stock 4 m/s^3 wind-up
       a_req = bo.handover_scale(v, a_out) if COMP else a_out
       step = shaper.down_step(a_req, cmd, bypass=False, v_ego=v, urgent=shaper.is_urgent(a_req, False))
