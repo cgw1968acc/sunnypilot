@@ -161,7 +161,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     is_e2e = self.is_e2e(sm)
 
-    max_accel_override = self.get_max_accel_override(v_ego, sm['carStateSP'].engineOff)
+    max_accel_override = self.get_max_accel_override(v_ego, sm['carStateSP'].engineOff, sm['radarState'].leadOne)
     # accel_coast is ACCEL_MAX when the orientation is not valid; pass it only when it is a real (negative) coast value
     v_cruise = self.get_cruise_target_override(v_ego, v_cruise, force_decel, accel_coast if accel_coast < 0.0 else None)
     a_cruise_prev = self.a_cruise

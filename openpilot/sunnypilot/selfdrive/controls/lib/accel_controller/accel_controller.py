@@ -45,6 +45,17 @@ ECO_CRUISE_DECEL_BP = [0., 16.67, 19.44, 25.0, 33.3]   # m/s (0, 60, 70, 90, 120
 ECO_CRUISE_DECEL_V = [-0.40, -0.40, -0.22, -0.30, -0.40]  # m/s^2; the >= 70 km/h part is only the FALLBACK coast estimate
 ECO_COAST_BLEND_BP = [16.67, 19.44]  # m/s: -0.40 at 60 km/h blends into pure coasting by 70 km/h
 ECO_COAST_MIN, ECO_COAST_MAX = -1.2, -0.05  # m/s^2; sanity clip on the planner's pitch-aware coast accel
+# Eco lead pull-away boost (driver 2026-10-01 night): below 80 km/h, when a detected lead is pulling away (gap opening),
+# eco may accelerate a little harder for a while so the car keeps up, eased in and out; with no lead nothing changes.
+# The boost scales with how fast the gap opens, fades out from 70 to 80 km/h, and never lifts eco above the normal line.
+ECO_BOOST_DV_BP = [0.3, 2.5]     # m/s, lead speed minus ego speed
+ECO_BOOST_V = [0.0, 0.35]        # m/s^2 added to the eco limit
+ECO_BOOST_FADE_BP = [19.44, 22.22]  # m/s (70 -> 80 km/h): full -> none
+ECO_BOOST_D_MAX = 80.0           # m, only a lead this close counts
+ECO_BOOST_PROB_MIN = 0.5
+ECO_BOOST_RISE = 0.25            # m/s^3, how fast the boost builds
+ECO_BOOST_FALL = 0.5             # m/s^3, how fast it fades
+ECO_BOOST_DT = 0.05              # s, planner step
 CRUISE_DECEL_TAPER_TIME = 1.0  # s; inside |decel| * this of the target the decel eases off proportionally (no overshoot)
 
 
@@ -53,6 +64,7 @@ class AccelController:
     self.params = Params()
     self._cruise_decel: float | None = None
     self._cruise_decel_target: float | None = None
+    self._boost = 0.0
     self.update()
 
   def update(self) -> None:
@@ -66,10 +78,26 @@ class AccelController:
   def is_enabled(self) -> bool:
     return self._enabled
 
-  def get_max_accel(self, v_ego: float, engine_off: bool = False) -> float:
+  def get_max_accel(self, v_ego: float, engine_off: bool = False, lead=None) -> float:
     if engine_off and self._profile == AccelProfile.eco:
-      return float(np.interp(max(0.0, v_ego), ECO_ENGINE_OFF_BP, ECO_ENGINE_OFF_MAX_ACCEL))
-    return float(np.interp(max(0.0, v_ego), MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES[self._profile]))
+      base = float(np.interp(max(0.0, v_ego), ECO_ENGINE_OFF_BP, ECO_ENGINE_OFF_MAX_ACCEL))
+    else:
+      base = float(np.interp(max(0.0, v_ego), MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES[self._profile]))
+    if self._profile != AccelProfile.eco:
+      self._boost = 0.0
+      return base
+    return base + self._eco_lead_boost(v_ego, base, lead)
+
+  def _eco_lead_boost(self, v_ego: float, base: float, lead) -> float:
+    target = 0.0
+    if lead is not None and lead.present and lead.modelProb > ECO_BOOST_PROB_MIN and lead.dRel < ECO_BOOST_D_MAX:
+      target = float(np.interp(lead.vLead - v_ego, ECO_BOOST_DV_BP, ECO_BOOST_V))
+      target *= float(np.interp(v_ego, ECO_BOOST_FADE_BP, [1.0, 0.0]))
+      normal = float(np.interp(max(0.0, v_ego), MAX_ACCEL_BREAKPOINTS, MAX_ACCEL_PROFILES[AccelProfile.normal]))
+      target = float(np.clip(target, 0.0, max(normal - base, 0.0)))
+    step = (ECO_BOOST_RISE if target > self._boost else ECO_BOOST_FALL) * ECO_BOOST_DT
+    self._boost = float(np.clip(target, self._boost - step, self._boost + step))
+    return self._boost
 
   def get_cruise_target(self, v_ego: float, v_target: float, accel_coast: float | None = None) -> float:
     if not np.isfinite(v_target) or v_target <= 0.0 or v_target >= v_ego:
