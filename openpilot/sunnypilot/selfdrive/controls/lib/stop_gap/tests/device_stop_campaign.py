@@ -13,6 +13,8 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import StopGapGovernor, end_decel, STOP_GAP
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl, LongCtrlState
+from openpilot.sunnypilot.selfdrive.controls.lib.lead_need_cap.lead_need_cap import LeadNeedCap
+LEAD_CAP = 1.0  # 0 disables the moving-lead need cap (variant LEAD_CAP=0)
 import opendbc.sunnypilot.car.toyota.brake_onset as bo
 AGG = log.LongitudinalPersonality.aggressive
 DT_MDL, DT_CTRL = 0.05, 0.01
@@ -28,8 +30,8 @@ class Lead:
 class RS:
   def __init__(s, lead): s.leadOne = lead; s.leadTwo = Lead(200, 30, 0, False)
 
-def run(v0, lead_x0, lead_v0, lead_decel, lead_start_t=0.0, see_dist=250.0, secs=40):
-  mpc = LongitudinalMpc(dt=DT_MDL); gov = StopGapGovernor(DT_MDL)
+def run(v0, lead_x0, lead_v0, lead_decel, lead_start_t=0.0, see_dist=250.0, secs=40, lead_fn=None):
+  mpc = LongitudinalMpc(dt=DT_MDL); gov = StopGapGovernor(DT_MDL); cap = LeadNeedCap(DT_MDL)
   CP = car.CarParams.new_message(stopAccel=-1.0); CP.longitudinalTuning.kiBP=[0.]; CP.longitudinalTuning.kiV=[0.]
   loc = LongControl(CP, custom.CarParamsSP.new_message())
   shaper = bo.BrakeOnsetShaper(0.03, 4.0); cmd = 0.0; first_cmd_t = None
@@ -38,7 +40,7 @@ def run(v0, lead_x0, lead_v0, lead_decel, lead_start_t=0.0, see_dist=250.0, secs
   t = 0.0; k = 0
   while t < secs:
     if k % 5 == 0:   # planner at 20 Hz
-      al = -lead_decel if (t >= lead_start_t and vl > 0) else 0.0
+      al = (lead_fn(t, vl) if lead_fn else (-lead_decel if t >= lead_start_t else 0.0)) if vl > 0 else 0.0
       seen = (xl - x) < see_dist
       lead = Lead(xl - x, vl, al, present=seen)
       mpc.set_weights(True, personality=AGG); mpc.set_cur_state(v, a_tgt)
@@ -47,7 +49,9 @@ def run(v0, lead_x0, lead_v0, lead_decel, lead_start_t=0.0, see_dist=250.0, secs
       a_mpc = get_accel_from_plan(vt, at, ModelConstants.T_IDXS[:CONTROL_N], action_t=0.05 + DT_MDL)
       stop_mpc = should_stop(v, a_mpc)
       out = gov.update(True, v, seen, xl - x, vl, a_mpc, a_lead=al) if (seen and not NO_STOP_GAP) else None
-      if out is None: gov_active=False
+      if out is None:
+        gov_active=False
+        if LEAD_CAP and seen: a_mpc = cap.update(True, v, seen, xl - x, vl, al, a_mpc)
       else: a_mpc, stop_mpc = out; gov_active=True
       a_tgt, stop = float(np.clip(a_mpc, -3.5, 2.0)), stop_mpc
     CS = car.CarState.new_message(vEgo=v, aEgo=a, standstill=v < 1e-3)
@@ -66,7 +70,7 @@ def run(v0, lead_x0, lead_v0, lead_decel, lead_start_t=0.0, see_dist=250.0, secs
     if v == 0.0 and a > 0 and cmd + creep <= 0.0: a = 0.0
     x += v * DT_CTRL
     if k % 5 == 0:
-      vl = max(vl + (-lead_decel if (t >= lead_start_t and vl > 0) else 0.0) * DT_MDL, 0.0)
+      vl = max(vl + al * DT_MDL, 0.0)
     xl += vl * DT_CTRL
     log_.append((t, v, a, cmd, xl - x, gov_active if k % 5 == 0 else None))
     t += DT_CTRL; k += 1
@@ -143,6 +147,28 @@ for v_kmh, d0, vl_kmh, dec in ((40, 55, 9, 2.4), (52, 80, 45, 2.8), (45, 60, 30,
 for v_kmh, d0 in ((50, 47), (45, 36), (35, 24), (30, 17)):
   L = run(v_kmh / 3.6, d0 + 1e-3, 0.0, 0.0, see_dist=d0 + 0.5); r = metrics(L)
   rows.append((f"{v_kmh} km/h, stopped car appears at {d0} m", r))
+# moving leads (lead need cap): peak decel, closest gap, min time-to-collision, decel in the first 2 s of braking
+def fmetrics(L):
+  t, v, a, out, gap = L.T
+  b = np.where(out < -0.05)[0]
+  first2 = float(-a[b[0]:b[0] + 200].min()) if len(b) else 0.0
+  return dict(peak=float(-a.min()), mingap=float(gap.min()), first2=first2, vend=float(v[-1] * 3.6), gapend=float(gap[-1]))
+def seq(*parts):   # parts: (t_end, accel) ... lead accel by time
+  return lambda t, vl: next((acc for te, acc in parts if t < te), 0.0)
+FOLLOW = [
+  ("50 km/h, lead 40 m at 50 slows -1.5 to ~30", 50, 40, 50, seq((1.0, 0.0), (4.7, -1.5))),
+  ("50 km/h, lead 30 m at 50 brakes -2.0 for 1.5 s", 50, 30, 50, seq((1.0, 0.0), (2.5, -2.0))),
+  ("50 km/h, lead 25 m at 50: -1.0 2 s then -4.0 stop", 50, 25, 50, seq((1.0, 0.0), (3.0, -1.0), (99, -4.0))),
+  ("50 km/h, lead 35 m at 50: -0.5 3 s then -3.0 stop", 50, 35, 50, seq((1.0, 0.0), (4.0, -0.5), (99, -3.0))),
+  ("60 km/h, slower lead cuts in 40 m at 40", 60, 40, 40, seq()),
+  ("60 km/h, slower lead cuts in 25 m at 45", 60, 25, 45, seq()),
+  ("70 km/h, lead 60 m at 50 steady", 70, 60, 50, seq()),
+  ("40 km/h, lead 20 m at 40 brakes -3 to stop", 40, 20, 40, seq((1.0, 0.0), (99, -3.0))),
+]
+print(f"{'moving lead':52s} peak first2s mingap  v_end gap_end")
+for name, ve, d0, vl0, fn in FOLLOW:
+  L = run(ve / 3.6, d0, vl0 / 3.6, 0.0, secs=20, lead_fn=fn); m = fmetrics(L)
+  print(f"{name:52s} {m['peak']:4.2f}  {m['first2']:4.2f}  {m['mingap']:5.1f}  {m['vend']:5.1f} {m['gapend']:5.1f}")
 for d_start in (6.6, 5.0, 4.2):
   L = run(0.0, d_start, 0.0, 0.0, see_dist=d_start + 0.5, secs=20); t_, v_, a_, cmd_, gap_ = L.T
   moved = v_.max() > 0.05

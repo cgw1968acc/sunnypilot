@@ -19,6 +19,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap.stop_gap import StopGapGovernor
+from openpilot.sunnypilot.selfdrive.controls.lib.lead_need_cap.lead_need_cap import LeadNeedCap
 
 # A/B switch for the stop-gap governor (driver 2026-10-02, after rav4kumar's review that it is unnecessary): when this
 # file exists on the device the governor is bypassed and stops are left to the MPC + longcontrol. Checked once a second,
@@ -88,6 +89,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.stop_gap = StopGapGovernor(self.dt)
     self.stop_gap_enabled = True
     self._stop_gap_flag_t = 0.0
+    self.lead_cap = LeadNeedCap(self.dt)
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -204,6 +206,13 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       self.stop_gap.reset()
     if stop_gap_out is not None:
       output_a_target_mpc, output_should_stop_mpc = stop_gap_out
+      self.lead_cap.reset()
+    elif self.mpc.source == LongitudinalPlanSource.lead0:
+      # behind a moving lead: never brake much harder than the closing situation needs (lead_need_cap.py)
+      output_a_target_mpc = self.lead_cap.update(long_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead,
+                                                 lead_one.aLeadK, output_a_target_mpc)
+    else:
+      self.lead_cap.reset()
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop)]
