@@ -27,23 +27,50 @@ def run(sc, state, car, a_target, prev, secs, stock=None):
   return out
 
 
+def blend(sc, v_kph):
+  return sc._blend(v_kph / 3.6)
+
+
 class TestEndOfStop:
-  def test_below_3kph_a_braking_plan_is_held_at_the_template_force(self):
+  def test_below_blend_v_the_request_follows_the_line_where_the_plan_eases_off(self):
+    sc = StoppingController(-2.0)
+    # crossing 10 km/h with the request at -1.20: the line runs from -1.20 there to END_REQUEST at 0 km/h
+    out = run(sc, PID, cs(9.9), -1.20, -1.20, 0.2)
+    assert sc.end_active and abs(sc.a_entry - (-1.20)) < 1e-6
+    # the planner's curve eases to -0.30 at 5 km/h: the line (-0.85) is sent instead
+    out = run(sc, PID, cs(5.0), -0.30, out, 0.6)
+    assert abs(blend(sc, 5.0) - (END + (-1.20 - END) * 0.5)) < 1e-6
+    assert abs(out - blend(sc, 5.0)) < 1e-6
+    # ... at 2.5 km/h the line is at -0.675, no step anywhere ...
+    out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
+    assert abs(out - blend(sc, 2.5)) < 1e-6
+    # ... and reaches END_REQUEST at the wheel stop
+    out = run(sc, PID, cs(0.3), -0.20, out, 0.4)
+    assert abs(out - blend(sc, 0.3)) < 1e-6
+    assert abs(blend(sc, 0.0) - END) < 1e-6
+
+  def test_the_line_is_a_floor_a_firmer_plan_still_passes(self):
+    sc = StoppingController(-2.0)
+    out = run(sc, PID, cs(9.9), -1.20, -1.20, 0.2)
+    out = run(sc, PID, cs(5.0), -1.10, out, 0.5)
+    assert abs(out - (-1.10)) < 1e-6
+    out = run(sc, PID, cs(2.5), -1.8, out, 0.6)
+    assert abs(out - (-1.8)) < 1e-6
+
+  def test_a_light_plan_at_entry_starts_the_line_at_end_request(self):
     sc = StoppingController(-2.0)
     out = run(sc, PID, cs(2.8), -0.40, -0.40, 0.5)
+    assert abs(sc.a_entry - END) < 1e-6
     assert abs(out - END) < 1e-6
-    # the planner's own curve eases off: the request does not lighten (creep) ...
+    # the planner's own curve eases off: the request does not lighten (creep)
     out = run(sc, PID, cs(2.0), -0.20, out, 0.5)
-    assert abs(out - END) < 1e-6
-    # ... and firms up: the request does not firm (nod)
-    out = run(sc, PID, cs(1.5), -0.90, out, 0.5)
     assert abs(out - END) < 1e-6
 
   def test_entry_is_rate_limited(self):
     sc = StoppingController(-2.0)
     _, out = sc.update(PID, PID, cs(2.8), -0.40, -0.40, -0.40, LIMITS, has_lead=True)
-    assert out < END
-    assert abs(out - (-0.40 + StoppingController.END_RATE * DT_CTRL)) < 1e-6
+    assert out > END
+    assert abs(out - (-0.40 - StoppingController.END_RATE * DT_CTRL)) < 1e-6
 
   def test_an_emergency_plan_still_passes(self):
     sc = StoppingController(-2.0)
@@ -56,10 +83,11 @@ class TestEndOfStop:
     assert abs(out - (-0.10)) < 1e-6
     assert not sc.end_active
 
-  def test_above_3kph_nothing_changes(self):
+  def test_above_blend_v_nothing_changes(self):
     sc = StoppingController(-2.0)
-    out = run(sc, PID, cs(5.0), -0.40, -0.40, 0.5)
+    out = run(sc, PID, cs(12.0), -0.40, -0.40, 0.5)
     assert abs(out - (-0.40)) < 1e-6
+    assert not sc.end_active
 
   def test_lead_moving_off_releases_the_hold(self):
     sc = StoppingController(-2.0)
@@ -70,7 +98,7 @@ class TestEndOfStop:
 
   def test_stopping_state_keeps_the_force_until_the_wheels_stop_then_holds(self):
     sc = StoppingController(-1.0)
-    run(sc, PID, cs(2.0), -0.60, -0.60, 0.5)
+    run(sc, PID, cs(2.0), END, END, 0.5)
     # 1 km/h, stopping state, the planner's curve has eased to -0.30: Kumar's lighter-follow would ease the request
     out = run(sc, STOPPING, cs(0.8), -0.30, END, 0.4)
     assert abs(out - END) < 1e-6

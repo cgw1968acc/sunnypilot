@@ -29,23 +29,27 @@ class StoppingController:
   CREEP_RATE_GROWTH = 1.5  # m/s^2/s per second of creep
   CREEP_RATE_MAX = 1.0  # m/s^2/s
 
-  # The end of the stop, from the driver's own manual stops (Corolla Altis Hybrid, 42 stops over 2026-09-30..10-02
-  # measured with manual_stops.py / lightest_stop.py): from ~3 km/h to the moment the wheels stop the pedal stays
-  # CONSTANT - the driver never lightens it while rolling and presses firmer only after standstill - and the car still
-  # stops without rolling on. The lightest pedal force that stopped the car and held it: 640 N (2 of 3 held), 680 N and
-  # above held every time (5 of 5 at 720 N); 600 N and lighter crept on (the hybrid's creep torque balances the brake at
-  # ~620 N). Stops that ended above ~1100 N nodded (IMU rebound 0.4-1.5). The PCM's settled brake force below 3 km/h
-  # follows BF ~ 480 + 1200 * |request| N (op stops, 0xA6 BRAKE_FORCE: -0.3 -> ~800 N, -0.5 -> ~1080 N, -1.0 ->
-  # ~1840 N), so END_REQUEST = -0.15 asks for ~660 N: the lightest force that still stops and holds. Below END_V, while
-  # the plan is braking to a stop, the request is HELD at END_REQUEST - never lighter (creep) and never firmer (nod),
-  # even when the planner's own curve eases off or firms up; a hard plan (END_HARD, a late-seen lead) still passes,
-  # and a plan that wants to go (a_target > 0, the lead moved off) releases it. After standstill the hold ramp to
-  # stopAccel applies unchanged.
-  END_V = 3.0 / 3.6  # m/s
-  END_REQUEST = -0.15  # m/s^2 (~660 N)
-  END_HARD = -1.5  # m/s^2: a plan at least this hard is an emergency and passes through
-  END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much to count as stopping (a crawl-follow hovers near 0)
-  END_RATE = 2.0  # m/s^3: how fast the request moves to END_REQUEST on entry
+  # The end of the stop. First road test of the template rule (route 000000ec, 2026-10-03, four op stops): holding
+  # END_REQUEST -0.15 (~660 N) from 3 km/h was a STEP - the plan was at -0.63..-0.78 (1160-1560 N) when the car crossed
+  # 3 km/h and the request fell to -0.15 within 0.3 s; the force dropped to 280-520 N, the car sped UP again (+0.1..+0.3
+  # m/s^2, 1.7 -> 2.5 km/h) on its creep torque and then needed 3.4-4.3 s and 760-1000 N (-0.2..-0.25 m/s^2) to stop.
+  # The driver felt exactly that: "at 3 km/h the brake suddenly lightens - wrong - there must be a smooth hand-over".
+  # The driver's own hard stop that night (23:45:04, 36 km/h, 4880 N peak) still ended smoothly because the pedal came
+  # off CONTINUOUSLY: -aEgo ~ 1.6 + 0.25 v (r 0.86), -3.4 m/s^2 at 27 km/h, -2.6 at 10, -1.4 at 3, -1.0 at 1 km/h -
+  # the decel falls roughly linearly with speed to the wheel stop, never a step, and does not go light at the end.
+  # So below BLEND_V the request follows a line in speed from the request it had at BLEND_V (a_entry) down to
+  # END_REQUEST at 0 km/h: blend(v) = END_REQUEST + (a_entry - END_REQUEST) * (v / BLEND_V) ** BLEND_POW. It is a FLOOR
+  # on the plan: the firmer of the plan and the line is sent, so the planner's own curve still wins while it is braking
+  # harder (a late-seen lead), and the line takes over only where the planner eases off. A plan that wants to go
+  # (a_target > 0, the lead moved off) releases it; after standstill the hold ramp to stopAccel applies unchanged.
+  # END_REQUEST -0.50 (~1080 N by BF ~ 480 + 1200 * |req|) is the lightest request that still decelerates under ACC:
+  # on this route 760-1000 N gave only -0.2..-0.25 m/s^2 (the pedal is not pressed, so the hybrid keeps its creep
+  # torque), while -0.63..-0.78 gave -0.6..-1.07 at 3 km/h. The driver's template ends at 0.5-0.7 m/s^2.
+  BLEND_V = 10.0 / 3.6  # m/s: the line starts here
+  BLEND_POW = 1.0  # 1 = linear in speed (the driver's own taper); 2 would flatten the line toward END_REQUEST
+  END_REQUEST = -0.50  # m/s^2 at 0 km/h (~1080 N)
+  END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
+  END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
   def __init__(self, stop_accel):
     self.stop_accel = stop_accel
@@ -55,9 +59,14 @@ class StoppingController:
     self.stopped_once = False
     self.creep_t = 0.0
     self.end_active = False
+    self.a_entry = self.END_REQUEST
 
-  def _end_request(self, a_target, prev_accel):
-    target = a_target if a_target <= self.END_HARD else self.END_REQUEST
+  def _blend(self, v_ego):
+    x = float(np.clip(v_ego / self.BLEND_V, 0.0, 1.0))
+    return self.END_REQUEST + (self.a_entry - self.END_REQUEST) * x ** self.BLEND_POW
+
+  def _end_request(self, a_target, prev_accel, v_ego):
+    target = min(a_target, self._blend(v_ego))  # the firmer of the plan and the line
     step = self.END_RATE * DT_CTRL
     return float(np.clip(target, prev_accel - step, prev_accel + step))
 
@@ -79,16 +88,17 @@ class StoppingController:
     creeping = self.stopped_once and not CS.standstill and CS.vEgo > self.CREEP_V_MIN
     self.creep_t = self.creep_t + DT_CTRL if creeping else 0.0
 
-    # end-of-stop window: rolling below END_V with a plan that is braking to a stop
+    # end-of-stop window: rolling below BLEND_V with a plan that is braking to a stop
     rolling = not CS.standstill and not self.stopped_once
-    if state == LongCtrlState.off or not rolling or CS.vEgo >= self.END_V or a_target > 0.0:
+    if state == LongCtrlState.off or not rolling or CS.vEgo >= self.BLEND_V or a_target > 0.0:
       self.end_active = False
-    elif a_target <= self.END_PLAN_MIN:
+    elif not self.end_active and a_target <= self.END_PLAN_MIN:
       self.end_active = True
+      self.a_entry = min(prev_accel, self.END_REQUEST)  # the line starts where the request is now, at least END_REQUEST
 
     if state != LongCtrlState.stopping:
       if self.end_active:
-        return state, float(np.clip(self._end_request(a_target, prev_accel), accel_limits[0], accel_limits[1]))
+        return state, float(np.clip(self._end_request(a_target, prev_accel, CS.vEgo), accel_limits[0], accel_limits[1]))
       return state, stock_accel
 
     output_accel = prev_accel
@@ -97,8 +107,8 @@ class StoppingController:
       if not CS.standstill and not self.stopped_once and a_target < self.STOPPING_FOLLOW_MIN and a_target > output_accel:
         output_accel = min(a_target, output_accel + self.STOPPING_FOLLOW_RATE * DT_CTRL)
       if self.end_active:
-        # still rolling inside the end window: the template force, whatever the plan's own curve does
-        output_accel = self._end_request(a_target, prev_accel)
+        # still rolling inside the end window: the line (or the plan where it is firmer), never the eased-off curve
+        output_accel = self._end_request(a_target, prev_accel, CS.vEgo)
 
       hold_delay = self.STANDSTILL_HOLD_DELAY_LEAD if has_lead else self.STANDSTILL_HOLD_DELAY_NO_LEAD
       if self.standstill_t >= hold_delay:
