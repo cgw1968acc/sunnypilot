@@ -79,33 +79,25 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
     raise NotImplementedError("Longitudinal personality not supported")
 
 # SP (Altis, driver 2026-10-03): the MPC wants v^2/(2*COMFORT_BRAKE) + T_FOLLOW*v + STOP_DISTANCE in front of it at
-# every horizon node. On route 000000ec a lead that stopped 28.6 m ahead at 29 km/h made it brake to -1.65 m/s^2 in
-# ~2 s ("too early and too hard below 40 km/h"); the driver wants an earlier but much lighter onset at the same gap.
-# COMFORT_BRAKE and STOP_DISTANCE are compiled into the solver (prebuilt device), so both are applied from outside
-# through x_obstacle, which is a per-node parameter:
-#  - the comfort brake becomes speed scheduled, COMFORT_BRAKE_V at COMFORT_BRAKE_BP: 1.5 m/s^2 up to 40 km/h (the
-#    envelope grows by v^2/3 - v^2/5: +9 m at 30 km/h, +16 m at 40, so the approach starts that much earlier and the
-#    average decel falls from ~1.6 to ~1.1 m/s^2), stock 2.5 from 80 km/h. The lead's stopped-equivalence uses the
-#    same schedule, so at equal speeds the two cancel and the steady following gap (T_FOLLOW*v + STOP_DISTANCE) and
-#    the stop gap are unchanged; only closing on a slower lead starts earlier and lighter.
-#  - STOP_DISTANCE_TRIM shifts the obstacle away by 1 m = STOP_DISTANCE 6 -> 5 at every speed (driver: "apply 6-1 too").
-COMFORT_BRAKE_BP = [40.0 / 3.6, 80.0 / 3.6]  # m/s
-COMFORT_BRAKE_V = [1.5, COMFORT_BRAKE]  # m/s^2
-STOP_DISTANCE_TRIM = 1.0  # m: effective stop distance = STOP_DISTANCE - STOP_DISTANCE_TRIM
+# every horizon node. Both constants are compiled into the prebuilt solver, so the driver's adjustment is applied from
+# outside through x_obstacle, a per-node parameter: a positive trim moves the obstacle away = that much LESS desired
+# distance. Driver's spec: "below 50 km/h one metre less than the original, and above 80 km/h slowly growing again":
+# -1 m up to 50 km/h, back to stock at 80, then +1 m at 100 and +2 m at 120 (0.05 m per km/h). The same trim applies
+# at equal speeds, so the steady following gap moves by the same amount (T_FOLLOW*v + 6 - trim).
+# Tried on the device MPC with the real leads of route 000000ec (mpc_replay.py) before this: a 1.5 m/s^2 comfort brake
+# below 40 km/h cut the stopped-lead approach peak -1.81 -> -1.49 but did nothing for the lead-turning-right event
+# (lead braking 2.4 m/s^2 31 m ahead at 56 km/h: peak -2.8..-3.2 whatever the obstacle cost, danger factor or lead
+# projection), so the driver chose this simpler trim; the comfort-brake schedule is kept out for now.
+DESIRED_DIST_TRIM_BP = [50.0 / 3.6, 80.0 / 3.6, 120.0 / 3.6]  # m/s
+DESIRED_DIST_TRIM_V = [1.0, 0.0, -2.0]  # m taken OFF the desired distance (negative = added)
 
 
-def get_comfort_brake(v):
-  return np.interp(v, COMFORT_BRAKE_BP, COMFORT_BRAKE_V)
+def get_desired_dist_trim(v_ego):
+  return np.interp(np.maximum(v_ego, 0.0), DESIRED_DIST_TRIM_BP, DESIRED_DIST_TRIM_V)
 
 
 def get_stopped_equivalence_factor(v_lead):
-  return (v_lead**2) / (2 * get_comfort_brake(v_lead))
-
-
-def get_ego_comfort_margin(v_ego):
-  """extra distance the scheduled comfort brake wants over the compiled v^2/(2*COMFORT_BRAKE); 0 at and above 80 km/h"""
-  v = np.maximum(v_ego, 0.0)
-  return (v**2) * (1.0 / (2 * get_comfort_brake(v)) - 1.0 / (2 * COMFORT_BRAKE))
+  return (v_lead**2) / (2 * COMFORT_BRAKE)
 
 def get_safe_obstacle_distance(v_ego, t_follow):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
@@ -347,8 +339,8 @@ class LongitudinalMpc:
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
-    # SP: scheduled comfort brake (ego side) and stop-distance trim, both as obstacle shifts (see get_comfort_brake)
-    x_obstacles = x_obstacles - get_ego_comfort_margin(self.x_sol[:, 1])[:, None] + STOP_DISTANCE_TRIM
+    # SP: the driver's desired-distance trim, as an obstacle shift per node (see get_desired_dist_trim)
+    x_obstacles = x_obstacles + get_desired_dist_trim(self.x_sol[:, 1])[:, None]
 
     self.yref[:,:] = 0.0
     for i in range(N):
