@@ -61,7 +61,7 @@ DISALLOWED_GEARS = (GearShifter.park, GearShifter.reverse)
 # that with a fixed ~1360 N (BRAKE 0xA6), not enough on a steep slope (000000ec 23:51:59: rolled away at ~1.7 m/s^2).
 # Driver 2026-10-03: "can the hold not ask for more, say 1800 N?" - untested whether the PCM scales the clamp with
 # this request; try -1.5 / -2.0 here parked on a flat lot and read 0xA6 before relying on it.
-BRAKE_HOLD_DECEL = -1.0  # m/s^2 requested in DSS1GDRV while holding
+BRAKE_HOLD_DECEL = -1.5  # m/s^2 requested in DSS1GDRV while holding (driver 2026-10-03: try -1.5 first; -1.0 gave ~1360 N)
 
 # PRE_COLLISION_2 fields that go high when the camera's own PCS/AEB is genuinely intervening this
 # frame (PCSALM mirrors PRECOLLISION_ACTIVE; IBTRGR/PBATRGR/PREFILL/AVSTRGR/PBRTRGR/PPTRGR are its
