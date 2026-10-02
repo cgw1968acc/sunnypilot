@@ -85,20 +85,33 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
 # it gradually less, above it slowly more": -1 m up to 50 km/h, back to stock at 70, then +0.05 m per km/h (+1 m at
 # 90, +2 m at 110, +2.5 m at 120). The same trim applies at equal speeds, so the steady following gap moves by the
 # same amount (T_FOLLOW*v + 6 - trim).
-# Tried on the device MPC with the real leads of route 000000ec (mpc_replay.py) before this: a 1.5 m/s^2 comfort brake
-# below 40 km/h cut the stopped-lead approach peak -1.81 -> -1.49 but did nothing for the lead-turning-right event
-# (lead braking 2.4 m/s^2 31 m ahead at 56 km/h: peak -2.8..-3.2 whatever the obstacle cost, danger factor or lead
-# projection), so the driver chose this simpler trim; the comfort-brake schedule is kept out for now.
+# On top of the trim the comfort brake is speed scheduled ("earlier and lighter": driver 2026-10-03 03:30 "start with
+# -1 m at low speed and add the early light braking"): COMFORT_BRAKE_V at COMFORT_BRAKE_BP, 1.5 m/s^2 up to 40 km/h,
+# stock 2.5 from 80 km/h, so highway braking is untouched. The ego envelope grows by v^2/(2*CB) - v^2/5 (+8 m at 30
+# km/h, +16 m at 40); the lead's stopped-equivalence uses the same schedule, so at equal speeds the two cancel and the
+# steady following gap is set by the trim alone. Device MPC replay of route 000000ec (mpc_replay.py): stopped-lead
+# approach from 40 km/h peak -1.81 -> -1.49 m/s^2, onset 0.5 s earlier, 20-10 km/h mean 1.62 -> 1.27; following a
+# braking lead -1.72 -> -1.63; a lead braking 2.4 m/s^2 31 m ahead at 56 km/h stays -2.9..-3.1 (physics, not tunable
+# here). The trim alone changed no force at all, only the gap.
 DESIRED_DIST_TRIM_BP = [50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
 DESIRED_DIST_TRIM_V = [1.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+COMFORT_BRAKE_BP = [40.0 / 3.6, 80.0 / 3.6]  # m/s
+COMFORT_BRAKE_V = [1.5, COMFORT_BRAKE]  # m/s^2
+
+
+def get_comfort_brake(v):
+  return np.interp(v, COMFORT_BRAKE_BP, COMFORT_BRAKE_V)
 
 
 def get_desired_dist_trim(v_ego):
-  return np.interp(np.maximum(v_ego, 0.0), DESIRED_DIST_TRIM_BP, DESIRED_DIST_TRIM_V)
+  """obstacle shift per node: the driver's trim minus the extra envelope of the scheduled comfort brake (0 from 80 km/h)"""
+  v = np.maximum(v_ego, 0.0)
+  margin = (v**2) * (1.0 / (2 * get_comfort_brake(v)) - 1.0 / (2 * COMFORT_BRAKE))
+  return np.interp(v, DESIRED_DIST_TRIM_BP, DESIRED_DIST_TRIM_V) - margin
 
 
 def get_stopped_equivalence_factor(v_lead):
-  return (v_lead**2) / (2 * COMFORT_BRAKE)
+  return (v_lead**2) / (2 * get_comfort_brake(v_lead))
 
 def get_safe_obstacle_distance(v_ego, t_follow):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
@@ -340,7 +353,7 @@ class LongitudinalMpc:
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
-    # SP: the driver's desired-distance trim, as an obstacle shift per node (see get_desired_dist_trim)
+    # SP: the driver's desired-distance trim and the scheduled comfort brake, as an obstacle shift per node
     x_obstacles = x_obstacles + get_desired_dist_trim(self.x_sol[:, 1])[:, None]
 
     self.yref[:,:] = 0.0
