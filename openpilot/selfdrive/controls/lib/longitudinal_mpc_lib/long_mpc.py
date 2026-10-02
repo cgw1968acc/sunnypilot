@@ -81,15 +81,16 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
 # SP (Altis, driver 2026-10-03): the MPC wants v^2/(2*COMFORT_BRAKE) + T_FOLLOW*v + STOP_DISTANCE in front of it at
 # every horizon node. Both constants are compiled into the prebuilt solver, so the driver's adjustment is applied from
 # outside through x_obstacle, a per-node parameter: a positive trim moves the obstacle away = that much LESS desired
-# distance. Driver's spec: "below 50 km/h one metre less than the original, and above 80 km/h slowly growing again":
-# -1 m up to 50 km/h, back to stock at 80, then +1 m at 100 and +2 m at 120 (0.05 m per km/h). The same trim applies
-# at equal speeds, so the steady following gap moves by the same amount (T_FOLLOW*v + 6 - trim).
+# distance. Driver's spec: "below 50 km/h one metre less than the original; take 70 km/h as the turning point: below
+# it gradually less, above it slowly more": -1 m up to 50 km/h, back to stock at 70, then +0.05 m per km/h (+1 m at
+# 90, +2 m at 110, +2.5 m at 120). The same trim applies at equal speeds, so the steady following gap moves by the
+# same amount (T_FOLLOW*v + 6 - trim).
 # Tried on the device MPC with the real leads of route 000000ec (mpc_replay.py) before this: a 1.5 m/s^2 comfort brake
 # below 40 km/h cut the stopped-lead approach peak -1.81 -> -1.49 but did nothing for the lead-turning-right event
 # (lead braking 2.4 m/s^2 31 m ahead at 56 km/h: peak -2.8..-3.2 whatever the obstacle cost, danger factor or lead
 # projection), so the driver chose this simpler trim; the comfort-brake schedule is kept out for now.
-DESIRED_DIST_TRIM_BP = [50.0 / 3.6, 80.0 / 3.6, 120.0 / 3.6]  # m/s
-DESIRED_DIST_TRIM_V = [1.0, 0.0, -2.0]  # m taken OFF the desired distance (negative = added)
+DESIRED_DIST_TRIM_BP = [50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
+DESIRED_DIST_TRIM_V = [1.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
 
 
 def get_desired_dist_trim(v_ego):
