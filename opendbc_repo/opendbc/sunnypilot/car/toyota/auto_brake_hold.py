@@ -6,16 +6,40 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 import math
+
 from opendbc.car import structs
 from opendbc.car.toyota import toyotacan
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
 GearShifter = structs.CarState.GearShifter
 
-# frames of confirmed hold-eligible standstill required before engaging
-BRAKE_HOLD_ALLOWED_TIMER = 100
-BRAKE_HOLD_MIN_FORCE = 1400.0 #n
-BRAKE_HOLD_LIGHT_TIMER = 250
+# Two ways to engage (driver 2026-09-30 night, modelled on the factory EPB hold of the Corolla Cross):
+#  - firm press at the stop: BRAKE_HOLD_ALLOWED_TIMER after the moment the brake force first reaches
+#    BRAKE_HOLD_MIN_FORCE while standing still;
+#  - no firm press: BRAKE_HOLD_LIGHT_TIMER after the wheels stopped.
+# The hold's pre-brake clamp is a step (PBRTRGR, not a ramped request). rlog 000000dc-e0: with the old fixed 1 s after
+# the standstill flag it showed as a -0.4..-0.6 m/s^2 jolt on 2 of 8 light manual stops, felt as part of stopping;
+# a light stop now waits 2.5 s, and after a deliberate firm press the clamp is expected.
+BRAKE_HOLD_ALLOWED_TIMER = 100  # frames (1 s) after the firm press
+# Like the factory electronic-parking-brake hold (Corolla Cross), the hold only arms when the driver has pressed the
+# pedal firmly at the stop: brake pressure (BRAKE 0xA6 BRAKE_FORCE) must reach BRAKE_HOLD_MIN_FORCE at some point
+# during the standstill. Altis 2026-09-30 night: an ordinary light stop sits at 600-1050 N, a deliberate firm press is
+# well above. A light stop stays unheld, so nothing is clamped under a driver who is just easing to a halt. When the
+# car does not broadcast the force (nan) the hold arms as before.
+BRAKE_HOLD_MIN_FORCE = 1400.0  # N
+# ... and without a firm press the hold still engages once the car has stood still this long (driver 2026-09-30:
+# a long stop at a light should be held too, a short creep-stop should not)
+BRAKE_HOLD_LIGHT_TIMER = 250  # frames (2.5 s)
+# ... but only if the driver is holding the car with at least this force at that moment (driver 2026-10-02, after the
+# 22:30 four-bookmark stop): pressing ~760-800 N the brake only just balanced the hybrid's creep torque, so when the hold
+# clamped to its fixed ~1360 N the body rocked (IMU +0.61 / -0.42); at 960 N (21:17:44, 00:13:48) the same clamp was not
+# felt. Lighter than this the hold waits (it engages as soon as the driver presses a little more); released lightly, the
+# car creeps as it would without the hold. Once engaged the hold stays on whatever the pedal does.
+BRAKE_HOLD_LIGHT_MIN_FORCE = 900.0  # N
+# Both timers count from the REAL stop (driver 2026-10-01 22:30, four bookmarks: a very slow, very gentle manual stop
+# and the hold "suddenly cut in" while the car still rolled below the ~0.5 km/h wheel-speed floor). The standstill flag
+# now comes from the wheel pulse counter as well (wheel_pulse.py): while the car still creeps it is not standstill, so
+# these timers restart until it really stands.
 
 DISALLOWED_GEARS = (GearShifter.park, GearShifter.reverse)
 
@@ -57,6 +81,7 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     self._armed = False
     self._firm_frame = 0
     self._prev_brake_pressed = False
+    self._engaged = False
 
   def update(self, CS: structs.CarState, frame: int, packer) -> list:
     relay_blocked = (CS.out.standstill and CS.out.cruiseState.available and not CS.out.cruiseState.enabled and
@@ -74,13 +99,16 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
         self._armed = True
         self._firm_frame = self._counter
       firm_ready = self._armed and self._counter - self._firm_frame >= BRAKE_HOLD_ALLOWED_TIMER
-      held_long = self._counter > BRAKE_HOLD_LIGHT_TIMER
-      self.active = (firm_ready or held_long) and not self._released
+      held_long = self._counter > BRAKE_HOLD_LIGHT_TIMER and (math.isnan(force) or force >= BRAKE_HOLD_LIGHT_MIN_FORCE)
+      if (firm_ready or held_long) and not self._released:
+        self._engaged = True
+      self.active = self._engaged and not self._released
     else:
       self._counter = 0
       self.active = False
       self._released = False
       self._armed = False
+      self._engaged = False
 
     self._prev_brake_pressed = CS.out.brakePressed
 
