@@ -178,7 +178,7 @@ def create_bsm_polling_status(lr_blindspot):
 
 
 # auto brake hold
-def create_brake_hold_command(packer, frame, pre_collision_2, brake_hold_active):
+def create_brake_hold_command(packer, frame, pre_collision_2, brake_hold_active, hold_decel=-1.0):
   # forward PRE_COLLISION_2 when auto brake hold is not active
   values = {s: pre_collision_2[s] for s in [
     "DSS1GDRV",
@@ -204,7 +204,7 @@ def create_brake_hold_command(packer, frame, pre_collision_2, brake_hold_active)
 
   if brake_hold_active:
     values = {
-      "DSS1GDRV": 0x3FF,
+      "DSS1GDRV": hold_decel,  # m/s^2 (signed, 0.1 per count); the old magic 0x3FF packed to -1.0
       "PBRTRGR": frame % 730 < 727,  # cut actuation for 3 frames
     }
 

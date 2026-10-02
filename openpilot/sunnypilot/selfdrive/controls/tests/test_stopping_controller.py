@@ -103,7 +103,7 @@ class TestEndOfStop:
     out = run(sc, STOPPING, cs(0.8), -0.30, END, 0.4)
     assert abs(out - END) < 1e-6
     # wheels stop: unchanged until the hold delay, then ramps to stopAccel at the hold rate
-    out_at_stop = run(sc, STOPPING, cs(0.0, standstill=True), -0.30, out, 0.5)
+    out_at_stop = run(sc, STOPPING, cs(0.0, standstill=True), -0.30, out, 0.15)
     assert abs(out_at_stop - END) < 1e-6
     out_held = run(sc, STOPPING, cs(0.0, standstill=True), -0.30, out_at_stop, 1.0)
     assert out_held < out_at_stop - 0.3

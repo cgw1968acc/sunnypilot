@@ -19,8 +19,10 @@ class StoppingController:
   # presses to 1000-2400 N within 1-2 s of stopping (owner 2026-10-02: the car must not be able to move again, also on
   # a slope). 1.0 m/s^2/s reaches the default -2.0 (~2900 N) in ~1.9 s; the old 0.5 took ~3.7 s.
   STANDSTILL_HOLD_RATE = 1.0  # m/s^2/s
-  STANDSTILL_HOLD_DELAY_LEAD = 0.6  # s
-  STANDSTILL_HOLD_DELAY_NO_LEAD = 0.9  # s
+  # the standstill flag is the real wheel stop (wheel pulse counter), so the hold ramp needs no settling wait any more
+  # (driver 2026-10-03: "with a real wheel-stop signal the delay is unnecessary, never more than 0.2 s")
+  STANDSTILL_HOLD_DELAY_LEAD = 0.2  # s
+  STANDSTILL_HOLD_DELAY_NO_LEAD = 0.2  # s
   STOPPING_FREEZE_MAX = 2.0  # s
   STOPPING_EXIT_DEBOUNCE = 0.2  # s
   STOPPING_FOLLOW_MIN = -0.10  # m/s^2

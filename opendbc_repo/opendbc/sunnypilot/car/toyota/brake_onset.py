@@ -9,9 +9,9 @@ import numpy as np
 ONSET_T_BP = [0.0, 0.15, 0.6]  # s
 ONSET_V_BP = [11.1, 16.7]  # m/s
 ONSET_T1_V = [0.1, 0.1]
-ONSET_T3_V = [0.3, 0.3]
+ONSET_T3_V = [0.4, 0.4]  # driver 2026-10-03: 0.3-0.4 s from the light first touch to the full request
 ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3
-HARD_BRAKE_ACCEL = -1.5
+HARD_BRAKE_ACCEL = -2.0  # a stopped-lead approach peaks at -1.65 (route 000000ec) and is not an emergency
 URGENT_T = 0.1  # s
 URGENT_J = 1.0  # m/s^3
 URGENT_T_RAMP = 0.1  # s

@@ -2,7 +2,8 @@ import unittest
 from unittest.mock import patch
 
 from opendbc.car import structs
-from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController, BRAKE_HOLD_ALLOWED_TIMER, BRAKE_HOLD_MIN_FORCE, BRAKE_HOLD_LIGHT_TIMER, pcs_is_active
+from opendbc.sunnypilot.car.toyota.auto_brake_hold import (AutoBrakeHoldCarController, BRAKE_HOLD_ALLOWED_TIMER, BRAKE_HOLD_MIN_FORCE,
+                                                            BRAKE_HOLD_LIGHT_TIMER, pcs_is_active)
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
 GearShifter = structs.CarState.GearShifter
@@ -16,9 +17,10 @@ def make_car_params_sp(enabled: bool = True) -> structs.CarParamsSP:
 
 class FakeCarState:
   def __init__(self, standstill=True, cruise_enabled=False, cruise_available=True, gas_pressed=False,
-               gear=GearShifter.drive, brake_pressed=False, pre_collision_2=None):
+               gear=GearShifter.drive, brake_pressed=False, pre_collision_2=None, wheel_speed=0.0):
     self.out = structs.CarState()
     self.out.standstill = standstill
+    self.out.wheelSpeeds.fl = self.out.wheelSpeeds.fr = self.out.wheelSpeeds.rl = self.out.wheelSpeeds.rr = wheel_speed
     self.out.cruiseState.enabled = cruise_enabled
     self.out.cruiseState.available = cruise_available
     self.out.gasPressed = gas_pressed
@@ -64,11 +66,11 @@ class TestAutoBrakeHoldCarController(unittest.TestCase):
       ctrl.update(cs, i, None)
     # reaches standstill, foot stays down for a while, then lifts
     cs.out.standstill = True
-    for i in range(30, 50):
+    for i in range(30, 30 + BRAKE_HOLD_ALLOWED_TIMER - 2):
       ctrl.update(cs, i, None)
       self.assertFalse(ctrl.active, "must not engage while the original stopping press is still held")
     cs.out.brakePressed = False
-    for i in range(50, 50 + BRAKE_HOLD_ALLOWED_TIMER + 1):
+    for i in range(30 + BRAKE_HOLD_ALLOWED_TIMER - 2, 50 + BRAKE_HOLD_ALLOWED_TIMER + 1):
       ctrl.update(cs, i, None)
     self.assertTrue(ctrl.active, "should engage once the stopping press is released and the timer elapses")
 
@@ -109,14 +111,13 @@ class TestAutoBrakeHoldCarController(unittest.TestCase):
     frame += 1
     self.assertFalse(ctrl.active)
 
-    # drives off - leaves the standstill episode entirely
-    cs.out.standstill = False
+    # drives off - leaves the standstill episode entirely (the wheels turn)
+    cs = FakeCarState(standstill=False, brake_pressed=True, wheel_speed=2.0)
     ctrl.update(cs, frame, None)
     frame += 1
 
     # stops again
-    cs.out.standstill = True
-    cs.out.brakePressed = False
+    cs = FakeCarState(brake_pressed=False)
     for _ in range(BRAKE_HOLD_ALLOWED_TIMER + 1):
       ctrl.update(cs, frame, None)
       frame += 1
@@ -248,18 +249,17 @@ class TestAutoBrakeHoldFirmPress(unittest.TestCase):
 
   def test_firm_press_engages_one_timer_after_the_press(self, mock_create):
     light, firm = BRAKE_HOLD_MIN_FORCE * 0.6, BRAKE_HOLD_MIN_FORCE * 1.1
-    # stopped lightly for 0.5 s, then pressed firmly: engages BRAKE_HOLD_ALLOWED_TIMER after the press, not before
-    self.assertFalse(self._run([light] * 50 + [firm] * BRAKE_HOLD_ALLOWED_TIMER).active)
-    self.assertTrue(self._run([light] * 50 + [firm] * (BRAKE_HOLD_ALLOWED_TIMER + 1)).active)
+    # stopped lightly, then pressed firmly before the light timer: engages BRAKE_HOLD_ALLOWED_TIMER after the press, not before
+    self.assertFalse(self._run([light] * 5 + [firm] * BRAKE_HOLD_ALLOWED_TIMER).active)
+    self.assertTrue(self._run([light] * 5 + [firm] * (BRAKE_HOLD_ALLOWED_TIMER + 1)).active)
     self.assertLess(BRAKE_HOLD_ALLOWED_TIMER, BRAKE_HOLD_LIGHT_TIMER)
 
   def test_firm_press_arms_even_if_eased_afterwards(self, mock_create):
-    forces = [BRAKE_HOLD_MIN_FORCE * 0.6] * 50 + [BRAKE_HOLD_MIN_FORCE * 1.1] * 10 + [BRAKE_HOLD_MIN_FORCE * 0.6] * (BRAKE_HOLD_ALLOWED_TIMER)
+    forces = [BRAKE_HOLD_MIN_FORCE * 0.6] * 5 + [BRAKE_HOLD_MIN_FORCE * 1.1] * 2 + [BRAKE_HOLD_MIN_FORCE * 0.6] * (BRAKE_HOLD_ALLOWED_TIMER)
     self.assertTrue(self._run(forces).active)
 
   def test_missing_force_signal_keeps_the_old_behaviour(self, mock_create):
     self.assertTrue(self._run([float("nan")] * (BRAKE_HOLD_ALLOWED_TIMER + 5)).active)
-
 
 
 @patch("opendbc.sunnypilot.car.toyota.auto_brake_hold.toyotacan.create_brake_hold_command")
@@ -270,7 +270,7 @@ class TestAutoBrakeHoldRealStop(unittest.TestCase):
     ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
     light = BRAKE_HOLD_MIN_FORCE * 0.7
     for i in range(500):
-      creeping = (i % 70) < 10          # every 0.7 s the pulse counter shows motion for a moment
+      creeping = (i % 25) < 10          # every 0.25 s the pulse counter shows motion for a moment
       cs = FakeCarState(standstill=not creeping, brake_pressed=True)
       cs.brake_force = light
       ctrl.update(cs, i, None)
@@ -302,6 +302,20 @@ class TestAutoBrakeHoldLightMinForce(unittest.TestCase):
     for i in range(1, 600):
       self.assertFalse(self._step(ctrl, i, BRAKE_HOLD_LIGHT_MIN_FORCE - 100))
     self.assertTrue(self._step(ctrl, 600, BRAKE_HOLD_LIGHT_MIN_FORCE + 50))   # presses a little more: engages
+
+  def test_engaged_hold_survives_a_wheel_pulse_while_the_wheels_read_zero(self, mock_create):
+    # 2026-10-03 slope roll-away: one pulse step after engagement must not drop the hold
+    ctrl = self._ctrl()
+    for i in range(1, BRAKE_HOLD_LIGHT_TIMER + 2):
+      self._step(ctrl, i, 960.0)
+    self.assertTrue(ctrl.active)
+    for i in range(BRAKE_HOLD_LIGHT_TIMER + 2, BRAKE_HOLD_LIGHT_TIMER + 60):
+      cs = FakeCarState(standstill=False, brake_pressed=False)   # pulse counter moved, wheel speeds still 0
+      ctrl.update(cs, i, None)
+      self.assertTrue(ctrl.active)
+    cs = FakeCarState(standstill=False, brake_pressed=False, wheel_speed=0.3)   # the wheels turn: panda would refuse 0x344
+    ctrl.update(cs, 1000, None)
+    self.assertFalse(ctrl.active)
 
   def test_engaged_hold_latches_when_the_pedal_lightens(self, mock_create):
     ctrl = self._ctrl()
