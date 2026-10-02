@@ -24,6 +24,15 @@ default (the `-0.02` line is commented out), stock `long_mpc.py`.
 | Lane-change start rate | `openpilot/selfdrive/controls/controlsd.py` `_lane_change_start_curv_rate()` | Speed-dependent cap on how fast the curvature builds in the first seconds of a lane change. |
 | Robustness | `selfdrived.py` (`micd`, `qcomgpsd` ignored), `system/micd.py`, `system/timed.py`, `system/qcomgpsd/qcomgpsd.py` | A dead mic or GPS no longer blocks engagement; last known time saved/restored. |
 
+## Added on tnpb2 (end of stop, 2026-10-02 night)
+
+`openpilot/sunnypilot/selfdrive/controls/lib/stopping_controller.py` (Kumar's module, hooked in `controlsd.py`) now
+holds the request at `END_REQUEST` (-0.65) from `END_V` (3 km/h) until the wheels stop whenever the plan is braking
+to a stop (`a_target <= END_PLAN_MIN`, latched until the plan wants to go), never lighter while rolling, harder
+planner requests pass. From the driver's template stops (manual_stops.py, 2026-10-01 11:40-11:54): pedal constant
+~800-900 N = 0.5-0.7 m/s^2 delivered through the stop, no release, no rebound. After standstill the stock hold delay
+and ramp to `stopAccel` apply unchanged. Tests: `openpilot/sunnypilot/selfdrive/controls/tests/test_stopping_controller.py`.
+
 ## Deliberately NOT carried over (smooth-stop work, restart from Kumar's base)
 
 - `openpilot/sunnypilot/selfdrive/controls/lib/stop_gap/` (governor, device campaign, tests) and its planner hooks / A-B flag.
