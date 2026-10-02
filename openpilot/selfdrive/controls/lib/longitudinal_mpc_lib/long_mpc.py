@@ -78,8 +78,34 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
+# SP (Altis, driver 2026-10-03): the MPC wants v^2/(2*COMFORT_BRAKE) + T_FOLLOW*v + STOP_DISTANCE in front of it at
+# every horizon node. On route 000000ec a lead that stopped 28.6 m ahead at 29 km/h made it brake to -1.65 m/s^2 in
+# ~2 s ("too early and too hard below 40 km/h"); the driver wants an earlier but much lighter onset at the same gap.
+# COMFORT_BRAKE and STOP_DISTANCE are compiled into the solver (prebuilt device), so both are applied from outside
+# through x_obstacle, which is a per-node parameter:
+#  - the comfort brake becomes speed scheduled, COMFORT_BRAKE_V at COMFORT_BRAKE_BP: 1.5 m/s^2 up to 40 km/h (the
+#    envelope grows by v^2/3 - v^2/5: +9 m at 30 km/h, +16 m at 40, so the approach starts that much earlier and the
+#    average decel falls from ~1.6 to ~1.1 m/s^2), stock 2.5 from 80 km/h. The lead's stopped-equivalence uses the
+#    same schedule, so at equal speeds the two cancel and the steady following gap (T_FOLLOW*v + STOP_DISTANCE) and
+#    the stop gap are unchanged; only closing on a slower lead starts earlier and lighter.
+#  - STOP_DISTANCE_TRIM shifts the obstacle away by 1 m = STOP_DISTANCE 6 -> 5 at every speed (driver: "apply 6-1 too").
+COMFORT_BRAKE_BP = [40.0 / 3.6, 80.0 / 3.6]  # m/s
+COMFORT_BRAKE_V = [1.5, COMFORT_BRAKE]  # m/s^2
+STOP_DISTANCE_TRIM = 1.0  # m: effective stop distance = STOP_DISTANCE - STOP_DISTANCE_TRIM
+
+
+def get_comfort_brake(v):
+  return np.interp(v, COMFORT_BRAKE_BP, COMFORT_BRAKE_V)
+
+
 def get_stopped_equivalence_factor(v_lead):
-  return (v_lead**2) / (2 * COMFORT_BRAKE)
+  return (v_lead**2) / (2 * get_comfort_brake(v_lead))
+
+
+def get_ego_comfort_margin(v_ego):
+  """extra distance the scheduled comfort brake wants over the compiled v^2/(2*COMFORT_BRAKE); 0 at and above 80 km/h"""
+  v = np.maximum(v_ego, 0.0)
+  return (v**2) * (1.0 / (2 * get_comfort_brake(v)) - 1.0 / (2 * COMFORT_BRAKE))
 
 def get_safe_obstacle_distance(v_ego, t_follow):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
@@ -321,6 +347,8 @@ class LongitudinalMpc:
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
+    # SP: scheduled comfort brake (ego side) and stop-distance trim, both as obstacle shifts (see get_comfort_brake)
+    x_obstacles = x_obstacles - get_ego_comfort_margin(self.x_sol[:, 1])[:, None] + STOP_DISTANCE_TRIM
 
     self.yref[:,:] = 0.0
     for i in range(N):
