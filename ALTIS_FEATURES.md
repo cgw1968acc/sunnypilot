@@ -26,12 +26,14 @@ default (the `-0.02` line is commented out), stock `long_mpc.py`.
 
 ## Added on tnpb2 (end of stop, 2026-10-02 night)
 
-`openpilot/sunnypilot/selfdrive/controls/lib/stopping_controller.py` (Kumar's module, hooked in `controlsd.py`) now
-holds the request at `END_REQUEST` (-0.65) from `END_V` (3 km/h) until the wheels stop whenever the plan is braking
-to a stop (`a_target <= END_PLAN_MIN`, latched until the plan wants to go), never lighter while rolling, harder
-planner requests pass. From the driver's template stops (manual_stops.py, 2026-10-01 11:40-11:54): pedal constant
-~800-900 N = 0.5-0.7 m/s^2 delivered through the stop, no release, no rebound. After standstill the stock hold delay
-and ramp to `stopAccel` apply unchanged. Tests: `openpilot/sunnypilot/selfdrive/controls/tests/test_stopping_controller.py`.
+`openpilot/sunnypilot/selfdrive/controls/lib/stopping_controller.py` (Kumar's module, hooked in `controlsd.py`) holds
+the request at `END_REQUEST` (-0.15, ~660 N) from `END_V` (3 km/h) until the wheels stop whenever the plan is braking
+to a stop (`a_target <= END_PLAN_MIN`, latched until the plan wants to go): never lighter (creep) and never firmer
+(nod); a plan at or below `END_HARD` (-1.5) passes through. From the driver's 42 manual stops (manual_stops.py,
+lightest_stop.py): the pedal stays constant to the stop; 640 N is the lightest force that stopped and held, 680 N+
+held every time, 600 N and lighter crept; the PCM's settled force below 3 km/h is ~480 + 1200 x |request| N. After
+standstill the stock hold delay and ramp to `stopAccel` apply unchanged (with the default -2.0 that is ~2900 N over
+~4 s; tnpb1 used -1.0 = ~1840 N). Tests: `openpilot/sunnypilot/selfdrive/controls/tests/test_stopping_controller.py`.
 
 ## Deliberately NOT carried over (smooth-stop work, restart from Kumar's base)
 
