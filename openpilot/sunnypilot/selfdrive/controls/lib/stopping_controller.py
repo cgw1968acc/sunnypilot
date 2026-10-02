@@ -15,7 +15,10 @@ class StoppingController:
   """Optional terminal-stop policy applied after stock LongControl.update()."""
 
   STOPPING_DECEL_RATE = 0.3  # m/s^2/s
-  STANDSTILL_HOLD_RATE = 0.5  # m/s^2/s
+  # once the wheels really stand (wheel pulse) and the hold delay has passed, press on firmly to stopAccel: the driver
+  # presses to 1000-2400 N within 1-2 s of stopping (owner 2026-10-02: the car must not be able to move again, also on
+  # a slope). 1.0 m/s^2/s reaches the default -2.0 (~2900 N) in ~1.9 s; the old 0.5 took ~3.7 s.
+  STANDSTILL_HOLD_RATE = 1.0  # m/s^2/s
   STANDSTILL_HOLD_DELAY_LEAD = 0.6  # s
   STANDSTILL_HOLD_DELAY_NO_LEAD = 0.9  # s
   STOPPING_FREEZE_MAX = 2.0  # s
