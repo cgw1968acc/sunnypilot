@@ -12,7 +12,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.stopping_controller import Stop
 
 LIMITS = (-3.5, 2.0)
 PID, STOPPING, OFF = LongCtrlState.pid, LongCtrlState.stopping, LongCtrlState.off
-END = StoppingController.END_REQUEST
+END_LO, END_HI = StoppingController.END_LO, StoppingController.END_HI
 
 
 def cs(v_kph, standstill=False):
@@ -32,22 +32,21 @@ def blend(sc, v_kph):
 
 
 class TestEndOfStop:
-  def test_below_blend_v_the_request_follows_the_line_where_the_plan_eases_off(self):
+  def test_the_line_runs_from_the_entry_request_through_5kph_to_the_rest_value(self):
     sc = StoppingController(-2.0)
-    # crossing 10 km/h with the request at -1.20: the line runs from -1.20 there to END_REQUEST at 0 km/h
     out = run(sc, PID, cs(9.9), -1.20, -1.20, 0.2)
     assert sc.end_active and abs(sc.a_entry - (-1.20)) < 1e-6
-    # the planner's curve eases to -0.30 at 5 km/h: the line (-0.85) is sent instead
-    out = run(sc, PID, cs(5.0), -0.30, out, 0.6)
-    assert abs(blend(sc, 5.0) - (END + (-1.20 - END) * 0.5)) < 1e-6
-    assert abs(out - blend(sc, 5.0)) < 1e-6
-    # ... at 2.5 km/h the line is at -0.675, no step anywhere ...
+    # 7.5 km/h: halfway between the entry request and END_HI; the planner has eased to -0.30, the line is sent
+    out = run(sc, PID, cs(7.5), -0.30, out, 0.6)
+    assert abs(blend(sc, 7.5) - (-1.20 + (END_HI - -1.20) * 0.5)) < 1e-6
+    assert abs(out - blend(sc, 7.5)) < 1e-6
+    # 5 km/h: END_HI; 2.5 km/h: halfway to END_LO; the wheel stop: END_LO
+    out = run(sc, PID, cs(5.0), -0.20, out, 0.4)
+    assert abs(out - END_HI) < 1e-6
     out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
-    assert abs(out - blend(sc, 2.5)) < 1e-6
-    # ... and reaches END_REQUEST at the wheel stop
-    out = run(sc, PID, cs(0.3), -0.20, out, 0.4)
-    assert abs(out - blend(sc, 0.3)) < 1e-6
-    assert abs(blend(sc, 0.0) - END) < 1e-6
+    assert abs(out - (END_HI + END_LO) / 2) < 1e-6
+    out = run(sc, PID, cs(0.0), -0.20, out, 0.4)
+    assert abs(out - END_LO) < 1e-6
 
   def test_the_line_is_a_floor_a_firmer_plan_still_passes(self):
     sc = StoppingController(-2.0)
@@ -57,21 +56,21 @@ class TestEndOfStop:
     out = run(sc, PID, cs(2.5), -1.8, out, 0.6)
     assert abs(out - (-1.8)) < 1e-6
 
-  def test_a_light_plan_at_entry_starts_the_line_at_end_request(self):
+  def test_a_light_plan_at_entry_starts_the_line_at_end_hi(self):
     sc = StoppingController(-2.0)
-    light = END + 0.05  # a plan lighter than the end force at entry
-    out = run(sc, PID, cs(2.8), light, light, 0.5)
-    assert abs(sc.a_entry - END) < 1e-6
-    assert abs(out - END) < 1e-6
-    # the planner's own curve eases off: the request does not lighten (creep)
-    out = run(sc, PID, cs(2.0), -0.20, out, 0.5)
-    assert abs(out - END) < 1e-6
+    light = END_HI + 0.1
+    out = run(sc, PID, cs(7.0), light, light, 0.5)
+    assert abs(sc.a_entry - END_HI) < 1e-6
+    assert abs(out - END_HI) < 1e-6
+    # the planner's own curve eases off below 5 km/h: the request follows the line, never the plan
+    out = run(sc, PID, cs(2.5), -0.10, out, 0.5)
+    assert abs(out - (END_HI + END_LO) / 2) < 1e-6
 
   def test_entry_is_rate_limited(self):
     sc = StoppingController(-2.0)
-    light = END + 0.08  # inside the end window (plan <= END_PLAN_MIN) but lighter than the end force
-    _, out = sc.update(PID, PID, cs(2.8), light, light, light, LIMITS, has_lead=True)
-    assert out > END
+    light = END_HI + 0.2
+    _, out = sc.update(PID, PID, cs(7.0), light, light, light, LIMITS, has_lead=True)
+    assert out > END_HI
     assert abs(out - (light - StoppingController.END_RATE * DT_CTRL)) < 1e-6
 
   def test_an_emergency_plan_still_passes(self):
@@ -95,18 +94,18 @@ class TestEndOfStop:
     sc = StoppingController(-2.0)
     run(sc, PID, cs(2.0), -0.60, -0.60, 0.5)
     assert sc.end_active
-    _, out = sc.update(PID, PID, cs(1.5), 0.50, END, 0.50, LIMITS, has_lead=True)
+    _, out = sc.update(PID, PID, cs(1.5), 0.50, END_LO, 0.50, LIMITS, has_lead=True)
     assert not sc.end_active and abs(out - 0.50) < 1e-6
 
-  def test_stopping_state_keeps_the_force_until_the_wheels_stop_then_holds(self):
+  def test_stopping_state_keeps_the_line_until_the_wheels_stop_then_holds(self):
     sc = StoppingController(-1.0)
-    run(sc, PID, cs(2.0), END, END, 0.5)
-    # 1 km/h, stopping state, the planner's curve has eased to -0.30: Kumar's lighter-follow would ease the request
-    out = run(sc, STOPPING, cs(0.8), -0.30, END, 0.4)
-    assert abs(out - END) < 1e-6
-    # wheels stop: unchanged until the hold delay, then ramps to stopAccel at the hold rate
-    out_at_stop = run(sc, STOPPING, cs(0.0, standstill=True), -0.30, out, 0.15)
-    assert abs(out_at_stop - END) < 1e-6
-    out_held = run(sc, STOPPING, cs(0.0, standstill=True), -0.30, out_at_stop, 1.0)
+    run(sc, PID, cs(2.0), END_HI, END_HI, 0.5)
+    # 1 km/h, stopping state, the planner's curve has eased to -0.10: Kumar's lighter-follow would ease the request
+    out = run(sc, STOPPING, cs(1.0), -0.10, blend(sc, 2.0), 0.4)
+    assert abs(out - blend(sc, 1.0)) < 1e-6
+    # wheels stop: the last value of the line is held until the hold delay, then ramps to stopAccel at the hold rate
+    out_at_stop = run(sc, STOPPING, cs(0.0, standstill=True), -0.10, out, 0.15)
+    assert abs(out_at_stop - out) < 1e-6 and END_HI < out_at_stop <= END_LO + 1e-6
+    out_held = run(sc, STOPPING, cs(0.0, standstill=True), -0.10, out_at_stop, 1.0)
     assert out_held < out_at_stop - 0.3
     assert out_held >= -1.0 - 1e-6

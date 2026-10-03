@@ -47,9 +47,13 @@ class StoppingController:
   # END_REQUEST -0.50 (~1080 N by BF ~ 480 + 1200 * |req|) is the lightest request that still decelerates under ACC:
   # on this route 760-1000 N gave only -0.2..-0.25 m/s^2 (the pedal is not pressed, so the hybrid keeps its creep
   # torque), while -0.63..-0.78 gave -0.6..-1.07 at 3 km/h. The driver's template ends at 0.5-0.7 m/s^2.
-  BLEND_V = 10.0 / 3.6  # m/s: the line starts here
-  BLEND_POW = 1.0  # 1 = linear in speed (the driver's own taper); 2 would flatten the line toward END_REQUEST
-  END_REQUEST = -0.35  # m/s^2 at 0 km/h (~900 N); driver 2026-10-03: -0.50 better than the step, -0.40 still firm, try -0.35
+  # Driver 2026-10-03 afternoon, after the -0.50 / -0.40 / -0.35 flat ends: "from 5 km/h to 0 use a formula: -0.5 at
+  # 5 km/h, -0.3 at 0 km/h, interpolated - firmer at 5 km/h, then easing as the car comes to rest". So the line is
+  # now piecewise linear through (BLEND_V, a_entry) -> (END_V_HI, END_HI) -> (0, END_LO); a_entry is at least END_HI.
+  BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
+  END_V_HI = 5.0 / 3.6  # m/s
+  END_HI = -0.50  # m/s^2 at END_V_HI (~1080 N)
+  END_LO = -0.30  # m/s^2 at 0 km/h (~840 N)
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
@@ -61,11 +65,10 @@ class StoppingController:
     self.stopped_once = False
     self.creep_t = 0.0
     self.end_active = False
-    self.a_entry = self.END_REQUEST
+    self.a_entry = self.END_HI
 
   def _blend(self, v_ego):
-    x = float(np.clip(v_ego / self.BLEND_V, 0.0, 1.0))
-    return self.END_REQUEST + (self.a_entry - self.END_REQUEST) * x ** self.BLEND_POW
+    return float(np.interp(v_ego, [0.0, self.END_V_HI, self.BLEND_V], [self.END_LO, self.END_HI, self.a_entry]))
 
   def _end_request(self, a_target, prev_accel, v_ego):
     target = min(a_target, self._blend(v_ego))  # the firmer of the plan and the line
@@ -96,7 +99,7 @@ class StoppingController:
       self.end_active = False
     elif not self.end_active and a_target <= self.END_PLAN_MIN:
       self.end_active = True
-      self.a_entry = min(prev_accel, self.END_REQUEST)  # the line starts where the request is now, at least END_REQUEST
+      self.a_entry = min(prev_accel, self.END_HI)  # the line starts where the request is now, at least END_HI
 
     if state != LongCtrlState.stopping:
       if self.end_active:
