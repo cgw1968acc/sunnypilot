@@ -68,9 +68,9 @@ class TestEndOfStop:
 
   def test_entry_is_rate_limited(self):
     sc = StoppingController(-2.0)
-    _, out = sc.update(PID, PID, cs(2.8), -0.40, -0.40, -0.40, LIMITS, has_lead=True)
+    _, out = sc.update(PID, PID, cs(2.8), -0.30, -0.30, -0.30, LIMITS, has_lead=True)
     assert out > END
-    assert abs(out - (-0.40 - StoppingController.END_RATE * DT_CTRL)) < 1e-6
+    assert abs(out - (-0.30 - StoppingController.END_RATE * DT_CTRL)) < 1e-6
 
   def test_an_emergency_plan_still_passes(self):
     sc = StoppingController(-2.0)
