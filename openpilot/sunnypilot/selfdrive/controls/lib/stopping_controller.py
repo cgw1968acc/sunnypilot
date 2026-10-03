@@ -49,7 +49,7 @@ class StoppingController:
   # torque), while -0.63..-0.78 gave -0.6..-1.07 at 3 km/h. The driver's template ends at 0.5-0.7 m/s^2.
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here
   BLEND_POW = 1.0  # 1 = linear in speed (the driver's own taper); 2 would flatten the line toward END_REQUEST
-  END_REQUEST = -0.40  # m/s^2 at 0 km/h (~960 N); -0.50 felt better than the -0.15 step but still firm (driver 2026-10-03 morning route)
+  END_REQUEST = -0.35  # m/s^2 at 0 km/h (~900 N); driver 2026-10-03: -0.50 better than the step, -0.40 still firm, try -0.35
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
