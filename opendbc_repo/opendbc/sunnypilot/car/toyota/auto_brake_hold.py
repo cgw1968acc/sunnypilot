@@ -23,7 +23,14 @@ GearShifter = structs.CarState.GearShifter
 # stands), the waits are no longer needed (driver 2026-10-03, after a slope stop where the hold came 2.5 s late and he
 # had to stomp: "with a real wheel-stop signal the delay is unnecessary, never more than 0.2 s"): 0.1 s after a firm
 # press, 0.2 s after a light stop.
-BRAKE_HOLD_ALLOWED_TIMER = 10  # frames (0.1 s) after the firm press
+# Route 000000ee 2026-10-03 (23 held manual stops, hold_timing.py): the standstill flag came a median 0.42 s after
+# the last wheel pulse, the hold 0.2 s after that, and the wheels never turned forward after a hold - but the body
+# was still settling: the IMU came to rest a median 0.54 s (p75 ~0.7 s) after the flag, so the 1000-1400 -> 2040 N
+# clamp landed under the driver's foot during the nod and felt like an intervention. Driver: "engage only when the
+# wheels are certainly not turning; if it still cuts in before the real stop, delay it to the real stop - the system
+# must determine the time from the data". The light stop therefore waits 0.7 s after the flag (~1.1 s after the last
+# pulse, past the settle in 3 of 4 stops); a firm press 0.3 s.
+BRAKE_HOLD_ALLOWED_TIMER = 30  # frames (0.3 s) after the firm press
 # Like the factory electronic-parking-brake hold (Corolla Cross), the hold only arms when the driver has pressed the
 # pedal firmly at the stop: brake pressure (BRAKE 0xA6 BRAKE_FORCE) must reach BRAKE_HOLD_MIN_FORCE at some point
 # during the standstill. Altis 2026-09-30 night: an ordinary light stop sits at 600-1050 N, a deliberate firm press is
@@ -32,7 +39,7 @@ BRAKE_HOLD_ALLOWED_TIMER = 10  # frames (0.1 s) after the firm press
 BRAKE_HOLD_MIN_FORCE = 1400.0  # N
 # ... and without a firm press the hold still engages once the car has stood still this long (driver 2026-09-30:
 # a long stop at a light should be held too, a short creep-stop should not)
-BRAKE_HOLD_LIGHT_TIMER = 20  # frames (0.2 s)
+BRAKE_HOLD_LIGHT_TIMER = 70  # frames (0.7 s)
 # ... but only if the driver is holding the car with at least this force at that moment (driver 2026-10-02, after the
 # 22:30 four-bookmark stop): pressing ~760-800 N the brake only just balanced the hybrid's creep torque, so when the hold
 # clamped to its fixed ~1360 N the body rocked (IMU +0.61 / -0.42); at 960 N (21:17:44, 00:13:48) the same clamp was not
