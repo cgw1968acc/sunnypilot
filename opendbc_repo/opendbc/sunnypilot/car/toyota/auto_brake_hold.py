@@ -108,9 +108,12 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     wheels_zero = max(abs(ws.fl), abs(ws.fr), abs(ws.rl), abs(ws.rr)) < 1e-3  # panda's vehicle_moving == false
     relay_blocked = (wheels_zero and CS.out.cruiseState.available and not CS.out.cruiseState.enabled and
                       not CS.out.gasPressed)
-    # before engagement the car must really stand (wheel pulse standstill); once engaged the hold persists for as long
-    # as the wheel speeds read zero, so one pulse step on a slope does not drop it
-    hold_allowed = relay_blocked and CS.out.gearShifter not in DISALLOWED_GEARS and (CS.out.standstill or self._engaged)
+    # before engagement the car must really stand (wheel pulse standstill); an ACTIVE hold persists for as long as the
+    # wheel speeds read zero, so one pulse step on a slope does not drop it. A hold that is not active (released by a
+    # fresh press, or never engaged) ends its episode as soon as the pulse counter shows the car moving: route 000000ee
+    # 2026-10-03 11:55 - hold, fresh press (released), the car crept ~1 km/h to the next stop with the wheel speeds
+    # still reading zero, and the "released" flag carried over, so the second stop was never held.
+    hold_allowed = relay_blocked and CS.out.gearShifter not in DISALLOWED_GEARS and (CS.out.standstill or self.active)
 
     if hold_allowed:
       # only a fresh press releases hold - the press that caused the stop is already reflected in

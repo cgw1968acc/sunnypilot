@@ -317,6 +317,24 @@ class TestAutoBrakeHoldLightMinForce(unittest.TestCase):
     ctrl.update(cs, 1000, None)
     self.assertFalse(ctrl.active)
 
+  def test_released_hold_does_not_carry_over_a_creep_to_the_next_stop(self, mock_create):
+    # route 000000ee 11:55: hold, fresh press releases it, creep below the wheel-speed floor, new stop must hold again
+    ctrl = self._ctrl()
+    for i in range(1, BRAKE_HOLD_LIGHT_TIMER + 2):
+      self._step(ctrl, i, 1120.0)
+    self.assertTrue(ctrl.active)
+    f = BRAKE_HOLD_LIGHT_TIMER + 2
+    self._step(ctrl, f, 2040.0, pressed=False); f += 1               # foot off, held
+    for _ in range(10):
+      self.assertFalse(self._step(ctrl, f, 450.0, pressed=True)); f += 1   # fresh press: released
+    for _ in range(20):                                                # creeping, wheel speeds still zero
+      cs = FakeCarState(standstill=False, brake_pressed=False); cs.brake_force = 200.0
+      ctrl.update(cs, f, None); f += 1
+      self.assertFalse(ctrl.active)
+    for _ in range(BRAKE_HOLD_LIGHT_TIMER + 2):                        # new stop at 1560 N
+      self._step(ctrl, f, 1560.0); f += 1
+    self.assertTrue(ctrl.active, "the next stop must be held again")
+
   def test_engaged_hold_latches_when_the_pedal_lightens(self, mock_create):
     ctrl = self._ctrl()
     for i in range(1, BRAKE_HOLD_LIGHT_TIMER + 2):
