@@ -69,7 +69,7 @@ class TestEndOfStop:
 
   def test_entry_is_rate_limited(self):
     sc = StoppingController(-2.0)
-    light = END + 0.10
+    light = END + 0.08  # inside the end window (plan <= END_PLAN_MIN) but lighter than the end force
     _, out = sc.update(PID, PID, cs(2.8), light, light, light, LIMITS, has_lead=True)
     assert out > END
     assert abs(out - (light - StoppingController.END_RATE * DT_CTRL)) < 1e-6

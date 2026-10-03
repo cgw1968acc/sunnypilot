@@ -93,7 +93,7 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
 # shift for a stopped lead: +1.8 m at 20 km/h, +3.2 at 30, +4.6 at 40, +5.9 at 50, +0.5 at 80 (trim only).
 DESIRED_DIST_TRIM_BP = [50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
 DESIRED_DIST_TRIM_V = [1.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
-LIGHT_ONSET_T = 0.5  # s of travel reserved for the light first press
+LIGHT_ONSET_T = 0.8  # s of travel reserved for the light first press (driver 2026-10-03 afternoon: 0.5 not enough, try 0.8)
 LIGHT_ONSET_BP = [50.0 / 3.6, 80.0 / 3.6]  # m/s
 LIGHT_ONSET_V = [1.0, 0.0]  # share of LIGHT_ONSET_T applied
 
