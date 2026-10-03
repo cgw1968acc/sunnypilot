@@ -59,7 +59,8 @@ class TestEndOfStop:
 
   def test_a_light_plan_at_entry_starts_the_line_at_end_request(self):
     sc = StoppingController(-2.0)
-    out = run(sc, PID, cs(2.8), -0.40, -0.40, 0.5)
+    light = END + 0.05  # a plan lighter than the end force at entry
+    out = run(sc, PID, cs(2.8), light, light, 0.5)
     assert abs(sc.a_entry - END) < 1e-6
     assert abs(out - END) < 1e-6
     # the planner's own curve eases off: the request does not lighten (creep)
@@ -68,9 +69,10 @@ class TestEndOfStop:
 
   def test_entry_is_rate_limited(self):
     sc = StoppingController(-2.0)
-    _, out = sc.update(PID, PID, cs(2.8), -0.30, -0.30, -0.30, LIMITS, has_lead=True)
+    light = END + 0.10
+    _, out = sc.update(PID, PID, cs(2.8), light, light, light, LIMITS, has_lead=True)
     assert out > END
-    assert abs(out - (-0.30 - StoppingController.END_RATE * DT_CTRL)) < 1e-6
+    assert abs(out - (light - StoppingController.END_RATE * DT_CTRL)) < 1e-6
 
   def test_an_emergency_plan_still_passes(self):
     sc = StoppingController(-2.0)
@@ -91,7 +93,7 @@ class TestEndOfStop:
 
   def test_lead_moving_off_releases_the_hold(self):
     sc = StoppingController(-2.0)
-    run(sc, PID, cs(2.0), -0.40, -0.40, 0.5)
+    run(sc, PID, cs(2.0), -0.60, -0.60, 0.5)
     assert sc.end_active
     _, out = sc.update(PID, PID, cs(1.5), 0.50, END, 0.50, LIMITS, has_lead=True)
     assert not sc.end_active and abs(out - 0.50) < 1e-6
