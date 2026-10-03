@@ -324,15 +324,20 @@ class TestAutoBrakeHoldLightMinForce(unittest.TestCase):
       self._step(ctrl, i, 1120.0)
     self.assertTrue(ctrl.active)
     f = BRAKE_HOLD_LIGHT_TIMER + 2
-    self._step(ctrl, f, 2040.0, pressed=False); f += 1               # foot off, held
-    for _ in range(10):
-      self.assertFalse(self._step(ctrl, f, 450.0, pressed=True)); f += 1   # fresh press: released
-    for _ in range(20):                                                # creeping, wheel speeds still zero
-      cs = FakeCarState(standstill=False, brake_pressed=False); cs.brake_force = 200.0
-      ctrl.update(cs, f, None); f += 1
+    self._step(ctrl, f, 2040.0, pressed=False)                        # foot off, held
+    f += 1
+    for _ in range(10):                                                # fresh press: released
+      self.assertFalse(self._step(ctrl, f, 450.0, pressed=True))
+      f += 1
+    for i in range(20):                                                # creeping, wheel speeds still zero; braking again at the end
+      cs = FakeCarState(standstill=False, brake_pressed=i >= 15)
+      cs.brake_force = 800.0 if i >= 15 else 200.0
+      ctrl.update(cs, f, None)
+      f += 1
       self.assertFalse(ctrl.active)
     for _ in range(BRAKE_HOLD_LIGHT_TIMER + 2):                        # new stop at 1560 N
-      self._step(ctrl, f, 1560.0); f += 1
+      self._step(ctrl, f, 1560.0)
+      f += 1
     self.assertTrue(ctrl.active, "the next stop must be held again")
 
   def test_engaged_hold_latches_when_the_pedal_lightens(self, mock_create):
