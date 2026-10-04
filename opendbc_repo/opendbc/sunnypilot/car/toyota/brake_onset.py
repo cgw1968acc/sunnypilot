@@ -78,8 +78,11 @@ class BrakeOnsetShaper:
   def is_urgent(self, accel_request: float, fcw: bool) -> bool:
     return fcw or accel_request < HARD_BRAKE_ACCEL
 
-ENGAGE_T_BP = [0.0, 0.1, 0.6]  # s
-ENGAGE_J_UP = [0.25, 0.6, 4.0]  # m/s^3
+ENGAGE_T_BP = [0.0, 0.1, 0.6]  # s; the window is still used to keep the soft BRAKE onset for a hard request after engaging
+# Driver 2026-10-04: "if Kumar's base added a soft start again, remove it - I want an immediate response, not a lurch,
+# following the eco/normal/sport profile". The gas-side engage ramp (0.25 -> 0.6 -> 4.0 m/s^3 over 0.6 s) is gone:
+# the up jerk after engaging is the stock windup limit; the accel profile sets how much.
+ENGAGE_J_UP = [4.0, 4.0, 4.0]  # m/s^3
 
 
 class EngageOnsetShaper:

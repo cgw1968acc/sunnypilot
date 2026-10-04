@@ -34,6 +34,12 @@ J_CRUISE_EASE_DOWN = 0.2  # m/s^3
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
+# SP (Altis, driver 2026-10-04): a set-speed INCREASE is an explicit order to accelerate, so the model's throttle gate
+# (gasPressProbs below ALLOW_THROTTLE_THRESHOLD clamps the cruise target to the coast decel) is ignored for
+# SET_SPEED_INTENT_T after it. Route 000000f6 13:32:53: in the traffic-light curve at 40 km/h the driver pressed + from
+# 50 to 74, the gate closed (gasProb 0.03-0.12) and the planner held -0.47 m/s^2 for 5.8 s; "the car does not react to
+# + in this curve, after the junction + works again". Everything else (lead MPC, e2e candidate, limits) still applies.
+SET_SPEED_INTENT_T = 6.0  # s
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -82,6 +88,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
+    self.v_cruise_prev = 0.0
+    self.t_set_speed_up = SET_SPEED_INTENT_T  # s since the last set-speed increase
     self.output_a_target = init_a
     self.output_should_stop = False
 
@@ -114,7 +122,13 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     throttle_probs = sm['modelV2'].meta.disengagePredictions.gasPressProbs
     throttle_prob = throttle_probs[1] if len(throttle_probs) > 1 else 1.0
-    self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
+    if v_cruise_initialized and self.v_cruise_prev > 0.0 and v_cruise > self.v_cruise_prev + 0.1 and not force_decel:
+      self.t_set_speed_up = 0.0
+    else:
+      self.t_set_speed_up = min(self.t_set_speed_up + self.dt, SET_SPEED_INTENT_T)
+    self.v_cruise_prev = v_cruise if v_cruise_initialized else 0.0
+    set_speed_intent = self.t_set_speed_up < SET_SPEED_INTENT_T and v_ego < v_cruise
+    self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED or set_speed_intent
 
     steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['vehicleParameters'].angleOffsetDeg
 
