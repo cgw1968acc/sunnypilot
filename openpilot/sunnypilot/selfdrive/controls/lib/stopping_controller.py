@@ -53,7 +53,11 @@ class StoppingController:
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
   END_HI = -0.50  # m/s^2 at END_V_HI (~1080 N)
-  END_LO = -0.25  # m/s^2 at 0 km/h (~780 N); driver 2026-10-04: -0.30 "closer to perfect", try -0.25
+  END_LO = -0.25  # m/s^2 at 0 km/h (~780 N); driver 2026-10-04: -0.30 "closer to perfect", try -0.25 (slight creep on one stop: the threshold)
+  # Driver 2026-10-04 (route 000000f2): "between 5 and 0 km/h not linear but parabolic: steeper from 5 to 2, flat from
+  # 2 to 0". blend(v) = END_LO + (END_HI - END_LO) * (v / END_V_HI) ** END_POW below END_V_HI: with END_POW 2 the
+  # request is -0.41 at 4 km/h, -0.34 at 3, -0.29 at 2, -0.26 at 1, -0.25 at the wheel stop.
+  END_POW = 2.0
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
@@ -68,7 +72,10 @@ class StoppingController:
     self.a_entry = self.END_HI
 
   def _blend(self, v_ego):
-    return float(np.interp(v_ego, [0.0, self.END_V_HI, self.BLEND_V], [self.END_LO, self.END_HI, self.a_entry]))
+    if v_ego < self.END_V_HI:
+      x = max(v_ego, 0.0) / self.END_V_HI
+      return self.END_LO + (self.END_HI - self.END_LO) * x ** self.END_POW
+    return float(np.interp(v_ego, [self.END_V_HI, self.BLEND_V], [self.END_HI, self.a_entry]))
 
   def _end_request(self, a_target, prev_accel, v_ego):
     target = min(a_target, self._blend(v_ego))  # the firmer of the plan and the line

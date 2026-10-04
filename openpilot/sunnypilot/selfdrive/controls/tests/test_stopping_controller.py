@@ -40,11 +40,12 @@ class TestEndOfStop:
     out = run(sc, PID, cs(7.5), -0.30, out, 0.6)
     assert abs(blend(sc, 7.5) - (-1.20 + (END_HI - -1.20) * 0.5)) < 1e-6
     assert abs(out - blend(sc, 7.5)) < 1e-6
-    # 5 km/h: END_HI; 2.5 km/h: halfway to END_LO; the wheel stop: END_LO
+    # 5 km/h: END_HI; below it a parabola: steep first, flat toward the rest value; the wheel stop: END_LO
     out = run(sc, PID, cs(5.0), -0.20, out, 0.4)
     assert abs(out - END_HI) < 1e-6
     out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
-    assert abs(out - (END_HI + END_LO) / 2) < 1e-6
+    assert abs(out - (END_LO + (END_HI - END_LO) * 0.25)) < 1e-6
+    assert abs(blend(sc, 4.0) - END_HI) < abs(blend(sc, 1.0) - END_LO) * 10  # 5->4 drops far more than 1->0
     out = run(sc, PID, cs(0.0), -0.20, out, 0.4)
     assert abs(out - END_LO) < 1e-6
 
@@ -64,7 +65,7 @@ class TestEndOfStop:
     assert abs(out - END_HI) < 1e-6
     # the planner's own curve eases off below 5 km/h: the request follows the line, never the plan
     out = run(sc, PID, cs(2.5), -0.10, out, 0.5)
-    assert abs(out - (END_HI + END_LO) / 2) < 1e-6
+    assert abs(out - blend(sc, 2.5)) < 1e-6
 
   def test_entry_is_rate_limited(self):
     sc = StoppingController(-2.0)
