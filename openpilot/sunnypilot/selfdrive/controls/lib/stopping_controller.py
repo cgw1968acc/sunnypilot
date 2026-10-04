@@ -55,11 +55,12 @@ class StoppingController:
   END_HI = -0.50  # m/s^2 at END_V_HI (~1080 N)
   END_LO = -0.25  # m/s^2 at 0 km/h (~780 N); driver 2026-10-04: -0.30 "closer to perfect", -0.25 = the threshold
   # Driver 2026-10-04 (route 000000f2): "between 5 and 0 km/h not linear but parabolic: steeper from 5 to 2, flat from
-  # 2 to 0". blend(v) = END_LO + (END_HI - END_LO) * (v / END_V_HI) ** END_POW below END_V_HI: with END_POW 2 the
-  # request is -0.41 at 4 km/h, -0.34 at 3, -0.29 at 2, -0.26 at 1, -0.25 at the wheel stop. An S-shaped table
-  # (-0.50/-0.47/-0.40/-0.29/-0.25/-0.24, flat near 5, steep 4->2) was road-tested the same evening: "not better",
-  # reverted to this parabola at the driver's request.
-  END_POW = 2.0
+  # 2 to 0" -> x^2 parabola -0.50/-0.41/-0.34/-0.29/-0.26/-0.25 ("closer to perfect"). An S-shaped table
+  # (-0.50/-0.47/-0.40/-0.29/-0.25/-0.24) was "not better" and reverted. Then the driver gave his own points, close to
+  # the parabola but a touch lighter in the middle: 4 km/h -0.40, 3 -0.33, 2 -0.27, 1 -0.25, 0 -0.25. Held as a table,
+  # linearly interpolated at the actual speed every 10 ms (continuous curve).
+  END_CURVE_V = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6]  # m/s
+  END_CURVE_A = [END_LO, -0.25, -0.27, -0.33, -0.40, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
@@ -75,8 +76,7 @@ class StoppingController:
 
   def _blend(self, v_ego):
     if v_ego < self.END_V_HI:
-      x = max(v_ego, 0.0) / self.END_V_HI
-      return self.END_LO + (self.END_HI - self.END_LO) * x ** self.END_POW
+      return float(np.interp(max(v_ego, 0.0), self.END_CURVE_V, self.END_CURVE_A))
     return float(np.interp(v_ego, [self.END_V_HI, self.BLEND_V], [self.END_HI, self.a_entry]))
 
   def _end_request(self, a_target, prev_accel, v_ego):
