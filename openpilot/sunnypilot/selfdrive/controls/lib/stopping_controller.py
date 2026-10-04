@@ -19,10 +19,14 @@ class StoppingController:
   # presses to 1000-2400 N within 1-2 s of stopping (owner 2026-10-02: the car must not be able to move again, also on
   # a slope). 1.0 m/s^2/s reaches the default -2.0 (~2900 N) in ~1.9 s; the old 0.5 took ~3.7 s.
   STANDSTILL_HOLD_RATE = 1.0  # m/s^2/s
-  # the standstill flag is the real wheel stop (wheel pulse counter), so the hold ramp needs no settling wait any more
-  # (driver 2026-10-03: "with a real wheel-stop signal the delay is unnecessary, never more than 0.2 s")
-  STANDSTILL_HOLD_DELAY_LEAD = 0.2  # s
-  STANDSTILL_HOLD_DELAY_NO_LEAD = 0.2  # s
+  # The standstill flag is the real wheel stop (wheel pulse counter). Driver 2026-10-05, after a slope stop at 15:53
+  # where "at the last moment the hold locked early with a jerk": "let the car sit at -0.25 a while longer, then add the
+  # parking force" -> 1.0 s at the end value before the ramp to stopAccel (was 0.2 s; the 10-03 "never more than 0.2 s"
+  # was about the auto hold under a pedal, not this ramp). If the car creeps on a slope during that second the creep
+  # path below raises the request on its own (CREEP_RATE_GROWTH), so the wait costs nothing on the flat and is bounded
+  # on a hill.
+  STANDSTILL_HOLD_DELAY_LEAD = 1.0  # s
+  STANDSTILL_HOLD_DELAY_NO_LEAD = 1.0  # s
   STOPPING_FREEZE_MAX = 2.0  # s
   STOPPING_EXIT_DEBOUNCE = 0.2  # s
   STOPPING_FOLLOW_MIN = -0.10  # m/s^2
