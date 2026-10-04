@@ -103,3 +103,20 @@ class TestEngageBrake:
     assert -1.0 < trace[0.4] < -0.2    # blending in
     assert trace[0.7] < -1.2           # the planner's request arrives by the end of the window
     assert ENGAGE_BRAKE_T_BP[-1] <= 1.0
+
+
+class TestCreepOnset:
+  """2026-10-04: a brake onset at creep speed (re-stop behind a lead) is as light as the engage schedule."""
+  def test_below_10kph_first_0_2_s_is_light(self):
+    from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper
+    dt = 0.03
+    for v, light_limit in ((1.0, -0.15), (30.0, -0.25)):
+      shaper = BrakeOnsetShaper(dt, 4.0)
+      a, t, at_02 = 0.0, 0.0, None
+      while t < 0.9:
+        a = max(-1.0, a + shaper.down_step(-1.0, a, v_ego=v))
+        t += dt
+        if at_02 is None and t >= 0.2:
+          at_02 = a
+      assert at_02 > light_limit, (v, at_02)
+      assert a < -0.9, (v, a)   # the full request arrives within the window at both speeds
