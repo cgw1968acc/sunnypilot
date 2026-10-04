@@ -211,6 +211,14 @@ class CarInterface(CarInterfaceBase):
     else:
       stock_cp.safetyConfigs[0].safetyParam &= ~ToyotaSafetyFlags.STOCK_LONGITUDINAL.value
 
+    # Corolla Cross short-press +/-5: track the cruise set speed in software instead of mirroring PCM_CRUISE_2->SET_SPEED.
+    # The PCM still owns engagement (pcmCruise stays True, so cancel and panda safety are unchanged), it only stops owning
+    # the target speed; a short press moves openpilot's target by CustomAccShortPressIncrement, a long press only moves the
+    # PCM's own number (the ceiling). Depends on the set speed buttons synthesized from CLUTCH (0x361) in carstate.py, so
+    # keep the two conditions in sync (tncr18 7bbad13422 + cfd771a7b8; selfdrive/car/cruise.py has the consumer side).
+    if candidate == CAR.TOYOTA_COROLLA_TSS2 and stock_cp.openpilotLongitudinalControl:
+      ret.pcmCruiseSpeed = False
+
     return ret
 
   @staticmethod

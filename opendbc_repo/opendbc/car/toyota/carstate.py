@@ -52,6 +52,23 @@ TEMP_STEER_FAULTS = (0, 9, 11, 21, 25)
 PERM_STEER_FAULTS = (3, 17)
 
 
+# Toyota has no dedicated cruise button message on the powertrain bus, but CLUTCH (0x361) byte 0 carries the raw
+# stalk switch state: bit 5 RES/+, bit 4 SET/-, bit 3 CANCEL, held for the real ~0.5 s of a physical short press.
+# PCM_CRUISE->CRUISE_STATE 9/10 ("click up/down") must NOT be used as the button source: it reflects the PCM
+# accelerating/decelerating towards its own set speed and persists for seconds whenever the car is above or below
+# that number, which openpilot then mistakes for a long press (option1b_findings14 section 12, tncr18 cfd771a7b8).
+class CruiseButton:
+  none = 0
+  plus = 1
+  minus = 2
+
+
+CRUISE_BUTTONS_DICT = {
+  CruiseButton.plus: ButtonType.accelCruise,
+  CruiseButton.minus: ButtonType.decelCruise,
+}
+
+
 # Fitted 2026-10-02 to the Altis dash at steady cruise (true speed from the logs, dash read by the driver): v 103.00 ->
 # dash 110, 92.99 -> 99, 63.96 -> 69 (routes 000000e9/ea), 98.0 -> 104 (09-30). 1.05 v + 1.47 rounds to every one of them
 # (margin 0.12 km/h); the old 1.04 v + 1.9 showed 109 / 98 / 68 because the 0.5 km/h display hysteresis kept the value up
@@ -92,6 +109,7 @@ class CarState(CarStateBase, CarStateExt):
 
     self.lkas_button = 0
     self.distance_button = 0
+    self.cruise_button = CruiseButton.none
 
     self.pcm_follow_distance = 0
 
@@ -314,6 +332,11 @@ class CarState(CarStateBase, CarStateExt):
 
       buttonEvents += create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
 
+    # set speed button events from the raw stalk switch bits on CLUTCH. Only needed when openpilot tracks the set
+    # speed itself (software set speed, see interface.py), and CLUTCH is only registered with the parser in that case.
+    if not self.CP_SP.pcmCruiseSpeed:
+      buttonEvents += self.update_cruise_button_events(cp)
+
     ret.buttonEvents = buttonEvents
 
     if self.enhanced_bsm.enabled and self.frame > 199:
@@ -330,11 +353,35 @@ class CarState(CarStateBase, CarStateExt):
 
     return ret, ret_sp
 
+  def update_cruise_button_events(self, cp) -> list[structs.CarState.ButtonEvent]:
+    """Derive accelCruise/decelCruise events from the raw RES/SET stalk bits in CLUTCH (0x361).
+
+    Every sample received this cycle is walked in order so that a press and its release landing in the same
+    100 Hz iteration still produce both edges. RES and SET asserted together is physically impossible and is
+    treated as unpressed. CANCEL is left to the PCM (it disengages cruise on its own).
+    """
+    events: list[structs.CarState.ButtonEvent] = []
+
+    for res, set_ in zip(cp.vl_all["CLUTCH"]["CRUISE_BTN_RES"], cp.vl_all["CLUTCH"]["CRUISE_BTN_SET"], strict=True):
+      if bool(res) != bool(set_):
+        cruise_button = CruiseButton.plus if res else CruiseButton.minus
+      else:
+        cruise_button = CruiseButton.none
+      events += create_button_events(cruise_button, self.cruise_button, CRUISE_BUTTONS_DICT,
+                                     unpressed_btn=CruiseButton.none)
+      self.cruise_button = cruise_button
+
+    return events
+
   @staticmethod
   def get_can_parsers(CP, CP_SP):
     pt_messages = [
       ("BLINKERS_STATE", float('nan')),
     ]
+    # raw cruise stalk bits for the software set speed (0x361 runs at ~15.5 Hz on the Corolla Cross TSS2). Only
+    # registered when needed so cars without this message are not affected by the frequency check (tncr18 cfd771a7b8).
+    if not CP_SP.pcmCruiseSpeed:
+      pt_messages.append(("CLUTCH", 15))
     # engine speed / running flag (0x1C4) so the hybrid's EV-vs-engine state reaches the planner. Alive check is
     # skipped (nan) so a car without the message never invalidates CAN.
     if CP.flags & ToyotaFlags.HYBRID:
