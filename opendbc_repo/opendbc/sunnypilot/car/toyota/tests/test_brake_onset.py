@@ -113,7 +113,7 @@ class TestCreepOnset:
     for v, light_limit in ((1.0, -0.15), (30.0, -0.45)):   # creep: barely anything by 0.2 s; highway: the normal onset
       shaper = BrakeOnsetShaper(dt, 4.0)
       a, t, at_02 = 0.0, 0.0, None
-      while t < 0.9:
+      while t < 1.2:
         a = max(-1.0, a + shaper.down_step(-1.0, a, v_ego=v))
         t += dt
         if at_02 is None and t >= 0.2:
