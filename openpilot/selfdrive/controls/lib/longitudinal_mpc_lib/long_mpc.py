@@ -87,7 +87,7 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
 # same amount (T_FOLLOW*v + 6 - trim).
 # On top of the trim, the distance the light first touch of the brake needs (driver 2026-10-03 03:45: "at 40 km/h I
 # want: start a little later (the -1 m) PLUS the distance the light initial press needs" - not the +15 m a 1.5 m/s^2
-# comfort brake gave at 40): LIGHT_ONSET_T seconds of travel at the current speed, full up to 50 km/h, fading to zero
+# comfort brake gave at 40): LIGHT_ONSET_T_V seconds of travel at the current speed, full up to 50 km/h, fading to zero
 # at 80 km/h so highway braking is untouched. The lead's stopped-equivalence gets the same term, so at equal speeds it
 # cancels and the steady following gap is set by the trim alone; for a stopped lead the whole term counts. Net onset
 # shift for a stopped lead: +1.8 m at 20 km/h, +3.2 at 30, +4.6 at 40, +5.9 at 50, +0.5 at 80 (trim only).
@@ -95,7 +95,7 @@ DESIRED_DIST_TRIM_BP = [50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
 DESIRED_DIST_TRIM_V = [1.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
 # Driver 2026-10-04 night: "bring the soft brake at 40-45 km/h a little earlier, i.e. slightly more distance to the
 # lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
-# at 50, fading to 0 at 80 as before. Net onset for a stopped lead: +8.0 m at 35 km/h, +12.2 at 40, +13.8 at 45,
+# at 50, fading to 0 at 80 as before. Margin before the -1 m trim: +7.8 m at 35 km/h, +12.2 at 40, +13.8 at 45,
 # +11.1 at 50 (was +7.9 / +8.9 / +10.0 / +11.1).
 LIGHT_ONSET_BP = [35.0 / 3.6, 40.0 / 3.6, 45.0 / 3.6, 50.0 / 3.6, 80.0 / 3.6]  # m/s
 LIGHT_ONSET_T_V = [0.8, 1.1, 1.1, 0.8, 0.0]  # s of travel reserved for the light first press
