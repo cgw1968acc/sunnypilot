@@ -34,7 +34,7 @@ ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3 (reference shape; the first two entries 
 # later. The normal onset schedule applies on top (the stricter of the two wins).
 ENGAGE_BRAKE_T_BP = [0.0, 0.2, 0.7]  # s since engaging
 ENGAGE_BRAKE_J_DOWN = [0.5, 0.5, 4.0]  # m/s^3
-HARD_BRAKE_ACCEL = -2.0  # a stopped-lead approach peaks at -1.65 (route 000000ec) and is not an emergency
+HARD_BRAKE_ACCEL = -3.5  # driver 2026-10-05: "let the -2.0 bypass not act, I will test carefully" - at the ACCEL_MIN clip it never fires; only the FCW bypass remains (was -2.0; -1.5 before 2026-10-03)
 URGENT_T = 0.1  # s
 URGENT_J = 1.0  # m/s^3
 URGENT_T_RAMP = 0.1  # s
