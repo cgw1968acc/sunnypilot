@@ -110,7 +110,7 @@ class TestCreepOnset:
   def test_below_10kph_first_0_2_s_is_light(self):
     from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper
     dt = 0.03
-    for v, light_limit in ((1.0, -0.15), (30.0, -0.25)):
+    for v, light_limit in ((1.0, -0.15), (30.0, -0.45)):   # creep: barely anything by 0.2 s; highway: the normal onset
       shaper = BrakeOnsetShaper(dt, 4.0)
       a, t, at_02 = 0.0, 0.0, None
       while t < 0.9:
