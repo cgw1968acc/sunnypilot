@@ -40,6 +40,18 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 # 50 to 74, the gate closed (gasProb 0.03-0.12) and the planner held -0.47 m/s^2 for 5.8 s; "the car does not react to
 # + in this curve, after the junction + works again". Everything else (lead MPC, e2e candidate, limits) still applies.
 SET_SPEED_INTENT_T = 6.0  # s
+# SP (Altis, owner 2026-10-05): "I never liked the engine pulling harder on a climb; a little LESS acceleration uphill
+# feels natural and safe - scale it by the grade, the steeper the weaker". The car's pitch (carControl.orientationNED,
+# + = nose up; this car reads ~+1.0 deg on the flat, see auto_brake_hold.FLAT_PITCH_DEG) scales the accel profile's
+# ceiling: full up to 1 deg above flat, 0.8x at 4 deg, 0.6x at 8 deg and beyond. Downhill is untouched.
+UPHILL_PITCH_FLAT_DEG = 1.0
+UPHILL_ACCEL_BP = [1.0, 4.0, 8.0]  # deg of climb above flat
+UPHILL_ACCEL_V = [1.0, 0.8, 0.6]  # factor on the max acceleration
+
+
+def get_uphill_accel_factor(pitch_rad: float) -> float:
+  climb = np.degrees(pitch_rad) - UPHILL_PITCH_FLAT_DEG
+  return float(np.interp(climb, UPHILL_ACCEL_BP, UPHILL_ACCEL_V))
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -174,6 +186,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     is_e2e = self.is_e2e(sm)
 
     max_accel_override = self.get_max_accel_override(v_ego, sm['carStateSP'].engineOff, sm['radarState'].leadOne)
+    if max_accel_override is not None and len(sm['carControl'].orientationNED) == 3:
+      max_accel_override *= get_uphill_accel_factor(sm['carControl'].orientationNED[1])
     # accel_coast is ACCEL_MAX when the orientation is not valid; pass it only when it is a real (negative) coast value
     v_cruise = self.get_cruise_target_override(v_ego, v_cruise, force_decel, accel_coast if accel_coast < 0.0 else None)
     a_cruise_prev = self.a_cruise
