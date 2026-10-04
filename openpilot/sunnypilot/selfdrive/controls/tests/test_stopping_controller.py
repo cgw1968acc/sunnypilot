@@ -44,8 +44,8 @@ class TestEndOfStop:
     out = run(sc, PID, cs(5.0), -0.20, out, 0.4)
     assert abs(out - END_HI) < 1e-6
     out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
-    assert abs(out - (-0.27 + -0.33) / 2) < 1e-6
-    assert abs(blend(sc, 4.0) - (-0.40)) < 1e-6 and abs(blend(sc, 1.0) - (-0.25)) < 1e-6
+    assert abs(out - END_HI) < 1e-6                      # Cross: firm all the way down to 2 km/h
+    assert abs(blend(sc, 4.0) - END_HI) < 1e-6 and abs(blend(sc, 1.0) - (-0.45)) < 1e-6
     out = run(sc, PID, cs(0.0), -0.20, out, 0.4)
     assert abs(out - END_LO) < 1e-6
 

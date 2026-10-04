@@ -56,15 +56,19 @@ class StoppingController:
   # now piecewise linear through (BLEND_V, a_entry) -> (END_V_HI, END_HI) -> (0, END_LO); a_entry is at least END_HI.
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
-  END_HI = -0.50  # m/s^2 at END_V_HI (~1080 N)
-  END_LO = -0.25  # m/s^2 at 0 km/h (~780 N); driver 2026-10-04: -0.30 "closer to perfect", -0.25 = the threshold
+  # COROLLA CROSS values (tncr19): from the owner's own manual stop template, route 00000063 22:56:14 (2026-10-05):
+  # ~-0.7 m/s^2 at 1000-1280 N held from 3.6 down to 1.5 km/h, -0.36 in the last km/h, stopped at 800-840 N with no
+  # nod. The Altis table (-0.50 .. -0.25) was too light for this car's duller brake: a -0.25 request gives only
+  # ~700 N here and the car crept at 0.7 km/h for 1.6 s (ACC stop 22:53:30). The two cars keep separate tables.
+  END_HI = -0.65  # m/s^2 at END_V_HI
+  END_LO = -0.35  # m/s^2 at 0 km/h (~840 N on the Cross)
   # Driver 2026-10-04 (route 000000f2): "between 5 and 0 km/h not linear but parabolic: steeper from 5 to 2, flat from
   # 2 to 0" -> x^2 parabola -0.50/-0.41/-0.34/-0.29/-0.26/-0.25 ("closer to perfect"). An S-shaped table
   # (-0.50/-0.47/-0.40/-0.29/-0.25/-0.24) was "not better" and reverted. Then the driver gave his own points, close to
   # the parabola but a touch lighter in the middle: 4 km/h -0.40, 3 -0.33, 2 -0.27, 1 -0.25, 0 -0.25. Held as a table,
   # linearly interpolated at the actual speed every 10 ms (continuous curve).
   END_CURVE_V = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6]  # m/s
-  END_CURVE_A = [END_LO, -0.25, -0.27, -0.33, -0.40, END_HI]  # m/s^2
+  END_CURVE_A = [END_LO, -0.45, END_HI, END_HI, END_HI, END_HI]  # m/s^2: firm to 2 km/h, ease over the last two
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 

@@ -187,11 +187,13 @@ class LaneCentering:
 LANE_TRIM_MIN_SPEED = 8.0        # m/s (~30 km/h)
 LANE_TRIM_FADE_BP = [19.4, 22.2]  # m/s: full below 70 km/h, gone at 80 (the highway centering takes over)
 LANE_TRIM_FADE_V = [1.0, 0.0]
-LANE_TRIM_ENGAGE_OFFSET = 0.30   # m; the offset must exceed this ...
-LANE_TRIM_ENGAGE_TIME = 1.0      # s; ... for this long before the trim starts building
+# Engage gate 0.30 -> 0.10 m, 1.0 -> 0.5 s, release band 0.15 -> 0.05 m (owner 2026-10-05: route 61 22:18:45 sat 8-24 cm
+# inside a 300 m sweeper at 36-70 km/h for 15 s and the trim never engaged; "I want it centred in every situation").
+LANE_TRIM_ENGAGE_OFFSET = 0.10   # m; the offset must exceed this ...
+LANE_TRIM_ENGAGE_TIME = 0.5      # s; ... for this long before the trim starts building
 LANE_TRIM_KI = 0.08              # m/s^2 per metre per second while the offset keeps the trim's direction
 LANE_TRIM_UNWIND_KI = 0.24       # m/s^2 per metre per second once the car is past the centre (3x, so it does not overshoot)
-LANE_TRIM_RELEASE_OFFSET = 0.15  # m; inside this band the trim is released ...
+LANE_TRIM_RELEASE_OFFSET = 0.05  # m; inside this band the trim is released ...
 LANE_TRIM_RELEASE_DECAY = 0.15   # m/s^2 per s; ... at this rate
 LANE_TRIM_FLIP_CURV = 1.0e-3     # 1/m; the curve direction has flipped when the desired curvature is this far the other way
 LANE_TRIM_FLIP_DECAY = 0.30      # m/s^2 per s; a trim built in a left curve is bled off quickly in the following right curve
