@@ -223,7 +223,10 @@ class Car:
       self.v_cruise_helper.initialize_v_cruise(self.CS_prev, self.experimental_mode, self.dynamic_experimental_control)
 
     # TODO: mirror the carState.cruiseState struct?
-    CS.vCruise = float(self.v_cruise_helper.v_cruise_kph)
+    # vCruise feeds the longitudinal planner (capped at the PCM set speed + headroom on the Toyota software set speed,
+    # see VCruiseHelper.apply_toyota_pcm_set_speed_constraints, tncr18 ce25c42170), vCruiseCluster is the driver's
+    # target shown on the HUD
+    CS.vCruise = float(self.v_cruise_helper.v_cruise_planner_kph)
     CS.vCruiseCluster = float(self.v_cruise_helper.v_cruise_cluster_kph)
 
     return CS, CS_SP, RD
