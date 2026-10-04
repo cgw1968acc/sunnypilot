@@ -11,6 +11,14 @@ ONSET_V_BP = [11.1, 16.7]  # m/s
 ONSET_T1_V = [0.1, 0.1]
 ONSET_T3_V = [0.4, 0.4]  # driver 2026-10-03: 0.3-0.4 s from the light first touch to the full request
 ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3
+# Engaging ACC (SET-) while creeping up to a lead (driver 2026-10-04: "the car used to brake hard the moment I press
+# SET-; the first ~0.2 s must be a light touch, then blend into the decel the speed needs"). Route 000000ee 11:48:07:
+# engaged at 9 km/h 4 m behind a 4 km/h lead, the request went 0 -> -0.42 in 0.2 s and -1.6 by 0.8 s, the car hit
+# -2.7 m/s^2 (3280 N). While the engage window is open the down jerk is capped on time SINCE ENGAGING: 0.5 m/s^3 for
+# the first 0.2 s (-0.1 m/s^2 at 0.2 s), then rising to stock by 0.7 s; the planner's full request still arrives, just
+# later. The normal onset schedule applies on top (the stricter of the two wins).
+ENGAGE_BRAKE_T_BP = [0.0, 0.2, 0.7]  # s since engaging
+ENGAGE_BRAKE_J_DOWN = [0.5, 0.5, 4.0]  # m/s^3
 HARD_BRAKE_ACCEL = -2.0  # a stopped-lead approach peaks at -1.65 (route 000000ec) and is not an emergency
 URGENT_T = 0.1  # s
 URGENT_J = 1.0  # m/s^3
@@ -33,7 +41,7 @@ class BrakeOnsetShaper:
     return [0.0, t1, t3]
 
   def down_step(self, accel_request: float, prev_accel: float, bypass: bool = False, v_ego: float = 30.0,
-                urgent: bool = False) -> float:
+                urgent: bool = False, t_engaged: float | None = None) -> float:
     if bypass:
       self.t_onset = 0.0
       return -self.stock_down_jerk * self.dt
@@ -50,6 +58,8 @@ class BrakeOnsetShaper:
     else:
       j_down = self.stock_down_jerk
       self.t_onset = max(self.t_onset - self.dt, 0.0)
+    if t_engaged is not None and t_engaged < ENGAGE_BRAKE_T_BP[-1]:
+      j_down = min(j_down, float(np.interp(t_engaged, ENGAGE_BRAKE_T_BP, ENGAGE_BRAKE_J_DOWN)))
     return -min(j_down, self.stock_down_jerk) * self.dt
 
   def is_urgent(self, accel_request: float, fcw: bool) -> bool:
@@ -71,6 +81,12 @@ class EngageOnsetShaper:
   @property
   def in_engage_window(self) -> bool:
     return self.t_engaged is None or self.t_engaged < ENGAGE_T_BP[-1]
+
+  @property
+  def t_since_engage(self) -> float | None:
+    """seconds since engaging while the engage brake schedule still applies, else None"""
+    t = 0.0 if self.t_engaged is None else self.t_engaged
+    return t if t < ENGAGE_BRAKE_T_BP[-1] else None
 
   def up_step(self, active: bool) -> float:
     if not active:

@@ -82,3 +82,24 @@ class TestBrakeOnset:
     for _ in range(int(1.0 / DT)):  # a full second of settled brake winds it back completely
       shaper.down_step(a, a)
     assert shaper.t_onset == 0.0
+
+
+class TestEngageBrake:
+  """2026-10-04: SET- while creeping up to a lead: the first 0.2 s after engaging is a light touch."""
+  def test_first_0_2_s_after_engaging_is_light_then_blends_to_stock(self):
+    from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper, ENGAGE_BRAKE_T_BP
+    dt = 0.03
+    shaper, engage = BrakeOnsetShaper(dt, 4.0), EngageOnsetShaper(dt, 4.0)
+    a, t, trace = 0.0, 0.0, {}
+    while t < 1.0:
+      engage.up_step(True)
+      step = shaper.down_step(-1.65, a, v_ego=2.5, t_engaged=engage.t_since_engage)
+      a = max(-1.65, a + step)
+      t += dt
+      for mark in (0.2, 0.4, 0.7):
+        if mark not in trace and t >= mark:
+          trace[mark] = a
+    assert trace[0.2] > -0.15          # light first touch
+    assert -1.0 < trace[0.4] < -0.2    # blending in
+    assert trace[0.7] < -1.2           # the planner's request arrives by the end of the window
+    assert ENGAGE_BRAKE_T_BP[-1] <= 1.0
