@@ -12,10 +12,12 @@ ONSET_T_BP = [0.0, 0.15, 0.6]  # s
 # 1400 N; five ACC re-stops on 10-03/04 all -0.9..-1.25), so at creep speeds the onset uses the same numbers as the
 # engage schedule (driver 2026-10-04 "yes, apply it"): 0.5 m/s^3 for 0.2 s, stock by 0.7 s; from 20 km/h the normal
 # 1.0 m/s^3 for 0.1 s, stock by 0.4 s (driver 2026-10-03), interpolated between.
+# Driver 2026-10-04 after route 000000f2: "the brake after creeping forward again improved but is still not soft
+# enough, softer again" -> below 10 km/h 0.3 m/s^3 for 0.3 s (-0.09 m/s^2 at 0.3 s), stock by 0.9 s.
 ONSET_V_BP = [2.8, 5.6, 11.1, 16.7]  # m/s (10, 20, 40, 60 km/h)
-ONSET_T1_V = [0.2, 0.1, 0.1, 0.1]
-ONSET_T3_V = [0.7, 0.4, 0.4, 0.4]  # driver 2026-10-03: 0.3-0.4 s from the light first touch to the full request
-ONSET_J1_V = [0.5, 1.0, 1.0, 1.0]  # m/s^3 during the first phase
+ONSET_T1_V = [0.3, 0.1, 0.1, 0.1]
+ONSET_T3_V = [0.9, 0.4, 0.4, 0.4]  # driver 2026-10-03: 0.3-0.4 s from the light first touch to the full request
+ONSET_J1_V = [0.3, 1.0, 1.0, 1.0]  # m/s^3 during the first phase
 ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3 (reference shape; the first two entries follow ONSET_J1_V)
 # Engaging ACC (SET-) while creeping up to a lead (driver 2026-10-04: "the car used to brake hard the moment I press
 # SET-; the first ~0.2 s must be a light touch, then blend into the decel the speed needs"). Route 000000ee 11:48:07:
