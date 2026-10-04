@@ -40,12 +40,13 @@ class TestEndOfStop:
     out = run(sc, PID, cs(7.5), -0.30, out, 0.6)
     assert abs(blend(sc, 7.5) - (-1.20 + (END_HI - -1.20) * 0.5)) < 1e-6
     assert abs(out - blend(sc, 7.5)) < 1e-6
-    # 5 km/h: END_HI; below it a parabola: steep first, flat toward the rest value; the wheel stop: END_LO
+    # 5 km/h: END_HI; below it the driver's own points (flat near 5, steep 4->2, flat into the stop); the wheel stop: END_LO
     out = run(sc, PID, cs(5.0), -0.20, out, 0.4)
     assert abs(out - END_HI) < 1e-6
     out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
-    assert abs(out - (END_LO + (END_HI - END_LO) * 0.25)) < 1e-6
-    assert abs(blend(sc, 4.0) - END_HI) < abs(blend(sc, 1.0) - END_LO) * 10  # 5->4 drops far more than 1->0
+    assert abs(out - (-0.29 + -0.40) / 2) < 1e-6
+    assert abs(blend(sc, 3.0) - blend(sc, 2.0)) > abs(blend(sc, 5.0) - blend(sc, 4.0))  # the middle is the steep part
+    assert abs(blend(sc, 3.0) - blend(sc, 2.0)) > abs(blend(sc, 1.0) - blend(sc, 0.0))
     out = run(sc, PID, cs(0.0), -0.20, out, 0.4)
     assert abs(out - END_LO) < 1e-6
 
