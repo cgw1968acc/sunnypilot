@@ -93,14 +93,17 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
 # shift for a stopped lead: +1.8 m at 20 km/h, +3.2 at 30, +4.6 at 40, +5.9 at 50, +0.5 at 80 (trim only).
 DESIRED_DIST_TRIM_BP = [50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
 DESIRED_DIST_TRIM_V = [1.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
-LIGHT_ONSET_T = 0.8  # s of travel reserved for the light first press (driver 2026-10-03 afternoon: 0.5 not enough, try 0.8)
-LIGHT_ONSET_BP = [50.0 / 3.6, 80.0 / 3.6]  # m/s
-LIGHT_ONSET_V = [1.0, 0.0]  # share of LIGHT_ONSET_T applied
+# Driver 2026-10-04 night: "bring the soft brake at 40-45 km/h a little earlier, i.e. slightly more distance to the
+# lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
+# at 50, fading to 0 at 80 as before. Net onset for a stopped lead: +8.0 m at 35 km/h, +12.2 at 40, +13.8 at 45,
+# +11.1 at 50 (was +7.9 / +8.9 / +10.0 / +11.1).
+LIGHT_ONSET_BP = [35.0 / 3.6, 40.0 / 3.6, 45.0 / 3.6, 50.0 / 3.6, 80.0 / 3.6]  # m/s
+LIGHT_ONSET_T_V = [0.8, 1.1, 1.1, 0.8, 0.0]  # s of travel reserved for the light first press
 
 
 def get_light_onset_margin(v):
   v = np.maximum(v, 0.0)
-  return v * LIGHT_ONSET_T * np.interp(v, LIGHT_ONSET_BP, LIGHT_ONSET_V)
+  return v * np.interp(v, LIGHT_ONSET_BP, LIGHT_ONSET_T_V)
 
 
 def get_desired_dist_trim(v_ego):
