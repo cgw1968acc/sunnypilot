@@ -110,3 +110,34 @@ class TestEndOfStop:
     out_held = run(sc, STOPPING, cs(0.0, standstill=True), -0.10, out_at_stop, 1.0)
     assert out_held < out_at_stop - 0.3
     assert out_held >= -1.0 - 1e-6
+
+
+class TestHoldRelease:
+  """2026-10-04 14:43: leaving the hold is fast while the request is far below zero, then linear and slow through the
+  hand-over band, and the plan is never exceeded."""
+  def test_release_is_slow_through_the_handover_band(self):
+    sc = StoppingController(-2.0)
+    out = -2.0
+    t = 0.0
+    t_lo = t_hi = None
+    state = STOPPING  # controlsd feeds the returned state back as prev_state (the 0.2 s exit debounce lives there)
+    for _ in range(300):
+      state, out = sc.update(state, PID, cs(0.0, standstill=True), 0.8, out, 0.8, LIMITS, has_lead=True)
+      t += DT_CTRL
+      if t_lo is None and out >= StoppingController.RELEASE_BAND_LO:
+        t_lo = t
+      if t_hi is None and out >= StoppingController.RELEASE_BAND_HI:
+        t_hi = t
+      assert out <= 0.8 + 1e-9
+    assert t_lo is not None and t_lo < 0.6           # 0.2 s debounce, then -2.0 -> -0.6 at the fast rate (0.35 s)
+    assert t_hi is not None and 1.15 < t_hi < 1.3    # then -0.6 -> +0.4 at 1.5 m/s^3 (0.67 s)
+    assert abs(out - 0.8) < 1e-9 and not sc.releasing
+
+  def test_a_plan_that_drops_again_ends_the_release(self):
+    sc = StoppingController(-2.0)
+    state, out = STOPPING, -2.0
+    for _ in range(30):  # through the exit debounce
+      state, out = sc.update(state, PID, cs(0.0, standstill=True), 0.5, out, 0.5, LIMITS, has_lead=True)
+    assert sc.releasing and -2.0 < out < 0.5
+    _, out = sc.update(state, PID, cs(0.0, standstill=True), -2.0, out, -2.0, LIMITS, has_lead=True)
+    assert abs(out - (-2.0)) < 1e-9 and not sc.releasing

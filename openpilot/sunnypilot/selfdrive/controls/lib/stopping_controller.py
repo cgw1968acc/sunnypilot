@@ -64,6 +64,18 @@ class StoppingController:
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
+  # Leaving the standstill hold (driver 2026-10-04, route 000000fa 14:43:32: "the brake release at launch is a jerk, as
+  # if let go suddenly; make it linear and slow"). There the request went from the -2.0 hold (3960 N) to +0.7 in 0.5 s
+  # at the Toyota windup limit: the PCM bled 3960 -> 0 N in 0.6 s while the gas request was already +0.6, and the car
+  # lurched at +1.7 m/s^2 for the first 0.1 s. The brake pressure cannot move the car while the request is well below
+  # zero, so the release keeps the fast rate down there and goes LINEAR AND SLOW only through the hand-over band where
+  # the clamp falls off and the creep torque takes over: RELEASE_FAST up to RELEASE_BAND_LO, RELEASE_SLOW from there
+  # up to RELEASE_BAND_HI, then the plan again. The first motion comes ~0.1 s later than before, the lurch is gone.
+  RELEASE_FAST = 4.0  # m/s^3 (the stock windup limit)
+  RELEASE_SLOW = 1.5  # m/s^3
+  RELEASE_BAND_LO = -0.6  # m/s^2
+  RELEASE_BAND_HI = 0.4  # m/s^2
+
   def __init__(self, stop_accel):
     self.stop_accel = stop_accel
     self.standstill_t = 0.0
@@ -73,6 +85,7 @@ class StoppingController:
     self.creep_t = 0.0
     self.end_active = False
     self.a_entry = self.END_HI
+    self.releasing = False
 
   def _blend(self, v_ego):
     if v_ego < self.END_V_HI:
@@ -113,6 +126,15 @@ class StoppingController:
     if state != LongCtrlState.stopping:
       if self.end_active:
         return state, float(np.clip(self._end_request(a_target, prev_accel, CS.vEgo), accel_limits[0], accel_limits[1]))
+      # coming off the hold: linear, slow through the hand-over band (see RELEASE_*)
+      if prev_state == LongCtrlState.stopping and state == LongCtrlState.pid and prev_accel < self.RELEASE_BAND_HI:
+        self.releasing = True
+      if self.releasing:
+        if stock_accel <= prev_accel or prev_accel >= self.RELEASE_BAND_HI or state == LongCtrlState.off:
+          self.releasing = False
+          return state, stock_accel
+        rate = self.RELEASE_FAST if prev_accel < self.RELEASE_BAND_LO else self.RELEASE_SLOW
+        return state, float(min(stock_accel, prev_accel + rate * DT_CTRL))
       return state, stock_accel
 
     output_accel = prev_accel
