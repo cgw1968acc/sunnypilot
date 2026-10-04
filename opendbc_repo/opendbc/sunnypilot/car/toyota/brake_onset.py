@@ -18,10 +18,13 @@ ONSET_T_BP = [0.0, 0.15, 0.6]  # s
 # extremely light, and if that needs distance, start earlier" -> the creep-speed numbers (0.3 m/s^3 for 0.3 s, stock
 # by 0.9 s) now apply at every speed up to 60 km/h, fading to the highway onset (1.0 m/s^3, 0.1 s, stock by 0.4 s) at
 # 80 km/h, which stays as it was. The planner's light-onset margin (long_mpc) supplies the extra distance.
+# Driver 2026-10-05, same drive: "at 40-50 km/h the build from light to firm is still not smooth, a bit abrupt" -> the
+# jerk the onset ramps UP TO is also scheduled: 2.0 m/s^3 up to 60 km/h (was the stock 4.0 from 0.9 s on), stock at 80.
 ONSET_V_BP = [16.7, 22.2]  # m/s (60, 80 km/h)
 ONSET_T1_V = [0.3, 0.1]
 ONSET_T3_V = [0.9, 0.4]
 ONSET_J1_V = [0.3, 1.0]  # m/s^3 during the first phase
+ONSET_J3_V = [2.0, 4.0]  # m/s^3 the ramp ends at (the shaper never exceeds the stock limit)
 ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3 (reference shape; the first two entries follow ONSET_J1_V)
 # Engaging ACC (SET-) while creeping up to a lead (driver 2026-10-04: "the car used to brake hard the moment I press
 # SET-; the first ~0.2 s must be a light touch, then blend into the decel the speed needs"). Route 000000ee 11:48:07:
@@ -55,7 +58,8 @@ class BrakeOnsetShaper:
   @staticmethod
   def schedule_j(v_ego: float) -> list[float]:
     j1 = float(np.interp(v_ego, ONSET_V_BP, ONSET_J1_V))
-    return [j1, j1, ONSET_J_DOWN[-1]]
+    j3 = float(np.interp(v_ego, ONSET_V_BP, ONSET_J3_V))
+    return [j1, j1, j3]
 
   def down_step(self, accel_request: float, prev_accel: float, bypass: bool = False, v_ego: float = 30.0,
                 urgent: bool = False, t_engaged: float | None = None) -> float:

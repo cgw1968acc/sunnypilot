@@ -91,17 +91,17 @@ class TestEngageBrake:
     dt = 0.03
     shaper, engage = BrakeOnsetShaper(dt, 4.0), EngageOnsetShaper(dt, 4.0)
     a, t, trace = 0.0, 0.0, {}
-    while t < 1.3:
+    while t < 1.6:
       engage.up_step(True)
       step = shaper.down_step(-1.65, a, v_ego=2.5, t_engaged=engage.t_since_engage)
       a = max(-1.65, a + step)
       t += dt
-      for mark in (0.2, 0.5, 1.2):
+      for mark in (0.2, 0.5, 1.5):
         if mark not in trace and t >= mark:
           trace[mark] = a
     assert trace[0.2] > -0.12          # light first touch (at creep speed the creep onset schedule is the stricter one)
     assert -1.0 < trace[0.5] < -0.15   # blending in
-    assert trace[1.2] < -1.4           # the planner's request has arrived
+    assert trace[1.5] < -1.4           # the planner's request has arrived (end jerk 2.0 m/s^3 below 60 km/h)
     assert ENGAGE_BRAKE_T_BP[-1] <= 1.0
 
 
