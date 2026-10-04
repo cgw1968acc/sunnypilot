@@ -97,8 +97,10 @@ DESIRED_DIST_TRIM_V = [1.0, 0.0, -2.5]  # m taken OFF the desired distance (nega
 # lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
 # at 50, fading to 0 at 80 as before. Margin before the -1 m trim: +7.8 m at 35 km/h, +12.2 at 40, +13.8 at 45,
 # +11.1 at 50 (was +7.9 / +8.9 / +10.0 / +11.1).
-LIGHT_ONSET_BP = [35.0 / 3.6, 40.0 / 3.6, 45.0 / 3.6, 50.0 / 3.6, 80.0 / 3.6]  # m/s
-LIGHT_ONSET_T_V = [0.8, 1.1, 1.1, 0.8, 0.0]  # s of travel reserved for the light first press
+# Driver 2026-10-05: "every brake from an extremely light touch; take the distance earlier if needed" -> 1.1 s held
+# from 40 to 55 km/h (was back to 0.8 at 50), then fading to 0 at 80 as before.
+LIGHT_ONSET_BP = [35.0 / 3.6, 40.0 / 3.6, 55.0 / 3.6, 80.0 / 3.6]  # m/s
+LIGHT_ONSET_T_V = [0.8, 1.1, 1.1, 0.0]  # s of travel reserved for the light first press
 
 
 def get_light_onset_margin(v):
