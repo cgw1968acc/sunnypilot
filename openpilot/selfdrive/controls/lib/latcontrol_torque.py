@@ -4,7 +4,7 @@ from collections import deque
 
 from openpilot.cereal import log
 from opendbc.car.lateral import FRICTION_THRESHOLD, get_friction
-from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
+from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY, CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
@@ -45,8 +45,10 @@ CURVE_OUTWARD_DEADZONE = 0.0005  # 1/m (~radius 2000 m): below this is a straigh
 # tends to run WIDE instead, so relaxing the curvature there makes it worse. Speed schedule (m/s -> fraction):
 # 0 up to 40 km/h, 0.09 at 70, 0.155 at 90 km/h, 0.19 at 120 km/h (road test 2026-09-25: 90 km/h centred OK, 107 km/h still
 # cut the inside).
-CURVE_OUTWARD_V_BP = [11.1, 19.4, 25.0, 33.3]   # m/s (40, 70, 90, 120 km/h)
-CURVE_OUTWARD_FRAC_V = [0.0, 0.09, 0.155, 0.19]
+# Owner 2026-10-05: use the Altis (tnpb2) table on the Cross too - the tncr18 table had 0 at 40 and 0.03 at 50 km/h, so
+# a 40-60 km/h curve started with no outward push at all and the car sat inside from the first second.
+CURVE_OUTWARD_V_BP = [v * CV.KPH_TO_MS for v in (30., 40., 50., 60., 70., 90., 100., 120.)]   # m/s
+CURVE_OUTWARD_FRAC_V = [-0.05, 0.02, 0.06, 0.085, 0.09, 0.155, 0.155, 0.155]
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
@@ -54,9 +56,9 @@ def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
   # out at low speed (tight curves there need the full turn-in or the car runs wide). Straights and small lane
   # corrections below the deadzone are untouched.
   frac = float(np.interp(v_ego, CURVE_OUTWARD_V_BP, CURVE_OUTWARD_FRAC_V))
-  if frac <= 0.0 or abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
+  if frac == 0.0 or abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
     return desired_curvature
-  return desired_curvature * (1.0 - frac)
+  return desired_curvature * (1.0 - frac)   # frac < 0 scales the curvature UP (inward)
 
 # Lane centering feedback (Corolla Cross rlog 2026-09-25, route 4d seg 9): in a 70 m-radius curve at 47 km/h the car sat
 # ~1 m inside the lane (riding the inner line) although the torque loop tracked the model's desired curvature almost
