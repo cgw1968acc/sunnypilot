@@ -4,7 +4,7 @@ from collections import deque
 
 from openpilot.cereal import log
 from opendbc.car.lateral import FRICTION_THRESHOLD, get_friction
-from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY, CV
+from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
@@ -26,10 +26,7 @@ KP = 0.8
 KI = 0.15
 
 INTERP_SPEEDS = [1, 1.5, 2.0, 3.0, 5, 7.5, 10, 15, 30]
-# 15-30 km/h gains halved for the Corolla Altis Hybrid (2026-09-27, route b7 seg 8): with the stock schedule
-# (11.5 / 5.5 / 3.5 at 5 / 7.5 / 10 m/s) a wheel release mid-turn at 16 km/h turned into a full-authority limit cycle -
-# torque saturated 71% of the time, P term +-4 on a 0.3 m/s^2 error, ~1.2 s period, steering +-40-56 deg.
-KP_INTERP = [250, 120, 65, 30, 6.0, 3.2, 2.0, 1.2, KP]  # 10/15 m/s 2.4/1.6 -> 2.0/1.2 (2026-09-27 21:13: 40-50 km/h curve-exit sway)
+KP_INTERP = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, KP]
 
 LP_FILTER_CUTOFF_HZ = 1.2
 JERK_LOOKAHEAD_SECONDS = 0.19
@@ -37,20 +34,19 @@ JERK_GAIN = 0.3
 LAT_ACCEL_REQUEST_BUFFER_SECONDS = 1.0
 VERSION = 1
 
-# Corner-cutting fix (Altis rlog 2026-09-20: the e2e path sits ~0.6 m inside on curves, both directions). Relax the
-# commanded curvature by a fraction so the car runs a little wider (outward) in proportion to how tight the curve is.
-# Straights and small lane corrections below the deadzone are untouched. Schedule ported from tncr18 (Corolla Cross
-# road tests 2026-09-23..25): the outward bias only helps at higher speed, where the path cuts the inside. On tight
-# LOW-speed curves the car tends to run WIDE instead, so relaxing the curvature there makes it worse.
+# Corner-cutting fix (Corolla Cross rlog 2026-09-21: the e2e path sits ~0.5 m inside on curves). Relax the
+# commanded curvature by a fraction of the part above a deadzone, so the car runs a little wider (outward) in
+# proportion to how tight the curve is. Straights and small lane corrections below the deadzone are untouched.
 CURVE_OUTWARD_DEADZONE = 0.0005  # 1/m (~radius 2000 m): below this is a straight / small correction, untouched.
-# Speed schedule (m/s -> fraction): 0 up to 40 km/h, 0.09 at 70, 0.155 at 90 km/h, 0.19 at 120 km/h.
-CURVE_OUTWARD_V_BP = [v * CV.KPH_TO_MS for v in (30., 40., 50., 60., 70., 90., 100., 120.)]   # m/s
-# Negative = INWARD bias (command more curvature than the model): Altis driver 2026-09-27, 30-40 km/h curves want more
-# steering; -0.05 at 30 km/h, then the outward schedule from 40 km/h. The hand-over from inward to outward is by
-# interpolation between 30 and 40 km/h (zero at ~37 km/h).
-CURVE_OUTWARD_FRAC_V = [-0.05, 0.02, 0.06, 0.085, 0.09, 0.155, 0.155, 0.155]  # 2026-09-30: 60 km/h point 0.085 (+0.01 over the
-# interpolated 0.075, driver request). 2026-09-29 driver request: 40 km/h 0 -> 0.02,
-# 50 km/h 0.05 -> 0.06, flat at the 90 km/h value 0.155 from 90 upward (100/120 were 0.167).
+                                 # Lowered from 0.0012 (radius 830 m) on 2026-09-25: a gentle right curve at a set
+                                 # 100 km/h still ran inside because its curvature sat under the old deadzone, so the
+                                 # bias never applied there no matter the fraction.
+# The outward bias only helps at higher speed, where the path cuts the inside. On tight LOW-speed curves the car
+# tends to run WIDE instead, so relaxing the curvature there makes it worse. Speed schedule (m/s -> fraction):
+# 0 up to 40 km/h, 0.09 at 70, 0.155 at 90 km/h, 0.19 at 120 km/h (road test 2026-09-25: 90 km/h centred OK, 107 km/h still
+# cut the inside).
+CURVE_OUTWARD_V_BP = [11.1, 19.4, 25.0, 33.3]   # m/s (40, 70, 90, 120 km/h)
+CURVE_OUTWARD_FRAC_V = [0.0, 0.09, 0.155, 0.19]
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
@@ -58,14 +54,11 @@ def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
   # out at low speed (tight curves there need the full turn-in or the car runs wide). Straights and small lane
   # corrections below the deadzone are untouched.
   frac = float(np.interp(v_ego, CURVE_OUTWARD_V_BP, CURVE_OUTWARD_FRAC_V))
-  if frac == 0.0 or abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
+  if frac <= 0.0 or abs(desired_curvature) <= CURVE_OUTWARD_DEADZONE:
     return desired_curvature
-  return desired_curvature * (1.0 - frac)   # frac < 0 scales the curvature UP (inward)
+  return desired_curvature * (1.0 - frac)
 
-# Lane centering feedback, ported from tncr18 (Corolla Cross) on 2026-09-30 for the Altis: rlog 2026-09-27 (6 routes,
-# Macrostiff) above 100 km/h the car sat 0.10 m left of the lane centre on average with a 0.23 m std (22% of the time more
-# than 0.3 m off; 80-100 km/h: 4%), while the torque loop tracked the model's curvature closely (0.73 vs 0.84 e-3 std) -
-# the wandering is the model path drifting, so close the loop on the lane lines. Original tncr18 note (route 4d seg 9): in a 70 m-radius curve at 47 km/h the car sat
+# Lane centering feedback (Corolla Cross rlog 2026-09-25, route 4d seg 9): in a 70 m-radius curve at 47 km/h the car sat
 # ~1 m inside the lane (riding the inner line) although the torque loop tracked the model's desired curvature almost
 # exactly (14.2 vs 14.4 e-3). The e2e action itself holds the car inside, and the outward bias above is a blind
 # percentage. Close the loop on the lane lines instead: measure the car's offset from the lane centre and add a small
@@ -91,12 +84,7 @@ LANE_CENTER_WIDTH_TAU = 3.0        # s; filter of the lane width, fed only by co
 LANE_CENTER_WIDTH_TOL = 0.7        # m; a width this far from the filtered one means one line is not the ego lane's
 LANE_CENTER_WIDTH_RANGE = (2.6, 4.6)  # m; outside this the pair is not the ego lane
 LANE_CENTER_FIT_RANGE = 12.0       # m ahead used to fit the lane centre (offset + heading + curvature)
-LANE_CENTER_DEADBAND = 0.0075      # m; no position correction inside this (0.03 -> 0.015, 2026-09-30: the driver felt the
-                                   # ... -> 0.0075 2026-10-04: route 000000f2 10:34 at 82-88 km/h he felt the corrections again
-                                   # and asked for a smaller dead band once more. Note: the offset there wandered -20..+15 cm
-                                   # with a 4-6 s rhythm, far outside any dead band, so the next lever is the gain, not this.
-                                   # corrections at 93 km/h as a regular drift-correct rhythm (~4 s, +-1.3 deg of steering) and
-                                   # asked for smaller, more continuous ones; a narrower dead band starts them earlier and smaller)
+LANE_CENTER_DEADBAND = 0.03        # m; no position correction inside this
 LANE_CENTER_KP = 0.35              # m/s^2 of lateral accel per metre of offset
 LANE_CENTER_KD = 1.20              # m/s^2 per m/s of lateral speed toward/away from the centre (damping, ~critical)
 LANE_CENTER_KI = 0.05              # m/s^2 per metre per second: slowly takes over what the model keeps pulling
@@ -190,8 +178,7 @@ class LaneCentering:
     return self.correction
 
 
-# Low-speed lane trim (below the highway-speed centering), ported from tncr18 on 2026-09-30 (Altis driver: "sometimes
-# the car is not centred at low speed either"). Original note - Route 58 seg 4 and route 4d segs 9/11 (Corolla Cross,
+# Low-speed lane trim (below the highway-speed centering). Route 58 seg 4 and route 4d segs 9/11 (Corolla Cross,
 # 2026-09-25/27, 45-55 km/h, 70-100 m curves): when the OUTER (dashed) line is seen weakly the model hugs the inner
 # solid line at ~1.0 m from the car's centre line whatever the lane width (3.7-4.1 m), i.e. the car rides the inner
 # line; when both lines are seen clearly (route 58 seg 6) it centres. The fast PD centering oscillated at these
@@ -286,20 +273,6 @@ DESIRED_CURVATURE_JERK_FADE_BP = [19.4, 22.2]  # m/s
 DESIRED_CURVATURE_JERK_FADE_V = [8.0, DESIRED_CURVATURE_MAX_LAT_JERK]
 
 
-# Lateral jerk cap on the model's desired curvature (ported from tncr18). Softens the sharpest high-speed path
-# corrections ("return to centre") while leaving steady centering untouched: capping |d(desired curvature)/dt| * v^2
-# at 1.0 m/s^3 only touches the fastest few percent of frames, which then reach the same curvature about 0.1-0.2 s later.
-# Bypassed during lane changes (controlsd has its own start-rate cap there) and when lateral control is inactive.
-DESIRED_CURVATURE_MAX_LAT_JERK = 1.0  # m/s^3
-DESIRED_CURVATURE_JERK_MIN_SPEED = 8.0  # m/s; below this the cap in curvature terms is so loose it barely acts
-# Speed schedule (Altis 2026-09-27 21:14, route bf seg 11): after a torque-saturated tight turn at 41-47 km/h the model's
-# desired curvature swung -22 -> +6 -> -4 e-3 (~6 m/s^3) and the car swayed twice; a 2.5 m/s^3 cap rounds that off while
-# a normal turn-in (~1 m/s^3) is untouched. Off below 30 km/h (tight intersection turns need the full rate), 2.5 from
-# 40 to 70 km/h, then the highway 1.0 from 80 km/h.
-DESIRED_CURVATURE_JERK_FADE_BP = [8.3, 11.1, 19.4, 22.2]  # m/s (30, 40, 70, 80 km/h)
-DESIRED_CURVATURE_JERK_FADE_V = [8.0, 2.5, 2.5, DESIRED_CURVATURE_MAX_LAT_JERK]
-
-
 class DesiredCurvatureJerkLimiter:
   def __init__(self, dt: float):
     self.dt = dt
@@ -355,11 +328,9 @@ class LatControlTorque(LatControl):
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
     desired_curvature += self.lane_centering.update(self.extension.model_v2, CS.vEgo, active, CS.steeringPressed)
     desired_curvature += self.lane_trim.update(self.extension.model_v2, CS.vEgo, active, CS.steeringPressed, model_curvature)
-    # NNLC builds its feedforward from the model's own future lateral accelerations (model_v2.acceleration.y), which carry
-    # none of the corrections above, so with NNLC on the car tracked the model's inner-line path and the outward bias
-    # "stopped working" (driver 2026-10-05: "smoother in curves but hugs the inside line, FRAC seems to have less
-    # effect"). Hand the extension the same correction - the bias as a scale on the curvature, centering/trim as an
-    # offset - so its future inputs describe the corrected path.
+    # NNLC builds its feedforward from the model's own future lateral accelerations, which carry none of the corrections
+    # above (driver 2026-10-05, NNLC on: "hugs the inside line, FRAC seems to have less effect"); hand the extension the
+    # same correction so its future inputs describe the corrected path (see LatControlTorqueExtBase.set_path_correction).
     self.extension.set_path_correction(model_curvature, desired_curvature, CS.vEgo)
     lane_changing = self.extension.model_v2 is not None and self.extension.model_v2.meta.laneChangeState != 0
     desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
