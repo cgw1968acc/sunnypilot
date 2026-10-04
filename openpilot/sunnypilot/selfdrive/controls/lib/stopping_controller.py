@@ -53,7 +53,7 @@ class StoppingController:
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
   END_HI = -0.50  # m/s^2 at END_V_HI (~1080 N)
-  END_LO = -0.30  # m/s^2 at 0 km/h (~840 N)
+  END_LO = -0.25  # m/s^2 at 0 km/h (~780 N); driver 2026-10-04: -0.30 "closer to perfect", try -0.25
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
