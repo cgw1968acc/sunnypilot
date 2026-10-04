@@ -347,3 +347,37 @@ class TestAutoBrakeHoldLightMinForce(unittest.TestCase):
     self.assertTrue(ctrl.active)
     for i in range(BRAKE_HOLD_LIGHT_TIMER + 2, BRAKE_HOLD_LIGHT_TIMER + 50):
       self.assertTrue(self._step(ctrl, i, 200.0))   # the foot lifts: still held
+
+
+@patch("opendbc.sunnypilot.car.toyota.auto_brake_hold.toyotacan.create_brake_hold_command")
+class TestAutoBrakeHoldSlope(unittest.TestCase):
+  """2026-10-05: the old -1.0 request on the flat, -1.5 on a slope, decided once when the hold engages."""
+  def _engage(self, pitch_deg):
+    from opendbc.sunnypilot.car.toyota.auto_brake_hold import BRAKE_HOLD_LIGHT_TIMER
+    ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
+    ctrl.update(FakeCarState(standstill=False, brake_pressed=True), 0, None)
+    for i in range(1, BRAKE_HOLD_LIGHT_TIMER + 3):
+      cs = FakeCarState(brake_pressed=True)
+      cs.brake_force = 1000.0
+      ctrl.update(cs, i, None, pitch_deg=pitch_deg)
+    self.assertTrue(ctrl.active)
+    return ctrl
+
+  def test_flat_keeps_the_old_request_and_a_slope_gets_the_firmer_one(self, mock_create):
+    from opendbc.sunnypilot.car.toyota.auto_brake_hold import BRAKE_HOLD_DECEL, BRAKE_HOLD_DECEL_SLOPE
+    self.assertEqual(self._engage(1.0)._hold_decel, BRAKE_HOLD_DECEL)
+    self.assertEqual(self._engage(1.9)._hold_decel, BRAKE_HOLD_DECEL)
+    self.assertEqual(self._engage(-7.0)._hold_decel, BRAKE_HOLD_DECEL_SLOPE)   # the 2026-10-03 hill
+    self.assertEqual(self._engage(3.5)._hold_decel, BRAKE_HOLD_DECEL_SLOPE)    # uphill driveway
+    self.assertEqual(self._engage(float("nan"))._hold_decel, BRAKE_HOLD_DECEL)
+
+  def test_the_choice_is_latched_while_held(self, mock_create):
+    from opendbc.sunnypilot.car.toyota.auto_brake_hold import BRAKE_HOLD_DECEL_SLOPE
+    ctrl = self._engage(-7.0)
+    for i in range(500, 540):
+      cs = FakeCarState(brake_pressed=False)
+      cs.brake_force = 2000.0
+      ctrl.update(cs, i, None, pitch_deg=1.0)   # pitch reads flat once the body settles: still the slope hold
+    self.assertTrue(ctrl.active)
+    self.assertEqual(ctrl._hold_decel, BRAKE_HOLD_DECEL_SLOPE)
+    self.assertEqual(mock_create.call_args.kwargs.get("hold_decel"), BRAKE_HOLD_DECEL_SLOPE)

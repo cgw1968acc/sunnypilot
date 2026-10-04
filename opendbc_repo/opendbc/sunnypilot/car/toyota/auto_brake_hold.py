@@ -68,7 +68,16 @@ DISALLOWED_GEARS = (GearShifter.park, GearShifter.reverse)
 # that with a fixed ~1360 N (BRAKE 0xA6), not enough on a steep slope (000000ec 23:51:59: rolled away at ~1.7 m/s^2).
 # Driver 2026-10-03: "can the hold not ask for more, say 1800 N?" - untested whether the PCM scales the clamp with
 # this request; try -1.5 / -2.0 here parked on a flat lot and read 0xA6 before relying on it.
-BRAKE_HOLD_DECEL = -1.5  # m/s^2 requested in DSS1GDRV while holding (driver 2026-10-03: try -1.5 first; -1.0 gave ~1360 N)
+# Owner 2026-10-05: "can the system tell that it stopped on a slope, and only then clamp harder; on the flat keep the old
+# force". carControl.orientationNED pitch (deg, + = nose up) at every stop of routes ec/ee/f2 (pitch_at_stops.py):
+# flat stops sit at +0.5..+1.9 (mount/crown bias ~+1.0), the 2026-10-03 roll-aways at -6.4..-9.3, ramps and driveways
+# at -2.5..-3.9 and +2.8..+4.0. Slope = |pitch - FLAT_PITCH_DEG| >= SLOPE_PITCH_DEG, decided when the hold engages and
+# kept for that hold (no flip-flop while held). Flat: the old -1.0 request (~1360 N); slope: -1.5 (~2040 N, confirmed
+# holding on the 10-03 hill on 2026-10-04).
+BRAKE_HOLD_DECEL = -1.0  # m/s^2 requested in DSS1GDRV while holding on the flat (~1360 N)
+BRAKE_HOLD_DECEL_SLOPE = -1.5  # m/s^2 on a slope (~2040 N)
+FLAT_PITCH_DEG = 1.0  # deg, what this car reports standing on the flat
+SLOPE_PITCH_DEG = 2.0  # deg away from flat that counts as a slope (either direction)
 
 # PRE_COLLISION_2 fields that go high when the camera's own PCS/AEB is genuinely intervening this
 # frame (PCSALM mirrors PRECOLLISION_ACTIVE; IBTRGR/PBATRGR/PREFILL/AVSTRGR/PBRTRGR/PPTRGR are its
@@ -109,8 +118,9 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     self._firm_frame = 0
     self._prev_brake_pressed = False
     self._engaged = False
+    self._hold_decel = BRAKE_HOLD_DECEL
 
-  def update(self, CS: structs.CarState, frame: int, packer) -> list:
+  def update(self, CS: structs.CarState, frame: int, packer, pitch_deg: float = FLAT_PITCH_DEG) -> list:
     ws = CS.out.wheelSpeeds
     wheels_zero = max(abs(ws.fl), abs(ws.fr), abs(ws.rl), abs(ws.rr)) < 1e-3  # panda's vehicle_moving == false
     relay_blocked = (wheels_zero and CS.out.cruiseState.available and not CS.out.cruiseState.enabled and
@@ -135,6 +145,9 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
       firm_ready = self._armed and self._counter - self._firm_frame >= BRAKE_HOLD_ALLOWED_TIMER
       held_long = self._counter > BRAKE_HOLD_LIGHT_TIMER and (math.isnan(force) or force >= BRAKE_HOLD_LIGHT_MIN_FORCE)
       if (firm_ready or held_long) and not self._released:
+        if not self._engaged:
+          on_slope = math.isfinite(pitch_deg) and abs(pitch_deg - FLAT_PITCH_DEG) >= SLOPE_PITCH_DEG
+          self._hold_decel = BRAKE_HOLD_DECEL_SLOPE if on_slope else BRAKE_HOLD_DECEL
         self._engaged = True
       self.active = self._engaged and not self._released
     else:
@@ -150,6 +163,6 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     if relay_blocked and frame % 2 == 0:
       override = self.active and not pcs_is_active(CS.pre_collision_2)
       can_sends.append(toyotacan.create_brake_hold_command(packer, frame, CS.pre_collision_2, override,
-                                                           hold_decel=BRAKE_HOLD_DECEL))
+                                                           hold_decel=self._hold_decel))
 
     return can_sends
