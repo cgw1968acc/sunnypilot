@@ -91,7 +91,10 @@ LANE_CENTER_WIDTH_TAU = 3.0        # s; filter of the lane width, fed only by co
 LANE_CENTER_WIDTH_TOL = 0.7        # m; a width this far from the filtered one means one line is not the ego lane's
 LANE_CENTER_WIDTH_RANGE = (2.6, 4.6)  # m; outside this the pair is not the ego lane
 LANE_CENTER_FIT_RANGE = 12.0       # m ahead used to fit the lane centre (offset + heading + curvature)
-LANE_CENTER_DEADBAND = 0.015       # m; no position correction inside this (0.03 -> 0.015, 2026-09-30: the driver felt the
+LANE_CENTER_DEADBAND = 0.0075      # m; no position correction inside this (0.03 -> 0.015, 2026-09-30: the driver felt the
+                                   # ... -> 0.0075 2026-10-04: route 000000f2 10:34 at 82-88 km/h he felt the corrections again
+                                   # and asked for a smaller dead band once more. Note: the offset there wandered -20..+15 cm
+                                   # with a 4-6 s rhythm, far outside any dead band, so the next lever is the gain, not this.
                                    # corrections at 93 km/h as a regular drift-correct rhythm (~4 s, +-1.3 deg of steering) and
                                    # asked for smaller, more continuous ones; a narrower dead band starts them earlier and smaller)
 LANE_CENTER_KP = 0.35              # m/s^2 of lateral accel per metre of offset
