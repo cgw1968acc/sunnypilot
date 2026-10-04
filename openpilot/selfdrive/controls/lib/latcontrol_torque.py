@@ -355,6 +355,12 @@ class LatControlTorque(LatControl):
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
     desired_curvature += self.lane_centering.update(self.extension.model_v2, CS.vEgo, active, CS.steeringPressed)
     desired_curvature += self.lane_trim.update(self.extension.model_v2, CS.vEgo, active, CS.steeringPressed, model_curvature)
+    # NNLC builds its feedforward from the model's own future lateral accelerations (model_v2.acceleration.y), which carry
+    # none of the corrections above, so with NNLC on the car tracked the model's inner-line path and the outward bias
+    # "stopped working" (driver 2026-10-05: "smoother in curves but hugs the inside line, FRAC seems to have less
+    # effect"). Hand the extension the same correction - the bias as a scale on the curvature, centering/trim as an
+    # offset - so its future inputs describe the corrected path.
+    self.extension.set_path_correction(model_curvature, desired_curvature, CS.vEgo)
     lane_changing = self.extension.model_v2 is not None and self.extension.model_v2.meta.laneChangeState != 0
     desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)

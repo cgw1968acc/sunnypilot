@@ -50,6 +50,8 @@ class LatControlTorqueExtBase:
   def __init__(self, lac_torque, CP, CP_SP, CI):
     self.model_v2 = None
     self.model_valid = False
+    self.path_scale = 1.0
+    self.path_offset = 0.0
     self.lac_torque = lac_torque
 
     self.actual_lateral_jerk: float = 0.0
@@ -101,6 +103,22 @@ class LatControlTorqueExtBase:
     self.model_v2 = model_v2
     self.model_valid = self.model_v2 is not None and len(self.model_v2.orientation.x) >= CONTROL_N
 
+  def set_path_correction(self, model_curvature: float, corrected_curvature: float, v_ego: float) -> None:
+    """The torque controller corrects the model's curvature (curve outward bias, lane centering, low-speed trim) before
+    it becomes the setpoint; the model's future lateral accelerations used below must get the same treatment. A
+    proportional part (the bias scales the curvature) applies when the model is actually curving, the rest is an
+    offset in lateral acceleration."""
+    if abs(model_curvature) > 2e-4:
+      self.path_scale = float(np.clip(corrected_curvature / model_curvature, 0.5, 1.5))
+      self.path_offset = (corrected_curvature - model_curvature * self.path_scale) * v_ego ** 2
+    else:
+      self.path_scale = 1.0
+      self.path_offset = (corrected_curvature - model_curvature) * v_ego ** 2
+
+  def corrected_future_lateral_accel(self, t: float) -> float:
+    """model_v2.acceleration.y at t, with the controller's path correction applied"""
+    return float(np.interp(t, ModelConstants.T_IDXS, self.model_v2.acceleration.y)) * self.path_scale + self.path_offset
+
   def update_lateral_lag(self, lag):
     self.desired_lat_jerk_time = max(0.01, lag) + LATERAL_LAG_MOD
 
@@ -123,9 +141,9 @@ class LatControlTorqueExtBase:
       # prepare "look-ahead" desired lateral jerk
       lookahead = np.interp(CS.vEgo, self.friction_look_ahead_bp, self.friction_look_ahead_v)
       friction_upper_idx = next((i for i, val in enumerate(ModelConstants.T_IDXS) if val > lookahead), 16)
-      predicted_lateral_jerk = get_predicted_lateral_jerk(self.model_v2.acceleration.y, self.t_diffs)
-      desired_lateral_jerk = (np.interp(self.desired_lat_jerk_time, ModelConstants.T_IDXS,
-                              self.model_v2.acceleration.y) - desired_lateral_accel) / self.desired_lat_jerk_time
+      corrected_accels = np.array(self.model_v2.acceleration.y) * self.path_scale + self.path_offset
+      predicted_lateral_jerk = get_predicted_lateral_jerk(corrected_accels, self.t_diffs)
+      desired_lateral_jerk = (self.corrected_future_lateral_accel(self.desired_lat_jerk_time) - desired_lateral_accel) / self.desired_lat_jerk_time
       self.lookahead_lateral_jerk = get_lookahead_value(predicted_lateral_jerk[LAT_PLAN_MIN_IDX:friction_upper_idx], desired_lateral_jerk)
       if self.lookahead_lateral_jerk == 0.0:
         self.actual_lateral_jerk = 0.0
