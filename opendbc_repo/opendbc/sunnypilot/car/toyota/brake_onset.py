@@ -34,7 +34,9 @@ ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3 (reference shape; the first two entries 
 # later. The normal onset schedule applies on top (the stricter of the two wins).
 ENGAGE_BRAKE_T_BP = [0.0, 0.2, 0.7]  # s since engaging
 ENGAGE_BRAKE_J_DOWN = [0.5, 0.5, 4.0]  # m/s^3
-HARD_BRAKE_ACCEL = -3.5  # driver 2026-10-05: "let the -2.0 bypass not act, I will test carefully" - at the ACCEL_MIN clip it never fires; only the FCW bypass remains (was -2.0; -1.5 before 2026-10-03)
+# Owner 2026-10-06: only a plan beyond -3.0 (a genuine emergency) bypasses the soft onset; -2.0 .. -3.0 keep it (at
+# 40 km/h -2.5 is reached slowly in ~1.8 s). History: -1.5 until 2026-10-03, -2.0, then -3.5 (= never) on 2026-10-05.
+HARD_BRAKE_ACCEL = -3.0
 URGENT_T = 0.1  # s
 URGENT_J = 1.0  # m/s^3
 URGENT_T_RAMP = 0.1  # s
