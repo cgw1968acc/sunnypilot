@@ -91,12 +91,14 @@ LANE_CENTER_WIDTH_TAU = 3.0        # s; filter of the lane width, fed only by co
 LANE_CENTER_WIDTH_TOL = 0.7        # m; a width this far from the filtered one means one line is not the ego lane's
 LANE_CENTER_WIDTH_RANGE = (2.6, 4.6)  # m; outside this the pair is not the ego lane
 LANE_CENTER_FIT_RANGE = 12.0       # m ahead used to fit the lane centre (offset + heading + curvature)
-LANE_CENTER_DEADBAND = 0.0075      # m; no position correction inside this (0.03 -> 0.015, 2026-09-30: the driver felt the
+LANE_CENTER_DEADBAND = 0.015       # m; no position correction inside this (0.03 -> 0.015, 2026-09-30: the driver felt the
                                    # ... -> 0.0075 2026-10-04: route 000000f2 10:34 at 82-88 km/h he felt the corrections again
                                    # and asked for a smaller dead band once more. Note: the offset there wandered -20..+15 cm
                                    # with a 4-6 s rhythm, far outside any dead band, so the next lever is the gain, not this.
                                    # corrections at 93 km/h as a regular drift-correct rhythm (~4 s, +-1.3 deg of steering) and
                                    # asked for smaller, more continuous ones; a narrower dead band starts them earlier and smaller)
+# 2026-10-06: back to 0.015 (from 0.0075) with the highway smoothing below; recomputed on the highway logs the smaller dead
+# band added only ~10% more centering correction, and the driver felt more side-to-side motion on tnpb2.
 LANE_CENTER_KP = 0.35              # m/s^2 of lateral accel per metre of offset
 LANE_CENTER_KD = 1.20              # m/s^2 per m/s of lateral speed toward/away from the centre (damping, ~critical)
 LANE_CENTER_KI = 0.05              # m/s^2 per metre per second: slowly takes over what the model keeps pulling
@@ -315,6 +317,32 @@ class DesiredCurvatureJerkLimiter:
     return self.prev
 
 
+# Highway path smoothing (driver 2026-10-06: "tnpb2 corrects the wheel poorly at highway speed, a little side to side").
+# On every C3X highway straight (routes db/df/ea tnpb1, f2/100 tnpb2) the 2-8 s side-to-side swing of the MODEL's desired
+# lateral accel was the same, 0.065-0.080 m/s^2, and the steering followed it in proportion: the swing comes from the
+# model's path, not from the torque gains (tncr18's KP differs only below 54 km/h). A first-order filter on the desired
+# curvature above 80 km/h takes out the faster part of that swing (2-4 s: -20..-45% with 0.5 s) and leaves slower
+# motion and steady curves alone; a highway curve is entered ~0.5 s later. Fades in from 70 km/h like the centering;
+# bypassed during lane changes and when lateral control is inactive.
+HIGHWAY_SMOOTH_BP = [19.4, 22.2]  # m/s (70, 80 km/h)
+HIGHWAY_SMOOTH_TAU_V = [0.0, 0.5]  # s
+
+
+class HighwayCurvatureSmoother:
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.x = 0.0
+
+  def update(self, desired_curvature: float, v_ego: float, active: bool, lane_changing: bool) -> float:
+    tau = float(np.interp(v_ego, HIGHWAY_SMOOTH_BP, HIGHWAY_SMOOTH_TAU_V))
+    if not active or lane_changing or tau <= 0.0:
+      self.x = desired_curvature
+      return desired_curvature
+    alpha = self.dt / (tau + self.dt)
+    self.x += alpha * (desired_curvature - self.x)
+    return self.x
+
+
 class LatControlTorque(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
@@ -333,6 +361,7 @@ class LatControlTorque(LatControl):
     self.lane_centering = LaneCentering(dt)
     self.lane_trim = LaneTrimLowSpeed(dt, self.lane_centering)
     self.curvature_jerk_limiter = DesiredCurvatureJerkLimiter(dt)
+    self.highway_smoother = HighwayCurvatureSmoother(dt)
 
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -363,6 +392,7 @@ class LatControlTorque(LatControl):
     self.extension.set_path_correction(model_curvature, desired_curvature, CS.vEgo)
     lane_changing = self.extension.model_v2 is not None and self.extension.model_v2.meta.laneChangeState != 0
     desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
+    desired_curvature = self.highway_smoother.update(desired_curvature, CS.vEgo, active, lane_changing)
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
     measurement = measured_curvature * CS.vEgo ** 2
     future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
