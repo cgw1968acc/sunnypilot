@@ -15,7 +15,7 @@ from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarContro
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
-from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, BrakeOvershootLimiter, EngageOnsetShaper
+from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, BrakeOvershootLimiter, EngageOnsetShaper, brake_speed_gain
 
 Ecu = structs.CarParams.Ecu
 LongCtrlState = structs.CarControl.Actuators.LongControlState
@@ -293,6 +293,8 @@ class CarController(CarControllerBase, GasInterceptorCarController):
           # SP: take back braking the car delivers beyond a hard request (never under FCW)
           self.overshoot.update(self.prev_accel, a_ego_future, active=not stopping and not fcw_alert)
           pcm_accel_cmd = self.overshoot.apply(pcm_accel_cmd)
+          # SP: the hybrid brakes harder than asked above ~25 km/h and softer in the regen hand-over below ~15 km/h
+          pcm_accel_cmd = brake_speed_gain(pcm_accel_cmd, CS.out.vEgo)
         else:
           self.long_pid.reset()
           self.overshoot.reset()

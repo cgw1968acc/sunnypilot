@@ -165,3 +165,22 @@ class BrakeOvershootLimiter:
     if self.lift <= 0.0:
       return accel_cmd
     return min(accel_cmd + self.lift, max(accel_cmd, OVERSHOOT_CMD_CEIL))
+
+
+# Brake gain by speed (owner 2026-10-06: "far-away slowdowns are not smooth"; route 00000109 23:19:38 / 23:20:40 /
+# 23:20:50 braked hard early, eased off around 10-15 km/h, then braked again). Commanded vs delivered decel 0.4 s later
+# over routes 00000100 and 00000107-0000010a (braking, engaged, no pedals):
+#   3-10 km/h 0.75 | 10-15 0.71 | 15-20 0.86 | 20-30 1.01 | 30-40 1.12 | 40-50 1.09 | 50-70 1.07 | 70-110 1.03
+# The hybrid gives MORE than asked above ~25 km/h (regen + friction) and much LESS in the regen-to-friction hand-over
+# below ~15 km/h, so a smooth plan arrives heavy, then light, then re-braked. The braking command is divided by that
+# gain: x0.9 at 30-40 km/h, x1.3 at 10-15 km/h. Below 7 km/h it is untouched (the stop's end curve was tuned on the
+# car as it is) and blends in to 10 km/h.
+BRAKE_GAIN_V_BP = [7.0 / 3.6, 10.0 / 3.6, 15.0 / 3.6, 20.0 / 3.6, 25.0 / 3.6, 30.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6, 100.0 / 3.6]
+BRAKE_GAIN_V = [1.0, 1.3, 1.3, 1.15, 1.0, 0.9, 0.9, 0.94, 1.0]
+
+
+def brake_speed_gain(accel_cmd: float, v_ego: float) -> float:
+  """the braking command scaled for the car's speed-dependent brake response; positive (gas) commands untouched"""
+  if accel_cmd >= 0.0:
+    return accel_cmd
+  return accel_cmd * float(np.interp(v_ego, BRAKE_GAIN_V_BP, BRAKE_GAIN_V))

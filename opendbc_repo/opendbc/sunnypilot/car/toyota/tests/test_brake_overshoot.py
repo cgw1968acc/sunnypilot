@@ -54,3 +54,20 @@ class TestBrakeOvershootLimiter(unittest.TestCase):
 
 if __name__ == "__main__":
   unittest.main()
+
+
+class TestBrakeSpeedGain(unittest.TestCase):
+  def test_gas_untouched(self):
+    from opendbc.sunnypilot.car.toyota.brake_onset import brake_speed_gain
+    self.assertEqual(brake_speed_gain(0.8, 12 / 3.6), 0.8)
+
+  def test_end_of_stop_untouched_below_7kph(self):
+    from opendbc.sunnypilot.car.toyota.brake_onset import brake_speed_gain
+    for v in (0.0, 3 / 3.6, 7 / 3.6):
+      self.assertEqual(brake_speed_gain(-0.6, v), -0.6)
+
+  def test_handover_band_firmer_and_mid_speed_lighter(self):
+    from opendbc.sunnypilot.car.toyota.brake_onset import brake_speed_gain
+    self.assertAlmostEqual(brake_speed_gain(-1.0, 12 / 3.6), -1.3)
+    self.assertAlmostEqual(brake_speed_gain(-1.0, 35 / 3.6), -0.9)
+    self.assertAlmostEqual(brake_speed_gain(-1.0, 110 / 3.6), -1.0)
