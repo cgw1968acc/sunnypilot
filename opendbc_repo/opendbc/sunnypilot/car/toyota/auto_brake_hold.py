@@ -79,6 +79,24 @@ BRAKE_HOLD_DECEL_SLOPE = -1.5  # m/s^2 on a slope (~2040 N)
 FLAT_PITCH_DEG = 1.0  # deg, what this car reports standing on the flat
 SLOPE_PITCH_DEG = 2.0  # deg away from flat that counts as a slope (either direction)
 
+# Route 00000100 2026-10-05 19:53:53 (driver's bookmarks "3+1", manual stop): the wheels stopped, the IMU settled in
+# 0.13 s, no wheel pulse after the hold - the stop detection was right. The jerk was the clamp itself: the driver's
+# foot crept from 640 to 920 N, crossed BRAKE_HOLD_LIGHT_MIN_FORCE 1.4 s after the stop, and the hold stepped the brake
+# 920 -> 1360 N under the foot (IMU fore/aft wiggle for 0.6 s). Delaying the hold only moves that step. Owner
+# 2026-10-06 chose both fixes:
+#  B) while the driver is still holding the car, the hold waits; it takes over when the driver starts to LIFT: the
+#     brake force falls BRAKE_HOLD_LIFT_DROP below the highest force of this stop, or the pedal is released (the
+#     factory hold of the Corolla Cross takes over the same way, the car never feels it);
+#  A) the clamp then starts at the force the driver was holding (DSS1GDRV ~ BRAKE_HOLD_N_PER_DECEL N per m/s^2:
+#     -1.0 -> ~1360 N, -1.5 -> ~2040 N measured) and ramps to the flat/slope request over BRAKE_HOLD_RAMP_FRAMES,
+#     never starting below BRAKE_HOLD_START_DECEL (~820 N, above the ~760-800 N the hybrid's creep torque needs).
+#     Requests lighter than -1.0 are untested on the PCM: check 0xA6 on the first stops.
+# With the hand-over at the driver's own force there is no step, so the light-stop force gate (900 N) is no longer used.
+BRAKE_HOLD_LIFT_DROP = 200.0  # N below this stop's highest brake force counts as lifting
+BRAKE_HOLD_N_PER_DECEL = 1360.0  # N of brake force per m/s^2 of DSS1GDRV
+BRAKE_HOLD_START_DECEL = -0.6  # m/s^2, the lightest request the hold starts from
+BRAKE_HOLD_RAMP_FRAMES = 50  # 0.5 s from the start request to the hold request
+
 # PRE_COLLISION_2 fields that go high when the camera's own PCS/AEB is genuinely intervening this
 # frame (PCSALM mirrors PRECOLLISION_ACTIVE; IBTRGR/PBATRGR/PREFILL/AVSTRGR/PBRTRGR/PPTRGR are its
 # actuation triggers - see create_pcs_commands for the same field set on the stock-DSU PCS path).
@@ -119,6 +137,9 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     self._prev_brake_pressed = False
     self._engaged = False
     self._hold_decel = BRAKE_HOLD_DECEL
+    self._hold_req = BRAKE_HOLD_DECEL  # the request actually sent: ramps from the driver's force to _hold_decel
+    self._hold_step = 0.0
+    self._peak_force = 0.0
 
   def update(self, CS: structs.CarState, frame: int, packer, pitch_deg: float = FLAT_PITCH_DEG) -> list:
     ws = CS.out.wheelSpeeds
@@ -143,12 +164,21 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
         self._armed = True
         self._firm_frame = self._counter
       firm_ready = self._armed and self._counter - self._firm_frame >= BRAKE_HOLD_ALLOWED_TIMER
-      held_long = self._counter > BRAKE_HOLD_LIGHT_TIMER and (math.isnan(force) or force >= BRAKE_HOLD_LIGHT_MIN_FORCE)
-      if (firm_ready or held_long) and not self._released:
-        if not self._engaged:
-          on_slope = math.isfinite(pitch_deg) and abs(pitch_deg - FLAT_PITCH_DEG) >= SLOPE_PITCH_DEG
-          self._hold_decel = BRAKE_HOLD_DECEL_SLOPE if on_slope else BRAKE_HOLD_DECEL
+      held_long = self._counter > BRAKE_HOLD_LIGHT_TIMER
+      if math.isfinite(force) and not self._engaged:
+        self._peak_force = max(self._peak_force, force)
+      # B: hand over only when the driver lifts (force falling or pedal released); no force signal -> as before
+      lifting = (not CS.out.brakePressed or math.isnan(force) or force <= self._peak_force - BRAKE_HOLD_LIFT_DROP)
+      if (firm_ready or held_long) and lifting and not self._released and not self._engaged:
+        on_slope = math.isfinite(pitch_deg) and abs(pitch_deg - FLAT_PITCH_DEG) >= SLOPE_PITCH_DEG
+        self._hold_decel = BRAKE_HOLD_DECEL_SLOPE if on_slope else BRAKE_HOLD_DECEL
+        # A: start at the force the driver was holding, then ramp to the hold request
+        start = -self._peak_force / BRAKE_HOLD_N_PER_DECEL if math.isfinite(force) else self._hold_decel
+        self._hold_req = max(self._hold_decel, min(BRAKE_HOLD_START_DECEL, start))
+        self._hold_step = (self._hold_req - self._hold_decel) / BRAKE_HOLD_RAMP_FRAMES
         self._engaged = True
+      elif self._engaged:
+        self._hold_req = max(self._hold_decel, self._hold_req - self._hold_step)
       self.active = self._engaged and not self._released
     else:
       self._counter = 0
@@ -156,6 +186,7 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
       self._released = False
       self._armed = False
       self._engaged = False
+      self._peak_force = 0.0
 
     self._prev_brake_pressed = CS.out.brakePressed
 
@@ -163,6 +194,6 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     if relay_blocked and frame % 2 == 0:
       override = self.active and not pcs_is_active(CS.pre_collision_2)
       can_sends.append(toyotacan.create_brake_hold_command(packer, frame, CS.pre_collision_2, override,
-                                                           hold_decel=self._hold_decel))
+                                                           hold_decel=self._hold_req))
 
     return can_sends
