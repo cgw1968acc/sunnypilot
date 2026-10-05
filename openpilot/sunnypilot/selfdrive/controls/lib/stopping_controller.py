@@ -57,7 +57,7 @@ class StoppingController:
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
   END_HI = -0.60  # m/s^2 at END_V_HI (~1200 N)
-  END_LO = -0.25  # m/s^2 at 0 km/h (~780 N); driver 2026-10-04: -0.30 "closer to perfect", -0.25 = the threshold
+  END_LO = -0.30  # m/s^2 at 0-1 km/h; driver 2026-10-04: -0.30 "closer to perfect", -0.25 the threshold; 2026-10-06 back to -0.30
   # Driver 2026-10-04 (route 000000f2): "between 5 and 0 km/h not linear but parabolic: steeper from 5 to 2, flat from
   # 2 to 0" -> x^2 parabola -0.50/-0.41/-0.34/-0.29/-0.26/-0.25 ("closer to perfect"). An S-shaped table
   # (-0.50/-0.47/-0.40/-0.29/-0.25/-0.24) was "not better" and reverted. Then the driver gave his own points, close to
@@ -69,7 +69,9 @@ class StoppingController:
   # more, but already be light at 1 km/h, or reaching -0.25 only at 0 km/h may still nod; keep 1-0 as it was". So a
   # parabola with its flat top at 5 km/h (END_HI) that bends down to END_LO by 1 km/h, then flat END_LO to the stop:
   # a = END_LO + (END_HI - END_LO) * (1 - ((5 - v) / 4)^2) -> -0.60/-0.58/-0.51/-0.40/-0.25/-0.25 at 5..0 km/h.
-  END_CURVE_A = [END_LO, END_LO, -0.40, -0.51, -0.58, END_HI]  # m/s^2
+  # Driver 2026-10-06 night: "the end of the stop is not ideal, make 1-0 -0.3": END_LO -0.30, same parabola above it
+  # -> -0.60/-0.58/-0.53/-0.43/-0.30/-0.30.
+  END_CURVE_A = [END_LO, END_LO, -0.43, -0.53, -0.58, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
