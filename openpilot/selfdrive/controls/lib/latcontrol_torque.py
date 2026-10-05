@@ -104,7 +104,11 @@ LANE_CENTER_DEADBAND = 0.015       # m; no position correction inside this (0.03
 LANE_CENTER_KP = 0.35              # m/s^2 of lateral accel per metre of offset
 LANE_CENTER_KD = 1.20              # m/s^2 per m/s of lateral speed toward/away from the centre (damping, ~critical)
 LANE_CENTER_KI = 0.05              # m/s^2 per metre per second: slowly takes over what the model keeps pulling
-LANE_CENTER_I_LIMIT = 0.25         # m/s^2; cap on the integrated part
+LANE_CENTER_I_LIMIT = 0.45         # m/s^2; cap on the integrated part
+# 2026-10-06 (route 00000109 23:27-23:34, ~103 km/h): the car sat LEFT of the lane centre the whole stretch (straight
+# -10 cm, left curves -20..-35, right curves -13..-24 cm) with the centering saturated near 0.35-0.43 m/s^2 against the
+# model's pull; the integral cap 0.25 -> 0.45 m/s^2 lets it finish the job. The total stays capped by MAX_LAT_ACCEL.
+# The centering has no upper speed limit (full from 80 km/h up, e.g. 140 km/h).
 LANE_CENTER_MAX_LAT_ACCEL = 0.6    # m/s^2; cap on the total correction as felt by the driver
 LANE_CENTER_MAX_CURV = 3.5e-3      # 1/m; cap on the total correction (radius ~290 m)
 LANE_CENTER_JERK = 0.5             # m/s^3; how fast the correction may change, as lateral jerk so it feels the same at
