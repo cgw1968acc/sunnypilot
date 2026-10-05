@@ -13,6 +13,7 @@ from opendbc.car.toyota.values import ToyotaFlags, CAR, DBC, STEER_THRESHOLD, NO
 from opendbc.sunnypilot.car.toyota.carstate_ext import CarStateExt
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarState
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
+from opendbc.sunnypilot.car.toyota.wheel_pulse import WheelPulseCreep
 
 ButtonType = structs.CarState.ButtonEvent.Type
 SteerControlType = structs.CarParams.SteerControlType
@@ -51,13 +52,31 @@ TEMP_STEER_FAULTS = (0, 9, 11, 21, 25)
 PERM_STEER_FAULTS = (3, 17)
 
 
+# Fitted 2026-10-02 to the Altis dash at steady cruise (true speed from the logs, dash read by the driver): v 103.00 ->
+# dash 110, 92.99 -> 99, 63.96 -> 69 (routes 000000e9/ea), 98.0 -> 104 (09-30). 1.05 v + 1.47 rounds to every one of them
+# (margin 0.12 km/h); the old 1.04 v + 1.9 showed 109 / 98 / 68 because the 0.5 km/h display hysteresis kept the value up
+# to 0.5 below after accelerating to the set speed (see CLUSTER_HYST_KPH).
+CLUSTER_SPEED_GAIN = 1.05           # dash km/h per true km/h (stock openpilot: 1.015)
+CLUSTER_SPEED_OFFSET_KPH = 1.47     # km/h added on top
+CLUSTER_HYST_KPH = 0.1              # display hysteresis (stock 0.5): steady-cruise vEgo noise is ~+-0.08 km/h
+CLUSTER_MIN_KPH = 5.0               # below this the screen shows the true speed
+
+
+def cluster_speed(v_ego: float) -> float:
+  """Speed for the on-screen readout, matched to the car's own speedometer (m/s in, m/s out)."""
+  v_kph = v_ego * CV.MS_TO_KPH
+  if v_kph < CLUSTER_MIN_KPH:
+    return v_ego
+  return (CLUSTER_SPEED_GAIN * v_kph + CLUSTER_SPEED_OFFSET_KPH) * CV.KPH_TO_MS
+
+
 class CarState(CarStateBase, CarStateExt):
   def __init__(self, CP, CP_SP):
     CarStateBase.__init__(self, CP, CP_SP)
     CarStateExt.__init__(self, CP, CP_SP)
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
     self.eps_torque_scale = EPS_SCALE[CP.carFingerprint] / 100.
-    self.cluster_speed_hyst_gap = CV.KPH_TO_MS / 2.
+    self.cluster_speed_hyst_gap = CLUSTER_HYST_KPH * CV.KPH_TO_MS
     self.cluster_min_speed = CV.KPH_TO_MS / 2.
 
     if CP.flags & ToyotaFlags.SECOC.value:
@@ -85,7 +104,10 @@ class CarState(CarStateBase, CarStateExt):
 
     if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD:
       self.pre_collision_2 = {}
-    self.brake_force = float('nan')
+    self.brake_force = float('nan')  # N, BRAKE (0xA6) BRAKE_FORCE: brake pressure as force; nan when not broadcast
+    self.wheel_encoder = float('nan')  # SPEED (0xB4) ENCODER: wheel pulse counter, still counts below the ~0.5 km/h speed floor
+    self.wheel_pulse = WheelPulseCreep()
+
     self._host_params = get_host_params()
     self.toyota_drive_mode = self._host_params is not None and self._host_params.get_bool('ToyotaDriveMode')
     self._drive_mode_signals_checked = False
@@ -160,8 +182,20 @@ class CarState(CarStateBase, CarStateExt):
       cp.vl["WHEEL_SPEEDS"]["WHEEL_SPEED_RL"],
       cp.vl["WHEEL_SPEEDS"]["WHEEL_SPEED_RR"],
     )
-    ret.vEgoCluster = ret.vEgo * 1.015  # minimum of all the cars
+    # Speedometer model for the on-screen speed. Stock: vEgo * 1.015. Corolla Altis Hybrid 2026-09-30 22:30: at a set
+    # speed of 105 the dash read 104 while the screen (1.015 * vEgo) read 100, i.e. vEgo ~98.5 km/h - the dash is about
+    # 5.5% above the true speed. Toyota speedometers are close to affine (gain plus a small offset); start from gain 1.04
+    # and +1.6 km/h, which reproduces that point, and refine with more dash/screen pairs. Only above CLUSTER_MIN_KPH so
+    # crawling and standstill stay exact. Tunables: CLUSTER_SPEED_GAIN, CLUSTER_SPEED_OFFSET_KPH.
+    ret.vEgoCluster = cluster_speed(ret.vEgo)
 
+    # below the ~0.5 km/h speed floor the wheel pulse counter still shows a creeping car (wheel_pulse.py)
+    if "SPEED" in cp.vl:
+      self.wheel_encoder = float(cp.vl["SPEED"]["ENCODER"])
+    creep_v = self.wheel_pulse.update(self.wheel_encoder, abs(ret.vEgoRaw) < 1e-3)
+    if creep_v > 0.0:
+      ret.vEgoRaw = creep_v
+      ret.vEgo = max(ret.vEgo, creep_v)
     ret.standstill = abs(ret.vEgoRaw) < 1e-3
 
     ret.vehicleSensorsInvalid = any(cp.vl["WHEEL_SPEEDS"][f"WHEEL_SPEED_{whl}_FAULT"]
@@ -301,11 +335,17 @@ class CarState(CarStateBase, CarStateExt):
     pt_messages = [
       ("BLINKERS_STATE", float('nan')),
     ]
+    # engine speed / running flag (0x1C4) so the hybrid's EV-vs-engine state reaches the planner. Alive check is
+    # skipped (nan) so a car without the message never invalidates CAN.
     if CP.flags & ToyotaFlags.HYBRID:
       pt_messages.append(("ENGINE_RPM", float('nan')))
-
+    # brake pressure (0xA6) so the auto brake hold can require a firm press, like the factory hold. Alive check skipped.
     if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD and "BRAKE" in DBCParser(DBC[CP.carFingerprint][Bus.pt]).name_to_msg:
       pt_messages.append(("BRAKE", float('nan')))
+    # wheel pulse counter (0xB4 ENCODER): the wheel speeds read 0 below ~0.5 km/h, the encoder still counts, so a
+    # slow creep is not mistaken for a stop (wheel_pulse.py). Alive check skipped.
+    if "SPEED" in DBCParser(DBC[CP.carFingerprint][Bus.pt]).name_to_msg:
+      pt_messages.append(("SPEED", float('nan')))
 
     cam_messages = [
       ("RSA1", 0),
