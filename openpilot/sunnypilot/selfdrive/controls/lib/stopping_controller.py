@@ -29,6 +29,14 @@ class StoppingController:
   STANDSTILL_HOLD_DELAY_NO_LEAD = 1.0  # s
   STOPPING_FREEZE_MAX = 2.0  # s
   STOPPING_EXIT_DEBOUNCE = 0.2  # s
+  # Engaging at a standstill (driver 2026-10-06, route 0000010a 23:58:49: "pulling away with no lead, just before the car
+  # really moves there is a very short hard brake, then it goes"). The car stood in the auto hold (1360 N); engaging
+  # dropped the hold to 0 N, the plan's first frame still said stop, so the stopping state started the standstill hold
+  # ramp at once (it had stood long past the hold delay) - -0.21 m/s^2 within 0.2 s, which the PCM turned into a
+  # 1600 N brake pulse (IMU +0.6 m/s^2 jolt) before the launch 0.4 s later. For ENGAGE_STANDSTILL_GRACE after engaging
+  # at a standstill with no lead the request stays at zero instead: the launch follows straight away; if the plan
+  # really wants to stay stopped, the hold ramp starts after the grace.
+  ENGAGE_STANDSTILL_GRACE = 0.6  # s
   STOPPING_FOLLOW_MIN = -0.10  # m/s^2
   STOPPING_FOLLOW_RATE = 2.0  # m/s^3
   CREEP_V_MIN = 0.03  # m/s
@@ -92,6 +100,7 @@ class StoppingController:
     self.standstill_t = 0.0
     self.stopping_t = 0.0
     self.go_t = 0.0
+    self.engaged_t = 0.0
     self.stopped_once = False
     self.creep_t = 0.0
     self.end_active = False
@@ -117,6 +126,7 @@ class StoppingController:
       self.go_t = 0.0
 
     self.standstill_t = self.standstill_t + DT_CTRL if CS.standstill else 0.0
+    self.engaged_t = 0.0 if state == LongCtrlState.off else self.engaged_t + DT_CTRL
     self.stopping_t = self.stopping_t + DT_CTRL if state == LongCtrlState.stopping else 0.0
     if state != LongCtrlState.stopping:
       self.stopped_once = False
@@ -158,7 +168,9 @@ class StoppingController:
         output_accel = self._end_request(a_target, prev_accel, CS.vEgo)
 
       hold_delay = self.STANDSTILL_HOLD_DELAY_LEAD if has_lead else self.STANDSTILL_HOLD_DELAY_NO_LEAD
-      if self.standstill_t >= hold_delay:
+      if CS.standstill and not has_lead and self.engaged_t < self.ENGAGE_STANDSTILL_GRACE:
+        rate = 0.0  # just engaged at a standstill: no brake pulse before the launch
+      elif self.standstill_t >= hold_delay:
         rate = self.STANDSTILL_HOLD_RATE
       elif creeping:
         rate = min(self.STOPPING_DECEL_RATE + self.CREEP_RATE_GROWTH * self.creep_t, self.CREEP_RATE_MAX)

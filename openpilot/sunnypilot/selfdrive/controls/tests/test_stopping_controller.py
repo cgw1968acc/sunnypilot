@@ -142,3 +142,28 @@ class TestHoldRelease:
     assert sc.releasing and -2.0 < out < 0.5
     _, out = sc.update(state, PID, cs(0.0, standstill=True), -2.0, out, -2.0, LIMITS, has_lead=True)
     assert abs(out - (-2.0)) < 1e-9 and not sc.releasing
+
+
+class TestEngageAtStandstill:
+  def _engage(self, has_lead, secs):
+    sc = StoppingController(-2.0)
+    car = cs(0.0, standstill=True)
+    for _ in range(300):  # standing in the auto hold, openpilot not engaged
+      sc.update(OFF, OFF, car, 0.0, 0.0, 0.0, LIMITS, has_lead=has_lead)
+    out = 0.0
+    for _ in range(int(secs / DT_CTRL)):
+      _, out = sc.update(STOPPING, STOPPING, car, 0.0, out, 0.0, LIMITS, has_lead=has_lead)
+    return out, sc
+
+  def test_no_brake_pulse_right_after_engaging_without_lead(self):
+    # route 0000010a 23:58:49: the hold ramp reached -0.21 in 0.2 s and the PCM braked 1600 N before the launch
+    out, sc = self._engage(False, 0.5)
+    assert out == 0.0
+
+  def test_the_hold_ramp_follows_after_the_grace(self):
+    out, sc = self._engage(False, sc_t := StoppingController.ENGAGE_STANDSTILL_GRACE + 0.3)
+    assert out < -0.2
+
+  def test_with_a_lead_the_hold_starts_at_once(self):
+    out, _ = self._engage(True, 0.3)
+    assert out < -0.2
