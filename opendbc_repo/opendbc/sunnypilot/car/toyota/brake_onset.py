@@ -126,3 +126,42 @@ class EngageOnsetShaper:
       return self.stock_up_jerk * self.dt
     j_up = float(np.interp(self.t_engaged, ENGAGE_T_BP, ENGAGE_J_UP))
     return min(j_up, self.stock_up_jerk) * self.dt
+
+# Hard-brake overshoot limit (owner 2026-10-06, route 00000100 19:41:42-45: the lead braked from 44 km/h at -3.3 m/s^2;
+# openpilot asked for -3.49 at most, but the PCM with the hybrid's regen delivered -4.3 m/s^2 for 0.8 s (BRAKE_FORCE
+# 4880 N), ~30% more than asked - the last, heaviest part of the "sudden brake" feel. The stock PID only lifted the
+# command ~0.3 above the request.) Once the request is a hard brake, the car's own deceleration is watched: when it
+# runs OVERSHOOT_DEADBAND past the request (predicted a moment ahead, as the PID does), the command is lifted by
+# OVERSHOOT_GAIN times the excess, at most OVERSHOOT_MAX, so the car settles near what openpilot asked for. The request
+# itself is never weakened: the limit only takes back braking the car delivered ON TOP of it (an MPC replay of 19:41
+# with the asked-for -3.5 ends 4.9 m behind the stopped lead). It never lifts the command above OVERSHOOT_CMD_CEIL.
+OVERSHOOT_ACTIVE_ACCEL = -2.5  # m/s^2: the limit works only while the request is harder than this
+OVERSHOOT_DEADBAND = 0.2  # m/s^2 of overshoot that is left alone
+OVERSHOOT_GAIN = 0.8
+OVERSHOOT_MAX = 1.0  # m/s^2 largest lift
+OVERSHOOT_RATE_UP = 3.0  # m/s^3 how fast the lift may grow
+OVERSHOOT_RATE_DOWN = 2.0  # m/s^3 how fast it is given back (also when the hard request ends)
+OVERSHOOT_CMD_CEIL = -1.5  # m/s^2: the lifted command always stays a firm brake
+
+
+class BrakeOvershootLimiter:
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.lift = 0.0
+
+  def reset(self) -> None:
+    self.lift = 0.0
+
+  def update(self, accel_request: float, a_ego_future: float, active: bool = True) -> float:
+    """returns the lift (>= 0, m/s^2) to add to the command"""
+    target = 0.0
+    if active and accel_request < OVERSHOOT_ACTIVE_ACCEL:
+      excess = accel_request - a_ego_future - OVERSHOOT_DEADBAND  # > 0: decelerating harder than asked
+      target = float(np.clip(OVERSHOOT_GAIN * excess, 0.0, OVERSHOOT_MAX))
+    self.lift = float(np.clip(target, self.lift - OVERSHOOT_RATE_DOWN * self.dt, self.lift + OVERSHOOT_RATE_UP * self.dt))
+    return self.lift
+
+  def apply(self, accel_cmd: float) -> float:
+    if self.lift <= 0.0:
+      return accel_cmd
+    return min(accel_cmd + self.lift, max(accel_cmd, OVERSHOOT_CMD_CEIL))
