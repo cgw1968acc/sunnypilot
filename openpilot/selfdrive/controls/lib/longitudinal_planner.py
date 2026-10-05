@@ -17,6 +17,7 @@ from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
+from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedRamp
 
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
@@ -102,6 +103,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.a_cruise = init_a
     self.v_cruise_prev = 0.0
     self.t_set_speed_up = SET_SPEED_INTENT_T  # s since the last set-speed increase
+    self.set_speed_ramp = SetSpeedRamp()
     self.output_a_target = init_a
     self.output_should_stop = False
 
@@ -134,7 +136,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     throttle_probs = sm['modelV2'].meta.disengagePredictions.gasPressProbs
     throttle_prob = throttle_probs[1] if len(throttle_probs) > 1 else 1.0
-    if v_cruise_initialized and self.v_cruise_prev > 0.0 and v_cruise > self.v_cruise_prev + 0.1 and not force_decel:
+    set_speed_up = v_cruise_initialized and self.v_cruise_prev > 0.0 and v_cruise > self.v_cruise_prev + 0.1 and not force_decel
+    if v_cruise_initialized and self.v_cruise_prev > 0.0 and v_cruise < self.v_cruise_prev - 0.1:
+      self.set_speed_ramp.cancel()
+    if set_speed_up:
       self.t_set_speed_up = 0.0
     else:
       self.t_set_speed_up = min(self.t_set_speed_up + self.dt, SET_SPEED_INTENT_T)
@@ -195,6 +200,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                                     self.CP, self.dt, accel_coast, self.allow_throttle, max_accel_override)
     ungated_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego, a_cruise_prev, steer_angle_without_offset,
                                       self.CP, self.dt, accel_coast, True, max_accel_override)
+    # SP: smooth parabolic acceleration after a set-speed increase (cruise candidate only)
+    if reset_state or force_decel:
+      self.set_speed_ramp.cancel()
+    elif set_speed_up:
+      a_max = max_accel_override if max_accel_override is not None else get_max_accel(v_ego)
+      self.set_speed_ramp.start(v_ego, v_cruise, a_cruise_prev, a_max)
+    a_ramp = self.set_speed_ramp.update(self.dt, v_ego, v_cruise)
+    if a_ramp is not None:
+      gated_cruise = min(gated_cruise, a_ramp)
+      ungated_cruise = min(ungated_cruise, a_ramp)
     self.a_cruise = self.arbitrate_cruise_candidate(
       sm, gated_cruise, ungated_cruise, output_a_target_mpc, self.mpc.source,
       allow_throttle=self.allow_throttle, e2e=is_e2e, force_decel=force_decel,
