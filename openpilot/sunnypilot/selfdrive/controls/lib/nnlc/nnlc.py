@@ -115,8 +115,10 @@ class NeuralNetworkLateralControl(LatControlTorqueJerkAware):
                     adjusted_future_times]
     past_lateral_accels_desired = [self.lateral_accel_desired_deque[min(len(self.lateral_accel_desired_deque) - 1, i)]
                                    for i in self.history_frame_offsets]
-    future_planned_lateral_accels = [np.interp(t, ModelConstants.T_IDXS, self.model_v2.acceleration.y) for t in
-                                     adjusted_future_times]
+    # the model's future path with the torque controller's corrections (curve outward bias, centering, trim) applied,
+    # see LatControlTorqueExtBase.set_path_correction - without this the feedforward steered toward the model's
+    # uncorrected (inner-line) path
+    future_planned_lateral_accels = [self.corrected_future_lateral_accel(t) for t in adjusted_future_times]
 
     # compute NNFF error response
     nnff_setpoint_input = [CS.vEgo, self._setpoint, self.lateral_jerk_setpoint, roll] \
