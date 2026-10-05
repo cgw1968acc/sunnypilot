@@ -1,5 +1,6 @@
 import math
 import numpy as np
+from openpilot.selfdrive.modeld.constants import ModelConstants
 from collections import deque
 
 from openpilot.cereal import log
@@ -344,6 +345,65 @@ class HighwayCurvatureSmoother:
     return self.x
 
 
+# Turn-exit counter-swing limit (driver 2026-10-06: "at 30 km/h the wheel still sways when straightening out of a turn;
+# out of 40 km/h curves too"). Route 00000100 19:00:04 and 20:00:33: the controller tracked its setpoint within ~0.15 s,
+# but the MODEL's own path swung past straight after the turn (-2.05 -> +0.33 -> -0.16 m/s^2; -0.14 -> +0.27 -> -0.18)
+# and the wheel followed it (125 deg -> -22 deg). The model keeps the lane; what it overdoes is the re-centering just
+# after the exit. So below ~50 km/h, for EXIT_WINDOW_T after a real turn (|model lat accel| > EXIT_TURN_MIN) has
+# unwound, a request to the OTHER side is capped at EXIT_COUNTER_MAX; the cap is released smoothly at the end of the
+# window. A real S-bend is left alone: when the model's own plan 1-3 s ahead asks for more than EXIT_SBEND_MIN to the
+# other side, nothing is capped. Off above 55 km/h, during lane changes and when lateral control is inactive.
+EXIT_TURN_MIN = 1.0  # m/s^2 of model lateral accel that counts as a turn
+EXIT_UNWOUND = 0.3  # m/s^2: the turn has unwound below this
+EXIT_WINDOW_T = [0.0, 2.0, 3.0]  # s since unwinding
+EXIT_COUNTER_CAP_V = [0.15, 0.15, 2.0]  # m/s^2 allowed to the other side (released over the last second)
+EXIT_SPEED_BP = [45.0 / 3.6, 55.0 / 3.6]  # m/s: full below 45 km/h, off above 55
+EXIT_SBEND_MIN = 0.5  # m/s^2 to the other side in the model's plan 1-3 s ahead = a real S-bend
+EXIT_SBEND_T = (1.0, 1.5, 2.0, 2.5, 3.0)  # s ahead
+EXIT_MIN_SPEED = 3.0  # m/s
+
+
+class TurnExitSwingLimiter:
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.reset()
+
+  def reset(self) -> None:
+    self.turn_sign = 0.0  # sign of the turn being exited, 0 when none
+    self.in_turn = False
+    self.t_exit: float | None = None
+
+  def update(self, desired_curvature: float, model_curvature: float, v_ego: float, active: bool, lane_changing: bool,
+             model_v2=None) -> float:
+    if not active or lane_changing or v_ego < EXIT_MIN_SPEED or v_ego > EXIT_SPEED_BP[-1]:
+      self.reset()
+      return desired_curvature
+    v2 = v_ego ** 2
+    model_lat = model_curvature * v2
+    if abs(model_lat) > EXIT_TURN_MIN:
+      self.in_turn, self.turn_sign, self.t_exit = True, float(np.sign(model_lat)), None
+    elif self.in_turn and abs(model_lat) < EXIT_UNWOUND:
+      self.in_turn, self.t_exit = False, 0.0
+    if self.t_exit is None:
+      return desired_curvature
+    self.t_exit += self.dt
+    if self.t_exit > EXIT_WINDOW_T[-1]:
+      self.reset()
+      return desired_curvature
+    if model_v2 is not None and len(model_v2.acceleration.y) == len(ModelConstants.T_IDXS):
+      ahead = np.interp(EXIT_SBEND_T, ModelConstants.T_IDXS, model_v2.acceleration.y)
+      if np.max(-self.turn_sign * ahead) > EXIT_SBEND_MIN:  # a real bend the other way
+        self.reset()
+        return desired_curvature
+    lat = desired_curvature * v2
+    if lat * self.turn_sign >= 0.0:
+      return desired_curvature
+    cap = float(np.interp(self.t_exit, EXIT_WINDOW_T, EXIT_COUNTER_CAP_V))
+    fade = float(np.interp(v_ego, EXIT_SPEED_BP, [1.0, 0.0]))
+    cap = cap + (abs(lat) - cap) * (1.0 - fade) if abs(lat) > cap else abs(lat)
+    return -self.turn_sign * min(abs(lat), cap) / v2
+
+
 class LatControlTorque(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
@@ -363,6 +423,7 @@ class LatControlTorque(LatControl):
     self.lane_trim = LaneTrimLowSpeed(dt, self.lane_centering)
     self.curvature_jerk_limiter = DesiredCurvatureJerkLimiter(dt)
     self.highway_smoother = HighwayCurvatureSmoother(dt)
+    self.turn_exit_limiter = TurnExitSwingLimiter(dt)
 
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -390,8 +451,10 @@ class LatControlTorque(LatControl):
     # "stopped working" (driver 2026-10-05: "smoother in curves but hugs the inside line, FRAC seems to have less
     # effect"). Hand the extension the same correction - the bias as a scale on the curvature, centering/trim as an
     # offset - so its future inputs describe the corrected path.
-    self.extension.set_path_correction(model_curvature, desired_curvature, CS.vEgo)
     lane_changing = self.extension.model_v2 is not None and self.extension.model_v2.meta.laneChangeState != 0
+    desired_curvature = self.turn_exit_limiter.update(desired_curvature, model_curvature, CS.vEgo, active, lane_changing,
+                                                      self.extension.model_v2)
+    self.extension.set_path_correction(model_curvature, desired_curvature, CS.vEgo)
     desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
     desired_curvature = self.highway_smoother.update(desired_curvature, CS.vEgo, active, lane_changing)
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
