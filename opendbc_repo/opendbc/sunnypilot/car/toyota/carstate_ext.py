@@ -23,6 +23,7 @@ TRAFFIC_SIGNAL_MAP = {
   66: "No overtake"
 }
 
+ENGINE_RUNNING_RPM = 300.  # hybrid: below this the engine is stopped (Corolla rlogs: 0 when off, >=800 when on)
 ZSS_DIFF_THRESHOLD = 4
 ZSS_MAX_THRESHOLD = 10
 
@@ -172,6 +173,7 @@ class CarStateExt:
     self.update_traffic_signals(cp_cam)
     ret_sp.speedLimit = self.calculate_speed_limit()
 
+    # hybrid engine state from ENGINE_RPM (0x1C4): lets the eco accel profile stay on the battery
     if self.CP.flags & ToyotaFlags.HYBRID and "ENGINE_RPM" in cp.vl:
       ret_sp.engineRpm = float(cp.vl["ENGINE_RPM"]["RPM"])
       ret_sp.engineOff = ret_sp.engineRpm < ENGINE_RUNNING_RPM and not bool(cp.vl["ENGINE_RPM"]["ENGINE_RUNNING"])
