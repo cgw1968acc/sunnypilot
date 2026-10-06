@@ -81,6 +81,7 @@ class TestModerateBand(unittest.TestCase):
     self.assertAlmostEqual(lim.lift, 0.8 * (0.9 - OVERSHOOT_DEADBAND), places=6)
     self.assertAlmostEqual(lim.apply(-3.4), -3.4 + lim.lift, places=6)
 
+
   def test_moderate_band_is_a_slow_smooth_trim(self):
     lim = BrakeOvershootLimiter(DT, moderate=True)
     prev = 0.0
@@ -90,6 +91,7 @@ class TestModerateBand(unittest.TestCase):
       self.assertLessEqual(abs(lift - prev), OVERSHOOT_MOD_RATE * DT + 1e-9)
       prev = lift
     self.assertEqual(lift, 0.0)   # averaged overshoot 0.10 is inside the deadband
+
 
   def test_moderate_band_only_in_relaxed(self):
     lim = BrakeOvershootLimiter(DT, moderate=True)
