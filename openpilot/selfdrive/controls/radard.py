@@ -16,6 +16,7 @@ from openpilot.common.simple_kalman import KF1D
 from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
 from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP
+from openpilot.sunnypilot.selfdrive.controls.lib import radard_ext
 
 
 # Default lead acceleration decay set to 50% at 1s
@@ -131,7 +132,7 @@ def match_vision_to_track(v_ego: float, lead: capnp._DynamicStructReader, tracks
   # stationary radar points can be false positives
   dist_sane = abs(track.dRel - offset_vision_dist) < max([(offset_vision_dist)*.25, 5.0])
   vel_sane = (abs(track.vRel + v_ego - lead.v[0]) < 10) or (v_ego + track.vRel > 3)
-  if dist_sane and vel_sane:
+  if dist_sane and vel_sane and not radard_ext.reject_match(track, lead, tracks, v_ego, offset_vision_dist):  # sunnypilot hook
     return track
   else:
     return None
@@ -209,6 +210,7 @@ class RadarD:
     self.radar_state_valid = False
 
     self.ready = False
+    self.radard_ext = radard_ext.RadardExt(DT_MDL)  # sunnypilot: lead post-processing, see radard_ext.py
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
@@ -257,8 +259,9 @@ class RadarD:
         else:
           self.lead_prob_filters[i].update(lead_prob)
 
-      self.radar_state.leadOne = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.lead_prob_filters[0].x,
-                                          self.CP, self.CP_SP, low_speed_override=True)
+      self.radar_state.leadOne = self.radard_ext.lead_one(get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego,
+                                                                   self.lead_prob_filters[0].x, self.CP, self.CP_SP,
+                                                                   low_speed_override=True), self.v_ego)  # sunnypilot hook
       self.radar_state.leadTwo = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.lead_prob_filters[1].x,
                                           self.CP, self.CP_SP, low_speed_override=False)
 
