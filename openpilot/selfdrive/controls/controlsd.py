@@ -20,6 +20,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_curvature import LatControlCurv
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
+from openpilot.sunnypilot.selfdrive.controls.lib.stopping_controller import StoppingController
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
@@ -57,6 +58,7 @@ class Controls(ControlsExt):
     self.calibrated_pose: Pose | None = None
 
     self.LoC = LongControl(self.CP, self.CP_SP)
+    self.stopping_controller = StoppingController(self.CP.stopAccel)
     self.VM = VehicleModel(self.CP)
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
@@ -135,8 +137,18 @@ class Controls(ControlsExt):
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
-    self.long_accel_sp(actuators, CS, long_plan, pid_accel_limits)  # sunnypilot hook
+    prev_state = self.LoC.long_control_state
+    prev_accel = self.LoC.last_output_accel
+    accel = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits)
+    stock_state = self.LoC.long_control_state
+    self.LoC.long_control_state, accel = self.stopping_controller.update(
+      prev_state, stock_state, CS, long_plan.aTarget, prev_accel, accel, pid_accel_limits, long_plan.hasLead,
+      pitch=self.calibrated_pose.orientation.pitch if self.calibrated_pose is not None else None,
+      a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None)  # sunnypilot hook
+    if self.LoC.long_control_state != stock_state:
+      self.LoC.reset()
+    self.LoC.last_output_accel = accel
+    actuators.accel = float(accel)
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
