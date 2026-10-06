@@ -4,7 +4,6 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-import math
 import numpy as np
 
 ONSET_T_BP = [0.0, 0.15, 0.6]  # s
@@ -52,62 +51,14 @@ URGENT_T_RAMP = 0.1  # s
 CREEP_GAS_V = 8.0 / 3.6  # m/s
 
 
-# Friction entry (hybrid). Owner 2026-10-09: "no heavy-press jolt at the start of a brake - this is what I most want
-# gone; even -2.6 is fine if it is reached smoothly". On this hybrid the first ~-0.6 m/s^2 of a brake is regen; past it
-# the PCM brings in the friction brake (BRAKE 0xA6 BRAKE_FORCE), and how hard that bites depends on how fast the
-# command is moving at that moment. 27 engaged onsets with a friction entry, routes 00000109-00000119 (onset_bite.py):
-#   command rate at friction entry -1.91 / -1.05 / -0.44 m/s^3 -> delivered jerk -3.70 / -2.22 / -1.22 m/s^3,
-#   friction force rate 3067 / 1067 / 533 N/s (r = 0.78; gap command-delivered at entry r = 0.80).
-# The onset schedule above opens to 2.0 m/s^3 by 0.9 s - right when the friction usually enters (median 0.9 s), e.g.
-# route 00000119 09:23:02 (46 km/h, lead braking to a stop): command -0.9 -> -1.66 smoothly, the car sat at the regen
-# limit (-0.55), then the friction came in 680 -> 1520 N and the car went -0.76 -> -1.98 m/s^2 in 0.5 s.
-# So while the command is more than ENTRY_GAP beyond what the car delivers and the friction force is still below
-# ENTRY_FORCE_N, the command moves at most ENTRY_J: the friction enters slowly and the car catches up. After the entry
-# (force established or ENTRY_T_MAX) the command closes the remaining gap at CATCHUP_J, then the normal limits apply.
-# Not for FCW / urgent (< HARD_BRAKE_ACCEL) requests, below ENTRY_V_MIN (creep follow has its own onset), or without
-# measurements (a_ego None).
-ENTRY_GAP = 0.25        # m/s^2 the command may lead the delivered decel before the entry limit applies
-ENTRY_FORCE_N = 600.0   # N: friction established
-ENTRY_J = 0.5           # m/s^3 while the friction enters
-ENTRY_T_MAX = 1.0       # s per brake onset
-CATCHUP_J = 1.5         # m/s^3 after the entry until the command reaches the request
-ENTRY_V_MIN = 10.0 / 3.6  # m/s
-
-
 class BrakeOnsetShaper:
   def __init__(self, dt: float, stock_down_jerk: float):
     self.dt = dt
     self.stock_down_jerk = stock_down_jerk
     self.t_onset = 0.0
-    self.t_entry = 0.0      # time spent limited by the friction entry in this brake
-    self.catchup = False    # after an entry: close the gap gently
-    self.friction_in = False
 
   def reset(self) -> None:
     self.t_onset = 0.0
-    self.t_entry = 0.0
-    self.catchup = False
-    self.friction_in = False
-
-  def friction_entry_step(self, accel_request: float, prev_accel: float, v_ego: float, a_ego: float | None,
-                          brake_force: float) -> float | None:
-    """largest down step (> 0, m/s^2 per step) while the friction brake enters, None = no limit"""
-    if a_ego is None or v_ego < ENTRY_V_MIN or prev_accel > -0.1:
-      self.t_entry, self.catchup, self.friction_in = 0.0, False, False
-      return None
-    if math.isfinite(brake_force) and brake_force >= ENTRY_FORCE_N:
-      self.friction_in = True
-    if accel_request >= prev_accel:
-      self.catchup = False
-      return None
-    leading = prev_accel - a_ego < -ENTRY_GAP
-    if leading and not self.friction_in and self.t_entry < ENTRY_T_MAX:
-      self.t_entry += self.dt
-      self.catchup = True
-      return ENTRY_J * self.dt
-    if self.catchup:
-      return CATCHUP_J * self.dt
-    return None
 
   @staticmethod
   def schedule_t(v_ego: float) -> list[float]:
@@ -122,18 +73,11 @@ class BrakeOnsetShaper:
     return [j1, j1, j3]
 
   def down_step(self, accel_request: float, prev_accel: float, bypass: bool = False, v_ego: float = 30.0,
-                urgent: bool = False, t_engaged: float | None = None, a_ego: float | None = None,
-                brake_force: float = float('nan')) -> float:
+                urgent: bool = False, t_engaged: float | None = None) -> float:
     if bypass:
       self.t_onset = 0.0
-      self.t_entry, self.catchup = 0.0, False
       return -self.stock_down_jerk * self.dt
-    entry = None if urgent else self.friction_entry_step(accel_request, prev_accel, v_ego, a_ego, brake_force)
-    step = self._down_step(accel_request, prev_accel, v_ego, urgent, t_engaged)
-    return step if entry is None else -min(-step, entry)
 
-  def _down_step(self, accel_request: float, prev_accel: float, v_ego: float, urgent: bool,
-                 t_engaged: float | None) -> float:
     if prev_accel > 0.0 and v_ego < CREEP_GAS_V and accel_request < prev_accel:
       self.t_onset = 0.0
       return -min(self.stock_down_jerk * self.dt, prev_accel - max(accel_request, 0.0))
@@ -344,16 +288,6 @@ HANDOVER_RATE = 1.0  # m/s^3
 # -1.46, delivered -1.72), so the extra fades out between these requests (full at -1.0 and lighter, none at -1.5).
 HANDOVER_REQ_BP = [-1.5, -1.0]  # m/s^2
 HANDOVER_REQ_W = [0.0, 1.0]
-# Owner 2026-10-10 (route 0000011c 00:19:10, Aggressive stop 1.6 m behind the lead): "the end of the stop slides too
-# much, the last two metres feel too light". With the PID held below PID_HOLD_V nothing makes up the under-delivery
-# below the hand-over band; asked / delivered by band (m/s^2), three stops of 11c (00:18:07 / 00:19:10 / 00:20:58):
-#   8-7 km/h -0.75/-0.62  -0.89/-0.58  -0.77/-0.54     6-5 km/h -0.63/-0.45  -0.75/-0.50  -0.66/-0.49
-#   5-4 km/h -0.60/-0.40  -0.67/-0.28  -0.64/-0.35     4-3 km/h -0.58/-0.62  -0.62/-0.45  -0.61/-0.57
-#   3-2 km/h on target or above. Brake force 650-850 N at 6-4 km/h, below what beats the hybrid creep torque.
-# So a second, low-speed feed-forward: LOW_EXTRA at LOW_EXTRA_V_BP (0.25 at 5-6.5 km/h, gone by 3 km/h, led by about
-# 0.5 km/h for the ~0.3 s actuator lag), added to the hand-over extra, same request gate and rate.
-LOW_EXTRA_V_BP = [3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6, 6.5 / 3.6, 8.5 / 3.6]  # m/s
-LOW_EXTRA = [0.0, 0.15, 0.25, 0.25, 0.0]  # m/s^2
 PID_HOLD_V = 9.0 / 3.6  # m/s
 PID_BLEED_NEG = 0.5  # m/s^2 per s: a braking integral fades this fast
 PID_BLEED_POS = 2.0  # m/s^2 per s: a gas integral (left from the launch) fades this fast
@@ -372,7 +306,6 @@ class BrakeHandoverFeedforward:
     if active and accel_request < HANDOVER_MIN_REQUEST:
       w = float(np.interp(v_ego, HANDOVER_V_BP, HANDOVER_V_W)) * float(np.interp(accel_request, HANDOVER_REQ_BP, HANDOVER_REQ_W))
       target = w * min(HANDOVER_EXTRA_MAX, HANDOVER_EXTRA_FRAC * -accel_request)
-      target += float(np.interp(v_ego, LOW_EXTRA_V_BP, LOW_EXTRA)) * float(np.interp(accel_request, HANDOVER_REQ_BP, HANDOVER_REQ_W))
     step = HANDOVER_RATE * self.dt
     self.extra = float(np.clip(target, self.extra - step, self.extra + step))
     return self.extra
