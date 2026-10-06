@@ -24,9 +24,7 @@ MAX_ACCEL_PROFILES = {
 # 60 km/h 0.25, 70 km/h 0.16, 80 km/h 0.12. Launch values are the Altis eco ones. Once the engine runs there is nothing
 # to save, so the normal eco line takes over until it stops again.
 ECO_ENGINE_OFF_BP = [0., 3., 12., 16.67, 19.44, 22.22, 24., 36.]  # m/s
-# The first two rows follow the eco line above: battery-first may never launch harder than eco. They still held the
-# pre-retune eco values (1.85 / 1.55) in the source this was ported from, which put engine-off above eco at 0-3 m/s.
-ECO_ENGINE_OFF_MAX_ACCEL = [1.75, 1.50, 0.35, 0.25, 0.16, 0.12, 0.08, 0.06]
+ECO_ENGINE_OFF_MAX_ACCEL = [1.85, 1.55, 0.35, 0.25, 0.16, 0.12, 0.08, 0.06]
 # Cruise deceleration to a lowered set speed (no lead). Normal/sport: one CONSTANT decel latched when the gap opens
 # (gap / response time, never gentler than CRUISE_DECEL_ACCEL) and held, so the car slows on a straight line instead of
 # the proportional gap/time law, which braked hardest at the start and dragged a long tail; more presses = firmer.

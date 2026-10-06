@@ -102,6 +102,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     throttle_probs = sm['modelV2'].meta.disengagePredictions.gasPressProbs
     throttle_prob = throttle_probs[1] if len(throttle_probs) > 1 else 1.0
     self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
+    self.allow_throttle = self.update_allow_throttle_sp(self.allow_throttle, v_ego, v_cruise, v_cruise_initialized, force_decel)  # sunnypilot hook
 
     steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['vehicleParameters'].angleOffsetDeg
 
@@ -109,6 +110,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       self.v_desired_filter.x = v_ego
       self.output_a_target = np.clip(sm['carState'].aEgo, ACCEL_MIN, ACCEL_MAX)
       self.a_cruise = self.output_a_target
+      self.reset_sp()  # sunnypilot hook
 
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
@@ -146,12 +148,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     is_e2e = self.is_e2e(sm)
 
     max_accel_override = self.get_max_accel_override(v_ego, sm['carStateSP'].engineOff)
+    max_accel_override = self.max_accel_sp(max_accel_override, sm)  # sunnypilot hook
     v_cruise = self.get_cruise_target_override(v_ego, v_cruise, force_decel, accel_coast if accel_coast < 0.0 else None)
     a_cruise_prev = self.a_cruise
     gated_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego, a_cruise_prev, steer_angle_without_offset,
                                     self.CP, self.dt, accel_coast, self.allow_throttle, max_accel_override)
     ungated_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego, a_cruise_prev, steer_angle_without_offset,
                                       self.CP, self.dt, accel_coast, True, max_accel_override)
+    gated_cruise, ungated_cruise = self.cruise_accel_sp(gated_cruise, ungated_cruise, is_e2e, v_cruise, v_ego, a_cruise_prev,
+                                                      max_accel_override, reset_state, force_decel)  # sunnypilot hook
     self.a_cruise = self.arbitrate_cruise_candidate(
       sm, gated_cruise, ungated_cruise, output_a_target_mpc, self.mpc.source,
       allow_throttle=self.allow_throttle, e2e=is_e2e, force_decel=force_decel,
@@ -165,6 +170,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
     self.output_should_stop = any(should_stop for _, _, should_stop in candidates)
+    output_a_target, self.output_should_stop = self.lead_start_sp(output_a_target, self.output_should_stop, sm, v_ego,
+                                                                      long_control_off, force_decel, is_e2e,
+                                                                      output_should_stop_e2e)  # sunnypilot hook
     self.output_a_target = np.clip(output_a_target, ACCEL_MIN, ACCEL_MAX)
     self.accel_controller_active = self.is_accel_controller_active(force_decel)
 
