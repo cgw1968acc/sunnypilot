@@ -37,11 +37,17 @@ class TestTss2LongTuning(unittest.TestCase):
     self.assertEqual(stock_tune.k_i, 0.25)
 
     CP_SP.flags |= ToyotaFlagsSP.TSS2_LONG_TUNING.value
+    # owner's Altis table (kiBP [0, 0.3, 5, 12, 27, 36], kiV [0.50, 0.52, 0.25, 0.23, 0.10, 0.09]); the
+    # upstream 0.30 / 0.28 expectations never matched this branch's table
     custom_tune = get_long_tune(CP, CP_SP, controller_params)
     custom_tune.speed = 0.0
-    self.assertEqual(custom_tune.k_i, 0.30)
+    self.assertAlmostEqual(custom_tune.k_i, 0.50)
+    custom_tune.speed = 0.3
+    self.assertAlmostEqual(custom_tune.k_i, 0.52)
     custom_tune.speed = 5.0
-    self.assertEqual(custom_tune.k_i, 0.28)
+    self.assertAlmostEqual(custom_tune.k_i, 0.25)
+    custom_tune.speed = 36.0
+    self.assertAlmostEqual(custom_tune.k_i, 0.09)
 
   def test_non_tss2_ignores_custom_tune_flag(self):
     controller_params = SimpleNamespace(ACCEL_MAX=2.0, ACCEL_MIN=-3.5)
