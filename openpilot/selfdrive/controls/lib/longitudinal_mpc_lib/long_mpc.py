@@ -9,6 +9,7 @@ from openpilot.common.swaglog import cloudlog
 # WARNING: imports outside of constants will not trigger a rebuild
 from openpilot.selfdrive.modeld.constants import index_function
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
+from openpilot.sunnypilot.selfdrive.controls.lib.long_mpc_ext import LongMpcObstacleExt
 
 if __name__ == '__main__':  # generating code
   from acados.acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
@@ -215,6 +216,7 @@ class LongitudinalMpc:
   def __init__(self, dt=DT_MDL):
     self.dt = dt
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
+    self.obstacle_ext = LongMpcObstacleExt()  # sunnypilot: desired-distance changes, see long_mpc_ext.py
     self.reset()
     self.source = LongitudinalPlanSource.cruise
 
@@ -320,6 +322,7 @@ class LongitudinalMpc:
     lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1])
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
+    x_obstacles = self.obstacle_ext.adjust(x_obstacles, lead_xv_0, lead_xv_1, self.x_sol[:, 1])  # sunnypilot hook
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
 
     self.yref[:,:] = 0.0
