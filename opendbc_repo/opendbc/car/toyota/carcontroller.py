@@ -224,7 +224,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
     self.last_standstill = CS.out.standstill
 
     if self.auto_brake_hold.enabled:
-      can_sends.extend(self.auto_brake_hold.update(CS, self.frame, self.packer))
+      can_sends.extend(self.auto_brake_hold.update(CS, self.frame, self.packer, pitch_deg=math.degrees(self.pitch.x)))
 
     # handle UI messages
     fcw_alert = hud_control.visualAlert == VisualAlert.fcw
