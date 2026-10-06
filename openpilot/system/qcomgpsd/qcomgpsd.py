@@ -210,9 +210,17 @@ def main() -> NoReturn:
   signal.signal(signal.SIGINT, cleanup)
   signal.signal(signal.SIGTERM, cleanup)
 
-  # connect to modem
-  diag = ModemDiag()
-  setup_quectel(diag)
+  # connect to modem. On this C3X the modem is sometimes not ready for a long time after boot and setup_quectel's own
+  # retries ran out (crash logs 2026-09-20/27); the manager does not restart a crashed process onroad, so the process
+  # used to stay dead until a reboot. Keep trying forever instead - GPS simply arrives when the modem is ready.
+  while True:
+    try:
+      diag = ModemDiag()
+      setup_quectel(diag)
+      break
+    except Exception:
+      cloudlog.exception("qcomgpsd: modem/GPS setup failed, retrying in 10 s")
+      time.sleep(10)
   cloudlog.warning("quectel setup done")
   gpio_init(GPIO.GNSS_PWR_EN, True)
   gpio_set(GPIO.GNSS_PWR_EN, True)

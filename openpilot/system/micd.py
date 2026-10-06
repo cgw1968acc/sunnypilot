@@ -2,6 +2,7 @@
 import numpy as np
 from functools import cache
 import threading
+import time
 
 from openpilot.cereal import messaging
 from openpilot.common.realtime import Ratekeeper
@@ -114,10 +115,17 @@ class Mic:
     import sounddevice as sd
     patch_sounddevice(sd)
 
-    with self.get_stream(sd) as stream:
-      cloudlog.info(f"micd stream started: {stream.samplerate=} {stream.channels=} {stream.dtype=} {stream.device=}, {stream.blocksize=}")
-      while True:
-        self.update()
+    while True:
+      # never die: on the C3X the capture device is sometimes not available for the first minute after boot (and the
+      # manager does not restart a crashed process onroad). Keep trying; the mic simply comes back when it works.
+      try:
+        with self.get_stream(sd) as stream:
+          cloudlog.info(f"micd stream started: {stream.samplerate=} {stream.channels=} {stream.dtype=} {stream.device=}, {stream.blocksize=}")
+          while True:
+            self.update()
+      except Exception:
+        cloudlog.exception("micd: could not open or keep the mic stream, retrying")
+        time.sleep(5)
 
 
 def main():
