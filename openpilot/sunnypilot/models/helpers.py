@@ -27,6 +27,18 @@ ACTIVE_BUNDLE_KEYS = {
 }
 _LAST_VALIDATED_RAW: dict[str, dict | None] = {}
 
+# SP (Altis, owner 2026-10-03): when no model is selected, sunnypilot runs the release's stock comma model. The switch
+# to the v2026.10.02 base invalidated the stored Macrostiff selection ("Active model bundle invalid; resetting to
+# default"), so the car drove two routes on the stock model and sat ~16 cm right of the lane centre on every straight
+# (lane_pos.py, routes 000000ec/ed; -5 cm with Macrostiff on tnpb1). Owner: "I really dislike Kumar's default model, it
+# has no idea of centering; make Macrostiff the default". So an empty active slot is seeded from the models cache with
+# this bundle: activated at once when its files verify on the device, otherwise its download is requested exactly as
+# the Models settings page would (ModelManager_DownloadRef -> models_manager downloads it and activates it), so a reset
+# or a fresh install ends up on Macrostiff by itself once the catalog has been fetched. Never over a selection the
+# owner made (only an EMPTY slot is seeded).
+DEFAULT_BUNDLE_INTERNAL_NAME = "MACROSTI"
+_SEED_TRIED: set[str] = set()
+
 
 def _compute_hash(file_path: str) -> str | None:
   from openpilot.common.file_chunker import open_file_chunked
@@ -117,9 +129,41 @@ def _parse_active_bundle(raw_bundle) -> "custom.ModelManagerSP.ModelBundle | Non
   return None
 
 
+def seed_default_bundle(params: Params, source: str = "qcom") -> "custom.ModelManagerSP.ModelBundle | None":
+  """Fill an empty active slot with DEFAULT_BUNDLE_INTERNAL_NAME: activate it if its files verify locally, else ask
+  the models manager to download it (as the Models settings page does). Tried once per process once a catalog exists."""
+  key = ACTIVE_BUNDLE_KEYS[source]
+  if key in _SEED_TRIED or params.get(key):
+    return None
+  try:
+    from openpilot.sunnypilot.models.fetcher import ModelParser
+    cache = params.get("ModelManager_ModelsCache" + ("" if source == "qcom" else "_Chestnut"))
+    if not cache:
+      return None  # catalog not fetched yet (fresh install): try again on the next call
+    _SEED_TRIED.add(key)
+    for bundle in ModelParser.parse_models(cache):
+      if bundle.internalName != DEFAULT_BUNDLE_INTERNAL_NAME:
+        continue
+      if _bundle_is_valid_locally(bundle):
+        params.put(key, bundle.to_dict(), block=True)
+        cloudlog.info(f"seeded default model bundle {bundle.displayName} for {source}")
+        return bundle
+      if params.get("ModelManager_DownloadRef") is None:
+        params.put("ModelManager_DownloadRef", bundle.ref)
+        cloudlog.info(f"default model bundle {bundle.displayName} not on disk; download requested for {source}")
+      return None
+    cloudlog.warning(f"default model bundle {DEFAULT_BUNDLE_INTERNAL_NAME} not in the catalog for {source}; stock model")
+  except Exception:
+    cloudlog.exception("seed_default_bundle failed")
+  return None
+
+
 def get_selected_bundle(params: Params | None = None, source: str = "qcom") -> "custom.ModelManagerSP.ModelBundle | None":
   params = params or Params()
-  return _parse_active_bundle(params.get(ACTIVE_BUNDLE_KEYS[source]))
+  bundle = _parse_active_bundle(params.get(ACTIVE_BUNDLE_KEYS[source]))
+  if bundle is None:
+    bundle = seed_default_bundle(params, source)
+  return bundle
 
 
 def get_active_source(chestnut: bool | None = None, chestnut_active: bool | None = None,
