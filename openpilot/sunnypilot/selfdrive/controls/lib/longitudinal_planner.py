@@ -7,9 +7,12 @@ See the LICENSE.md file in the root directory for more details.
 
 import math
 
+import numpy as np
+
 from openpilot.cereal import messaging, custom, log
 from opendbc.car import structs
 from openpilot.common.constants import CV
+from openpilot.common.params import Params
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.accel_controller import AccelController
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
@@ -19,12 +22,42 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist 
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 from openpilot.sunnypilot.models.helpers import get_active_bundle
+from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
+from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedRamp
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 MpcPlanSource = log.LongitudinalPlan.LongitudinalPlanSource
 
 E2E_BRAKE_HOLD_ACCEL = -0.2  # m/s^2
+
+# Set-speed reductions at highway speed: ease off the throttle very gradually (Altis driver 2026-09-29: consecutive
+# -5 km/h taps above 90 km/h felt like the throttle being dropped; rlog 2026-09-27 route 000000c3, 112 -> 107 km/h at
+# 105: the cruise target went +0.12 -> -0.37 m/s^2 in 0.5 s). While v_ego is above V_CRUISE_EASE_MIN and the cruise
+# target is below v_ego, the cruise candidate's DOWNWARD jerk is limited to J_CRUISE_EASE_DOWN (+0.12 -> -0.35 now
+# takes ~2.4 s). The lead MPC and e2e candidates are separate, so braking for a lead is unaffected, and the upward
+# (release) side keeps J_CRUISE.
+V_CRUISE_EASE_MIN = 90. * CV.KPH_TO_MS  # m/s
+J_CRUISE_EASE_DOWN = 0.2  # m/s^3
+
+# SP (Altis, driver 2026-10-04): a set-speed INCREASE is an explicit order to accelerate, so the model's throttle gate
+# (gasPressProbs below ALLOW_THROTTLE_THRESHOLD clamps the cruise target to the coast decel) is ignored for
+# SET_SPEED_INTENT_T after it. Route 000000f6 13:32:53: in the traffic-light curve at 40 km/h the driver pressed + from
+# 50 to 74, the gate closed (gasProb 0.03-0.12) and the planner held -0.47 m/s^2 for 5.8 s; "the car does not react to
+# + in this curve, after the junction + works again". Everything else (lead MPC, e2e candidate, limits) still applies.
+SET_SPEED_INTENT_T = 6.0  # s
+# SP (Altis, owner 2026-10-05): "I never liked the engine pulling harder on a climb; a little LESS acceleration uphill
+# feels natural and safe - scale it by the grade, the steeper the weaker". The car's pitch (carControl.orientationNED,
+# + = nose up; this car reads ~+1.0 deg on the flat, see auto_brake_hold.FLAT_PITCH_DEG) scales the accel profile's
+# ceiling: full up to 1 deg above flat, 0.8x at 4 deg, 0.6x at 8 deg and beyond. Downhill is untouched.
+UPHILL_PITCH_FLAT_DEG = 1.0
+UPHILL_ACCEL_BP = [1.0, 4.0, 8.0]  # deg of climb above flat
+UPHILL_ACCEL_V = [1.0, 0.8, 0.6]  # factor on the max acceleration
+
+
+def get_uphill_accel_factor(pitch_rad: float) -> float:
+  climb = np.degrees(pitch_rad) - UPHILL_PITCH_FLAT_DEG
+  return float(np.interp(climb, UPHILL_ACCEL_BP, UPHILL_ACCEL_V))
 
 
 class LongitudinalPlannerSP:
@@ -42,6 +75,18 @@ class LongitudinalPlannerSP:
 
     self.output_v_target = 0.
     self.output_a_target = 0.
+    self.lead_one = None
+
+
+    # tnpb2 additions (Params switch TnPlannerExtensions), called from five hooks in stock LongitudinalPlanner.update()
+    self.params = Params()
+    self.planner_ext_enabled = self.params.get("TnPlannerExtensions", return_default=True)
+    self._sp_dt = mpc.dt
+    self.lead_start_assist = LeadStartAssist(mpc.dt)
+    self._sp_v_cruise_prev = 0.0
+    self._sp_t_set_speed_up = SET_SPEED_INTENT_T  # s since the last set-speed increase
+    self.set_speed_ramp = SetSpeedRamp()
+    self._sp_set_speed_up = False
 
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
     experimental_mode = sm['selfdriveState'].experimentalMode
@@ -56,11 +101,12 @@ class LongitudinalPlannerSP:
 
     return False
 
-  def get_max_accel_override(self, v_ego: float, engine_off: bool = False) -> float | None:
+  def get_max_accel_override(self, v_ego: float, engine_off: bool = False, lead=None) -> float | None:
     if not self.accel_controller.is_enabled():
       return None
 
-    return self.accel_controller.get_max_accel(v_ego, engine_off)
+    # the eco lead pull-away boost needs the lead; the stock planner does not pass it, so update() keeps it
+    return self.accel_controller.get_max_accel(v_ego, engine_off, lead if lead is not None else self.lead_one)
 
   def get_cruise_target_override(self, v_ego: float, v_target: float, force_decel: bool, accel_coast: float | None = None) -> float:
     if not self.accel_controller.is_enabled() or force_decel or self.source != LongitudinalPlanSource.cruise:
@@ -119,6 +165,7 @@ class LongitudinalPlannerSP:
     return self.output_v_target, self.output_a_target
 
   def update(self, sm: messaging.SubMaster) -> None:
+    self.lead_one = sm['radarState'].leadOne
     self.accel_controller.update()
     self.events_sp.clear()
     self.e2e_alerts_helper.update(sm, self.events_sp)
@@ -196,3 +243,67 @@ class LongitudinalPlannerSP:
     e2eAlerts.leadDepartAlert = self.e2e_alerts_helper.lead_depart_alert
 
     pm.send('longitudinalPlanSP', plan_sp_send)
+
+  def update_allow_throttle_sp(self, allow_throttle: bool, v_ego: float, v_cruise: float, v_cruise_initialized: bool,
+                               force_decel: bool) -> bool:
+    """set-speed increase detection; an increase overrides the model's throttle gate for SET_SPEED_INTENT_T"""
+    if not self.planner_ext_enabled:
+      return allow_throttle
+    self._sp_set_speed_up = (v_cruise_initialized and self._sp_v_cruise_prev > 0.0 and v_cruise > self._sp_v_cruise_prev + 0.1
+                             and not force_decel)
+    if v_cruise_initialized and self._sp_v_cruise_prev > 0.0 and v_cruise < self._sp_v_cruise_prev - 0.1:
+      self.set_speed_ramp.cancel()
+    if self._sp_set_speed_up:
+      self._sp_t_set_speed_up = 0.0
+    else:
+      self._sp_t_set_speed_up = min(self._sp_t_set_speed_up + self._sp_dt, SET_SPEED_INTENT_T)
+    self._sp_v_cruise_prev = v_cruise if v_cruise_initialized else 0.0
+    set_speed_intent = self._sp_t_set_speed_up < SET_SPEED_INTENT_T and v_ego < v_cruise
+    return allow_throttle or set_speed_intent
+
+  def reset_sp(self) -> None:
+    if self.planner_ext_enabled:
+      self.lead_start_assist.reset()
+
+  def max_accel_sp(self, max_accel_override: float | None, sm: messaging.SubMaster) -> float | None:
+    """uphill scaling of the accel profile ceiling"""
+    if self.planner_ext_enabled and max_accel_override is not None and len(sm['carControl'].orientationNED) == 3:
+      max_accel_override *= get_uphill_accel_factor(sm['carControl'].orientationNED[1])
+    return max_accel_override
+
+  def cruise_accel_sp(self, gated: float, ungated: float, e2e: bool, v_cruise: float, v_ego: float, a_cruise_prev: float,
+                      max_accel_override: float | None, reset_state: bool, force_decel: bool) -> tuple[float, float]:
+    """highway set-speed-reduction ease and the smooth set-speed-increase ramp, on both cruise candidates"""
+    if not self.planner_ext_enabled:
+      return gated, ungated
+    from openpilot.selfdrive.controls.lib.longitudinal_planner import A_CRUISE_MAX_BP, J_CRUISE_VALS, get_max_accel
+    if not e2e and v_ego > V_CRUISE_EASE_MIN and v_cruise < v_ego:
+      # same as clipping the stock cruise target's DOWNWARD step at J_CRUISE_EASE_DOWN instead of J_CRUISE
+      j_cruise = np.interp(v_ego, A_CRUISE_MAX_BP, J_CRUISE_VALS)
+      floor = a_cruise_prev - min(j_cruise, J_CRUISE_EASE_DOWN) * self._sp_dt
+      gated, ungated = float(max(gated, floor)), float(max(ungated, floor))
+    if reset_state or force_decel:
+      self.set_speed_ramp.cancel()
+    elif self._sp_set_speed_up:
+      a_max = max_accel_override if max_accel_override is not None else get_max_accel(v_ego)
+      self.set_speed_ramp.start(v_ego, v_cruise, a_cruise_prev, a_max)
+    a_ramp = self.set_speed_ramp.update(self._sp_dt, v_ego, v_cruise)
+    if a_ramp is not None:
+      gated = min(gated, a_ramp)
+      ungated = min(ungated, a_ramp)
+    return gated, ungated
+
+  def lead_start_sp(self, output_a_target: float, output_should_stop: bool, sm: messaging.SubMaster, v_ego: float,
+                    long_control_off: bool, force_decel: bool, is_e2e: bool, output_should_stop_e2e: bool) -> tuple[float, bool]:
+    """Lead start assist: when stopped behind a lead that starts to move, put a floor under the target right away
+    instead of waiting for the lead MPC to close the gap. Never while the driver or e2e is asking for a stop."""
+    if not self.planner_ext_enabled:
+      return output_a_target, output_should_stop
+    lead_one = sm['radarState'].leadOne
+    long_allowed = (not long_control_off and not force_decel and not sm['carState'].brakePressed and
+                    not sm['carState'].gasPressed)
+    assist_allowed = long_allowed and not (is_e2e and output_should_stop_e2e)
+    a_start = self.lead_start_assist.update(assist_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, lead_one.vRel)
+    if a_start is not None and a_start > output_a_target:
+      return a_start, False
+    return output_a_target, output_should_stop
