@@ -82,3 +82,41 @@ class TestBrakeOnset:
     for _ in range(int(1.0 / DT)):  # a full second of settled brake winds it back completely
       shaper.down_step(a, a)
     assert shaper.t_onset == 0.0
+
+
+class TestEngageBrake:
+  """2026-10-04: SET- while creeping up to a lead: the first 0.2 s after engaging is a light touch."""
+  def test_first_0_2_s_after_engaging_is_light_then_blends_to_stock(self):
+    from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper, ENGAGE_BRAKE_T_BP
+    dt = 0.03
+    shaper, engage = BrakeOnsetShaper(dt, 4.0), EngageOnsetShaper(dt, 4.0)
+    a, t, trace = 0.0, 0.0, {}
+    while t < 1.6:
+      engage.up_step(True)
+      step = shaper.down_step(-1.65, a, v_ego=2.5, t_engaged=engage.t_since_engage)
+      a = max(-1.65, a + step)
+      t += dt
+      for mark in (0.2, 0.5, 1.5):
+        if mark not in trace and t >= mark:
+          trace[mark] = a
+    assert trace[0.2] > -0.12          # light first touch (at creep speed the creep onset schedule is the stricter one)
+    assert -1.0 < trace[0.5] < -0.15   # blending in
+    assert trace[1.5] < -1.4           # the planner's request has arrived (end jerk 2.0 m/s^3 below 60 km/h)
+    assert ENGAGE_BRAKE_T_BP[-1] <= 1.0
+
+
+class TestCreepOnset:
+  """2026-10-04: a brake onset at creep speed (re-stop behind a lead) is as light as the engage schedule."""
+  def test_below_10kph_first_0_2_s_is_light(self):
+    from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper
+    dt = 0.03
+    for v, light_limit in ((1.0, -0.15), (30.0, -0.45)):   # creep: barely anything by 0.2 s; highway: the normal onset
+      shaper = BrakeOnsetShaper(dt, 4.0)
+      a, t, at_02 = 0.0, 0.0, None
+      while t < 1.2:
+        a = max(-1.0, a + shaper.down_step(-1.0, a, v_ego=v))
+        t += dt
+        if at_02 is None and t >= 0.2:
+          at_02 = a
+      assert at_02 > light_limit, (v, at_02)
+      assert a < -0.9, (v, a)   # the full request arrives within the window at both speeds
