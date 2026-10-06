@@ -36,7 +36,7 @@ def get_host_params():
   """Return sunnypilot's Params store when opendbc is embedded in openpilot."""
   try:
     return importlib.import_module("openpilot.common.params").Params()
-  except ModuleNotFoundError:
+  except (ModuleNotFoundError, OSError):
     return None
 
 # These steering fault definitions seem to be common across LKA (torque) and LTA (angle):
@@ -58,6 +58,7 @@ class CarState(CarStateBase, CarStateExt):
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
     self.eps_torque_scale = EPS_SCALE[CP.carFingerprint] / 100.
     self.cluster_speed_hyst_gap = CV.KPH_TO_MS / 2.
+    self.cluster_speed_hyst_gap = self.cluster_hyst_gap_sp(self.cluster_speed_hyst_gap)  # sunnypilot hook
     self.cluster_min_speed = CV.KPH_TO_MS / 2.
 
     if CP.flags & ToyotaFlags.SECOC.value:
@@ -161,6 +162,8 @@ class CarState(CarStateBase, CarStateExt):
       cp.vl["WHEEL_SPEEDS"]["WHEEL_SPEED_RR"],
     )
     ret.vEgoCluster = ret.vEgo * 1.015  # minimum of all the cars
+    ret.vEgoCluster = self.cluster_speed_sp(ret.vEgo, ret.vEgoCluster)  # sunnypilot hook
+    self.wheel_pulse_creep_sp(ret, cp)  # sunnypilot hook
 
     ret.standstill = abs(ret.vEgoRaw) < 1e-3
 
@@ -223,6 +226,7 @@ class CarState(CarStateBase, CarStateExt):
     if ret.cruiseState.speed != 0:
       conversion_factor = CV.KPH_TO_MS if is_metric else CV.MPH_TO_MS
       ret.cruiseState.speedCluster = cluster_set_speed * conversion_factor
+      ret.cruiseState.speed = self.set_speed_target_sp(ret.cruiseState.speed, ret.cruiseState.speedCluster, is_metric)  # sunnypilot hook
 
     if self.CP.flags & ToyotaFlags.TSS2 and not self.CP.flags & ToyotaFlags.DISABLE_RADAR.value:
       if not (self.CP_SP.flags & ToyotaFlagsSP.SMART_DSU.value):
@@ -306,6 +310,7 @@ class CarState(CarStateBase, CarStateExt):
 
     if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD and "BRAKE" in DBCParser(DBC[CP.carFingerprint][Bus.pt]).name_to_msg:
       pt_messages.append(("BRAKE", float('nan')))
+    pt_messages += CarStateExt.extra_pt_messages_sp(DBCParser(DBC[CP.carFingerprint][Bus.pt]).name_to_msg)  # sunnypilot hook
 
     cam_messages = [
       ("RSA1", 0),

@@ -13,6 +13,7 @@ from opendbc.can.parser import CANParser
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.toyota.values import ToyotaFlags
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
+from opendbc.sunnypilot.car.toyota.wheel_pulse import WheelPulseCreep
 
 ENGINE_RUNNING_RPM = 300.0
 
@@ -28,6 +29,35 @@ ZSS_DIFF_THRESHOLD = 4
 ZSS_MAX_THRESHOLD = 10
 
 
+# Fitted 2026-10-02 to the Altis dash at steady cruise (true speed from the logs, dash read by the driver): v 103.00 ->
+# dash 110, 92.99 -> 99, 63.96 -> 69 (routes 000000e9/ea), 98.0 -> 104 (09-30). 1.05 v + 1.47 rounds to every one of them
+# (margin 0.12 km/h); the old 1.04 v + 1.9 showed 109 / 98 / 68 because the 0.5 km/h display hysteresis kept the value up
+# to 0.5 below after accelerating to the set speed (see CLUSTER_HYST_KPH).
+CLUSTER_SPEED_GAIN = 1.05           # dash km/h per true km/h (stock openpilot: 1.015)
+CLUSTER_SPEED_OFFSET_KPH = 1.47     # km/h added on top
+CLUSTER_HYST_KPH = 0.1              # display hysteresis (stock 0.5): steady-cruise vEgo noise is ~+-0.08 km/h
+CLUSTER_MIN_KPH = 5.0               # below this the screen shows the true speed
+# Set speed on the same scale (owner 2026-10-07 22:50: "set speed 100, the dash and the C3X both show 99 - make them
+# agree"). Route 00000110: the PCM turns the dash set speed into its own integer target (UI 100 -> SET_SPEED 93,
+# UI 98 -> 91) and openpilot cruised exactly there (vEgo 92.99 / 91.00), which this speedometer shows as 99.1 / 97.0.
+# So the cruise target is taken from the speedometer model instead: the true speed at which the dash reads the set
+# speed plus SET_SPEED_SCREEN_MARGIN_KPH (100 -> 94.1 km/h, dash 100.3; 98 -> 92.2, dash 98.3). Metric dash only.
+SET_SPEED_SCREEN_MARGIN_KPH = 0.3
+
+
+def set_speed_target(ui_set_kph: float) -> float:
+  """true speed (m/s) at which the speedometer reads the dash set speed (+ margin)"""
+  return (ui_set_kph + SET_SPEED_SCREEN_MARGIN_KPH - CLUSTER_SPEED_OFFSET_KPH) / CLUSTER_SPEED_GAIN * CV.KPH_TO_MS
+
+
+def cluster_speed(v_ego: float) -> float:
+  """Speed for the on-screen readout, matched to the car's own speedometer (m/s in, m/s out)."""
+  v_kph = v_ego * CV.MS_TO_KPH
+  if v_kph < CLUSTER_MIN_KPH:
+    return v_ego
+  return (CLUSTER_SPEED_GAIN * v_kph + CLUSTER_SPEED_OFFSET_KPH) * CV.KPH_TO_MS
+
+
 class CarStateExt:
   def __init__(self, CP, CP_SP):
     self.CP = CP
@@ -35,6 +65,10 @@ class CarStateExt:
 
     self.acc_type = 1
     self.zss_compute = False
+
+    # tnpb2 additions, called from hooks in the stock Toyota CarState (see the *_sp methods at the end)
+    self.wheel_pulse = WheelPulseCreep()
+    self.wheel_encoder = float('nan')  # SPEED (0xB4) ENCODER: wheel pulse counter, still counts below the ~0.5 km/h speed floor
     self.zss_cruise_active_last = False
     self.zss_angle_offset = 0.
     self.zss_threshold_count = 0
@@ -177,3 +211,40 @@ class CarStateExt:
     if self.CP.flags & ToyotaFlags.HYBRID and "ENGINE_RPM" in cp.vl:
       ret_sp.engineRpm = float(cp.vl["ENGINE_RPM"]["RPM"])
       ret_sp.engineOff = ret_sp.engineRpm < ENGINE_RUNNING_RPM and not bool(cp.vl["ENGINE_RPM"]["ENGINE_RUNNING"])
+
+  def cluster_hyst_gap_sp(self, stock_gap: float) -> float:
+    return CLUSTER_HYST_KPH * CV.KPH_TO_MS
+
+  # Speedometer model for the on-screen speed. Stock: vEgo * 1.015. Corolla Altis Hybrid 2026-09-30 22:30: at a set
+  # speed of 105 the dash read 104 while the screen (1.015 * vEgo) read 100, i.e. vEgo ~98.5 km/h - the dash is about
+  # 5.5% above the true speed. Toyota speedometers are close to affine (gain plus a small offset); start from gain 1.04
+  # and +1.6 km/h, which reproduces that point, and refine with more dash/screen pairs. Only above CLUSTER_MIN_KPH so
+  # crawling and standstill stay exact. Tunables: CLUSTER_SPEED_GAIN, CLUSTER_SPEED_OFFSET_KPH.
+  def cluster_speed_sp(self, v_ego: float, stock_value: float) -> float:
+    return cluster_speed(v_ego)
+
+  def set_speed_target_sp(self, stock_speed: float, cluster_set_speed: float, is_metric: bool) -> float:
+    """cruise target on the speedometer's scale (see SET_SPEED_SCREEN_MARGIN_KPH); stock when not metric"""
+    ui_kph = cluster_set_speed * CV.MS_TO_KPH
+    if not is_metric or stock_speed <= 0.0 or ui_kph < 2 * CLUSTER_MIN_KPH:
+      return stock_speed
+    return set_speed_target(ui_kph)
+
+  def wheel_pulse_creep_sp(self, ret, cp) -> None:
+    """below the ~0.5 km/h speed floor the wheel pulse counter still shows a creeping car (wheel_pulse.py)"""
+    if self.wheel_pulse is None:
+      return
+    if "SPEED" in cp.vl:
+      self.wheel_encoder = float(cp.vl["SPEED"]["ENCODER"])
+    creep_v = self.wheel_pulse.update(self.wheel_encoder, abs(ret.vEgoRaw) < 1e-3)
+    if creep_v > 0.0:
+      ret.vEgoRaw = creep_v
+      ret.vEgo = max(ret.vEgo, creep_v)
+
+  @staticmethod
+  def extra_pt_messages_sp(name_to_msg) -> list:
+    # wheel pulse counter (0xB4 ENCODER): the wheel speeds read 0 below ~0.5 km/h, the encoder still counts, so a
+    # slow creep is not mistaken for a stop (wheel_pulse.py). Alive check skipped.
+    if "SPEED" in name_to_msg:
+      return [("SPEED", float('nan'))]
+    return []
