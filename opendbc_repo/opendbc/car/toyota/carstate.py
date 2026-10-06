@@ -36,7 +36,7 @@ def get_host_params():
   """Return sunnypilot's Params store when opendbc is embedded in openpilot."""
   try:
     return importlib.import_module("openpilot.common.params").Params()
-  except ModuleNotFoundError:
+  except (ModuleNotFoundError, OSError):
     return None
 
 # These steering fault definitions seem to be common across LKA (torque) and LTA (angle):

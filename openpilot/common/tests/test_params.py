@@ -120,6 +120,11 @@ class TestParams(OpenpilotTestCase):
     self.params.remove("AccelPersonalityEnabled")
     self.params.remove("AccelPersonality")
     self.params.remove("LiveParametersV2")
+    for key in ("TnLateralPathCorrections", "TnLateralKpSchedule", "TnNnlcLowSpeedHandover",
+                "TnPlannerExtensions", "TnMpcDesiredDistance", "TnRadarMatchFilters", "TnLeadDropoutHold",
+                "TnLaneChangeStartRate", "TnToyotaClusterSpeed", "TnToyotaWheelPulse", "TnToyotaHybridCanDetect",
+                "TnToyotaBrakeOvershoot", "TnToyotaBrakeUnderdelivery"):
+      self.params.remove(key)
 
     assert self.params.get("LanguageSetting") is None
     assert self.params.get("LanguageSetting", return_default=False) is None
@@ -129,6 +134,12 @@ class TestParams(OpenpilotTestCase):
     assert self.params.get("AccelPersonality", return_default=True) == 1
     assert self.params.get("LiveParametersV2") is None
     assert self.params.get("LiveParametersV2", return_default=True) is None
+    assert all(self.params.get(key, return_default=True) is True for key in (
+      "TnLateralPathCorrections", "TnLateralKpSchedule", "TnNnlcLowSpeedHandover", "TnPlannerExtensions",
+      "TnMpcDesiredDistance", "TnRadarMatchFilters", "TnLeadDropoutHold", "TnLaneChangeStartRate",
+      "TnToyotaClusterSpeed", "TnToyotaWheelPulse", "TnToyotaHybridCanDetect", "TnToyotaBrakeOvershoot",
+      "TnToyotaBrakeUnderdelivery",
+    ))
 
   def test_params_get_type(self):
     # json
