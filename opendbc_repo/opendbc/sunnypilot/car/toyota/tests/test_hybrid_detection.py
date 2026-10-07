@@ -1,7 +1,8 @@
 import unittest
 
 from opendbc.car import structs
-from opendbc.car.toyota.interface import CarInterface, hybrid_can_messages
+from opendbc.car.toyota.interface import CarInterface
+from opendbc.sunnypilot.car.toyota.fingerprints_ext import hybrid_can_messages
 from opendbc.car.toyota.values import CAR, ToyotaFlags, Ecu
 
 HYBRID_BUS0 = {0x127: 8, 0x245: 5, 0x1C4: 8, 0x3BC: 8}   # GEAR_PACKET_HYBRID, GAS_PEDAL_HYBRID, no GAS_PEDAL

@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import numpy as np
 
 from openpilot.common.constants import CV
-from openpilot.selfdrive.controls.lib.latcontrol_torque import (LaneCentering, LANE_CENTER_DEADBAND, LANE_CENTER_FADE_BP,
-                                                                LANE_CENTER_MAX_CURV)
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering import (LaneCentering,
+                                                                                     LANE_CENTER_DEADBAND,
+                                                                                     LANE_CENTER_FADE_BP,
+                                                                                     LANE_CENTER_MAX_CURV)
 
 DT = 0.01
 
@@ -60,9 +62,12 @@ class TestLaneCentering(unittest.TestCase):
     within 10 cm and the overshoot stays under 15 cm. On the car the model's own centring adds to this."""
     v = 110 * CV.KPH_TO_MS
     lc = LaneCentering(DT)
-    y = 0.4; psi = 0.0; k_act = 0.0                # y: metres LEFT of centre; psi: heading LEFT of the lane (rad)
+    # y: metres LEFT of centre; psi: heading LEFT of the lane (rad)
+    y = 0.4
+    psi = 0.0
+    k_act = 0.0
     hist = []
-    for i in range(int(20 / DT)):
+    for _ in range(int(20 / DT)):
       k_cmd = lc.update(model(y, psi), v, True, False)
       k_act += (k_cmd - k_act) * DT / 0.3           # steering lag
       psi += -k_act * v * DT                        # curvature positive = right turns the heading to the right

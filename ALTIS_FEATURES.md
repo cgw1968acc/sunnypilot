@@ -1,5 +1,9 @@
 # tnpb2 (Corolla Altis Hybrid, comma 3X) - custom feature code map
 
+> 2026-10-07: the features were moved out of the stock files into sunnypilot plug-in modules with one-line hooks and
+> on/off switches (rav4kumar's request). The CURRENT file locations are in `AGENTS.md` section 2; the tables below
+> keep the history of what each feature does and why, with the file names of the time.
+
 Base: `tn-prebuilt` at 2f35bb4a19 (sunnypilot v2026.10.02-4917, CI build of rav4kumar's be85cb61; AGNOS 19.7).
 tnpb2 = that base + every tnpb1 feature EXCEPT the smooth-stop work (2026-10-02, owner's decision: "restart tuning
 smooth stopping from here"). Longitudinal stopping is therefore Kumar's: stock `longcontrol.py`, his

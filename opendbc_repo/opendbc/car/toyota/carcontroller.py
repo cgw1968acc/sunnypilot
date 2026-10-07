@@ -15,7 +15,7 @@ from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarContro
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
-from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper
+from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, BrakeCommandCorrections, EngageOnsetShaper
 
 Ecu = structs.CarParams.Ecu
 LongCtrlState = structs.CarControl.Actuators.LongControlState
@@ -87,6 +87,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
     self.prev_accel = 0
     self.brake_onset = BrakeOnsetShaper(DT_CTRL * 3, -ACCEL_WINDDOWN_LIMIT / (DT_CTRL * 3))
     self.engage_onset = EngageOnsetShaper(DT_CTRL * 3, ACCEL_WINDUP_LIMIT / (DT_CTRL * 3))
+    self.brake_corrections = BrakeCommandCorrections(DT_CTRL * 3, CP)  # sunnypilot: see brake_onset.py
     # *** end long control state ***
 
     self.packer = CANPacker(dbc_names[Bus.pt])
@@ -289,8 +290,11 @@ class CarController(CarControllerBase, GasInterceptorCarController):
                                                speed=CS.out.vEgo,
                                                feedforward=pcm_accel_cmd,
                                                freeze_integrator=actuators.longControlState != LongCtrlState.pid)
+          pcm_accel_cmd = self.brake_corrections.apply(pcm_accel_cmd, self.prev_accel, a_ego_future, CS.out.vEgo, stopping,
+                                                       fcw_alert)  # sunnypilot hook
         else:
           self.long_pid.reset()
+          self.brake_corrections.reset()  # sunnypilot hook
 
         # Along with rate limiting positive jerk above, this greatly improves gas response time
         # Consider the net acceleration request that the PCM should be applying (pitch included)

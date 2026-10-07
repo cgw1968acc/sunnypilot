@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import numpy as np
+from opendbc.sunnypilot.car.toyota.values import get_tn_switch
 
 ONSET_T_BP = [0.0, 0.15, 0.6]  # s
 # Speed schedule of the brake onset. Below 10 km/h (creep follow: the lead moves a little, the car catches up and
@@ -126,3 +127,122 @@ class EngageOnsetShaper:
       return self.stock_up_jerk * self.dt
     j_up = float(np.interp(self.t_engaged, ENGAGE_T_BP, ENGAGE_J_UP))
     return min(j_up, self.stock_up_jerk) * self.dt
+
+# Hard-brake overshoot limit (owner 2026-10-06, route 00000100 19:41:42-45: the lead braked from 44 km/h at -3.3 m/s^2;
+# openpilot asked for -3.49 at most, but the PCM with the hybrid's regen delivered -4.3 m/s^2 for 0.8 s (BRAKE_FORCE
+# 4880 N), ~30% more than asked - the last, heaviest part of the "sudden brake" feel. The stock PID only lifted the
+# command ~0.3 above the request.) Once the request is a hard brake, the car's own deceleration is watched: when it
+# runs OVERSHOOT_DEADBAND past the request (predicted a moment ahead, as the PID does), the command is lifted by
+# OVERSHOOT_GAIN times the excess, at most OVERSHOOT_MAX, so the car settles near what openpilot asked for. The request
+# itself is never weakened: the limit only takes back braking the car delivered ON TOP of it (an MPC replay of 19:41
+# with the asked-for -3.5 ends 4.9 m behind the stopped lead). It never lifts the command above OVERSHOOT_CMD_CEIL.
+OVERSHOOT_ACTIVE_ACCEL = -2.5  # m/s^2: the limit works only while the request is harder than this
+OVERSHOOT_DEADBAND = 0.2  # m/s^2 of overshoot that is left alone
+OVERSHOOT_GAIN = 0.8
+OVERSHOOT_MAX = 1.0  # m/s^2 largest lift
+OVERSHOOT_RATE_UP = 3.0  # m/s^3 how fast the lift may grow
+OVERSHOOT_RATE_DOWN = 2.0  # m/s^3 how fast it is given back (also when the hard request ends)
+OVERSHOOT_CMD_CEIL = -1.5  # m/s^2: the lifted command always stays a firm brake
+
+
+class BrakeOvershootLimiter:
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.lift = 0.0
+
+  def reset(self) -> None:
+    self.lift = 0.0
+
+  def update(self, accel_request: float, a_ego_future: float, active: bool = True) -> float:
+    """returns the lift (>= 0, m/s^2) to add to the command"""
+    target = 0.0
+    if active and accel_request < OVERSHOOT_ACTIVE_ACCEL:
+      excess = accel_request - a_ego_future - OVERSHOOT_DEADBAND  # > 0: decelerating harder than asked
+      target = float(np.clip(OVERSHOOT_GAIN * excess, 0.0, OVERSHOOT_MAX))
+    self.lift = float(np.clip(target, self.lift - OVERSHOOT_RATE_DOWN * self.dt, self.lift + OVERSHOOT_RATE_UP * self.dt))
+    return self.lift
+
+  def apply(self, accel_cmd: float) -> float:
+    if self.lift <= 0.0:
+      return accel_cmd
+    return min(accel_cmd + self.lift, max(accel_cmd, OVERSHOOT_CMD_CEIL))
+
+
+# Low-speed brake under-delivery compensation - Corolla Altis Hybrid only (owner 2026-10-07: "only for the Altis
+# Hybrid, no effect on other cars"). Route 0000010d 23:54:58-23:55:03 (engaged stop): between 20 and 9 km/h the
+# request eased only from -1.8 to -1.0 m/s^2 but the car cut its own friction brake (BRAKE 0xA6 BRAKE_FORCE) from
+# 1640 N to 440 N and delivered -0.54 at 9 km/h; below 9 km/h the force came back (1160 N at 3.6 km/h). Over routes
+# 00000100 and 00000107-0000010a the car delivered ~70-75% of the request below 15 km/h, felt as "brakes, goes light,
+# brakes again". The hybrid regen signals described for the Prius (0x2C9 / 0x32E / 0x3CF) do not carry that meaning on
+# the Altis, so the hand-over cannot be read directly; instead the delivered deceleration is watched: inside the band
+# below, when the car decelerates more than UNDER_DEADBAND LESS than requested (predicted a moment ahead, as the PID
+# does), the shortfall times UNDER_GAIN is added to the braking command, at most UNDER_MAX, changing at UNDER_RATE. It
+# acts only while the car is actually short, so it is silent above ~20 km/h where the car already gives as much or more.
+# (Replaces the speed-table gain tried on 2026-10-06, which also boosted where the car was not short.)
+UNDER_V_BP = [5.0 / 3.6, 7.0 / 3.6, 18.0 / 3.6, 22.0 / 3.6]  # m/s
+UNDER_V_W = [0.0, 1.0, 1.0, 0.0]
+UNDER_MIN_REQUEST = -0.3  # m/s^2: only for a real braking request
+UNDER_DEADBAND = 0.2  # m/s^2 of shortfall that is left alone
+UNDER_GAIN = 0.8
+UNDER_MAX = 0.5  # m/s^2 largest extra braking
+UNDER_RATE = 1.0  # m/s^3 how fast the extra may grow or shrink
+
+# Firmware part-number prefixes that identify a Corolla sedan/hatch (E210, "12" series) as opposed to the Corolla
+# Cross ("16" series), which shares the TOYOTA_COROLLA_TSS2 platform. Altis (C3X): eps 8965B12470, abs F152612800,
+# hybrid 899831220000; Cross (C4): eps 8965B16210, abs F152616070, hybrid 899831636000.
+ALTIS_FW_PREFIXES = (b'8965B12', b'F152612', b'8998312')
+
+
+def is_altis_hybrid(CP) -> bool:
+  from opendbc.car.toyota.values import CAR, ToyotaFlags
+  if CP.carFingerprint != CAR.TOYOTA_COROLLA_TSS2 or not (CP.flags & ToyotaFlags.HYBRID):
+    return False
+  return any(p in fw.fwVersion for fw in CP.carFw for p in ALTIS_FW_PREFIXES)
+
+
+class BrakeUnderdeliveryComp:
+  def __init__(self, dt: float, enabled: bool):
+    self.dt = dt
+    self.enabled = enabled
+    self.extra = 0.0
+
+  def reset(self) -> None:
+    self.extra = 0.0
+
+  def update(self, accel_request: float, a_ego_future: float, v_ego: float, active: bool = True) -> float:
+    """returns the extra braking (>= 0, m/s^2) to subtract from the command"""
+    target = 0.0
+    if self.enabled and active and accel_request < UNDER_MIN_REQUEST:
+      w = float(np.interp(v_ego, UNDER_V_BP, UNDER_V_W))
+      shortfall = a_ego_future - accel_request - UNDER_DEADBAND  # > 0: decelerating less than asked
+      target = w * float(np.clip(UNDER_GAIN * shortfall, 0.0, UNDER_MAX))
+    step = UNDER_RATE * self.dt
+    self.extra = float(np.clip(target, self.extra - step, self.extra + step))
+    return self.extra
+
+  def apply(self, accel_cmd: float) -> float:
+    return accel_cmd - self.extra
+
+
+class BrakeCommandCorrections:
+  """tnpb2 corrections to the final braking command, controlled by existing Toyota Params keys."""
+  def __init__(self, dt: float, CP):
+    from opendbc.car.toyota.carstate import get_host_params
+    params = get_host_params()
+    self.overshoot = BrakeOvershootLimiter(dt) if params is None or get_tn_switch(params, "TnToyotaBrakeOvershoot") else None
+    underdelivery_enabled = params is None or get_tn_switch(params, "TnToyotaBrakeUnderdelivery")
+    self.underdelivery = BrakeUnderdeliveryComp(dt, enabled=underdelivery_enabled and is_altis_hybrid(CP))
+
+  def reset(self) -> None:
+    if self.overshoot is not None:
+      self.overshoot.reset()
+    self.underdelivery.reset()
+
+  def apply(self, accel_cmd: float, accel_request: float, a_ego_future: float, v_ego: float, stopping: bool, fcw: bool) -> float:
+    if self.overshoot is not None:
+      # take back braking the car delivers beyond a hard request (never under FCW)
+      self.overshoot.update(accel_request, a_ego_future, active=not stopping and not fcw)
+      accel_cmd = self.overshoot.apply(accel_cmd)
+    # (Altis Hybrid only) add back the braking the car does not deliver in the low-speed regen hand-over
+    self.underdelivery.update(accel_request, a_ego_future, v_ego, active=not fcw)
+    return self.underdelivery.apply(accel_cmd)

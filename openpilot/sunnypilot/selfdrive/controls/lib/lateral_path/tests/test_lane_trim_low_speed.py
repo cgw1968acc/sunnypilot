@@ -1,9 +1,12 @@
 import unittest
 
 from openpilot.common.constants import CV
-from openpilot.selfdrive.controls.lib.latcontrol_torque import (LaneCentering, LaneTrimLowSpeed, LANE_TRIM_ENGAGE_OFFSET,
-                                                                LANE_TRIM_ENGAGE_TIME, LANE_TRIM_MAX_LAT_ACCEL, LANE_TRIM_FADE_BP)
-from openpilot.selfdrive.controls.tests.test_lane_centering import model
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering import (LaneCentering, LaneTrimLowSpeed,
+                                                                                     LANE_TRIM_ENGAGE_OFFSET,
+                                                                                     LANE_TRIM_ENGAGE_TIME,
+                                                                                     LANE_TRIM_MAX_LAT_ACCEL,
+                                                                                     LANE_TRIM_FADE_BP)
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.tests.test_lane_centering import model
 
 DT = 0.01
 

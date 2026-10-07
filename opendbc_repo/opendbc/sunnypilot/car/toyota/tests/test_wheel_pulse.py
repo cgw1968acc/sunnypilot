@@ -23,7 +23,7 @@ def test_forward_step_below_the_floor_is_creep():
   assert 0.0 < out[k] <= V_FLOOR
   assert all(o > 0.0 for o in out[k:k + int(CREEP_HOLD_T / DT) - 1])
   assert out[k + int(CREEP_HOLD_T / DT) + 2] == 0.0
-  assert all(b <= a + 1e-12 for a, b in zip(out[k:k + 240], out[k + 1:k + 241]))   # only decays between steps
+  assert all(b <= a + 1e-12 for a, b in zip(out[k:k + 240], out[k + 1:k + 241], strict=True))   # only decays between steps
 
 
 def test_no_encoder_no_change():

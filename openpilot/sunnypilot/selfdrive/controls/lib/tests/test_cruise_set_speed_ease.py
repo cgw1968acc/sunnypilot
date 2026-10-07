@@ -3,18 +3,38 @@ from types import SimpleNamespace
 
 from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL
-from openpilot.selfdrive.controls.lib.longitudinal_planner import (get_cruise_accel, A_CRUISE_MAX_BP, J_CRUISE_VALS,
-                                                                    J_CRUISE_EASE_DOWN, V_CRUISE_EASE_MIN)
+# needs the compiled longitudinal MPC (imported by longitudinal_planner), so it runs on the device
+from openpilot.selfdrive.controls.lib.longitudinal_planner import get_cruise_accel, A_CRUISE_MAX_BP, J_CRUISE_VALS
+from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
+from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedRamp
+from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP, J_CRUISE_EASE_DOWN, V_CRUISE_EASE_MIN, \
+  SET_SPEED_INTENT_T
 import numpy as np
 
 CP = SimpleNamespace(steerRatio=15.0, wheelbase=2.7)
 
 
+def TnPlannerExt(dt):
+  # the tnpb2 methods of LongitudinalPlannerSP need only these attributes; its full __init__ needs the car and the MPC
+  sp = LongitudinalPlannerSP.__new__(LongitudinalPlannerSP)
+  sp.planner_ext_enabled = True
+  sp._sp_dt = dt
+  sp.lead_start_assist = LeadStartAssist(dt)
+  sp._sp_v_cruise_prev = 0.0
+  sp._sp_t_set_speed_up = SET_SPEED_INTENT_T
+  sp.set_speed_ramp = SetSpeedRamp()
+  sp._sp_set_speed_up = False
+  return sp
+
+
 def run(v_ego, v_cruise, a0, seconds, e2e=False):
+  # the stock cruise target followed by the planner extension's hook, as in LongitudinalPlanner.update()
+  ext = TnPlannerExt(DT_MDL)
   a = a0
   out = [a]
   for _ in range(int(seconds / DT_MDL)):
-    a = get_cruise_accel(e2e, v_cruise, v_ego, a, 0.0, CP, DT_MDL, -0.35, True)
+    stock = get_cruise_accel(e2e, v_cruise, v_ego, a, 0.0, CP, DT_MDL, -0.35, True)
+    a, _ = ext.cruise_accel_sp(stock, stock, e2e, v_cruise, v_ego, a, None, False, False)
     out.append(a)
   return out
 

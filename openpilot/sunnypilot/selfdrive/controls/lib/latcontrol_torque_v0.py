@@ -10,7 +10,8 @@ from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
 
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext import LatControlTorqueExt
-from openpilot.selfdrive.controls.lib.latcontrol_torque import DesiredCurvatureJerkLimiter, apply_curve_outward_bias
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.curvature_shaping import DesiredCurvatureJerkLimiter
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.curve_bias import apply_curve_outward_bias
 
 # At higher speeds (25+mph) we can assume:
 # Lateral acceleration achieved by a specific car correlates to

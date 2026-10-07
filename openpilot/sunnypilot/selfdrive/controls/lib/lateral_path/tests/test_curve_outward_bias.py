@@ -1,8 +1,10 @@
 import unittest
 
 from openpilot.common.constants import CV
-from openpilot.selfdrive.controls.lib.latcontrol_torque import (apply_curve_outward_bias, CURVE_OUTWARD_DEADZONE,
-                                                                CURVE_OUTWARD_V_BP, CURVE_OUTWARD_FRAC_V)
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.curve_bias import (apply_curve_outward_bias,
+                                                                                 CURVE_OUTWARD_DEADZONE,
+                                                                                 CURVE_OUTWARD_V_BP,
+                                                                                 CURVE_OUTWARD_FRAC_V)
 
 V30, V40, V70 = 30 * CV.KPH_TO_MS, 40 * CV.KPH_TO_MS, 70 * CV.KPH_TO_MS
 
@@ -20,25 +22,21 @@ class TestCurveOutwardBias(unittest.TestCase):
       self.assertGreater(out * k, 0.0)              # same direction
 
   def test_hand_over_between_30_and_40_kmh(self):
-    # inward at 30 km/h, a small outward bias (0.02) at 40 km/h, and exactly the model curvature in between (~37 km/h)
+    # 2026-10-06: no bias at 30 km/h, ramping to the small outward bias (0.02) at 40 km/h
     for k in (0.006, 0.02, -0.02):
       self.assertAlmostEqual(apply_curve_outward_bias(k, V40), k * (1.0 - 0.02), places=9)
-      v_zero = (30 + 10 * 0.05 / 0.07) * CV.KPH_TO_MS
-      self.assertAlmostEqual(apply_curve_outward_bias(k, v_zero), k, places=9)
+      self.assertAlmostEqual(apply_curve_outward_bias(k, 35 * CV.KPH_TO_MS), k * (1.0 - 0.01), places=9)
 
-  def test_low_speed_curves_biased_inward(self):
-    # 30 km/h and below: a little MORE curvature than the model (Altis runs wide in tight low-speed curves)
+  def test_low_speed_curves_untouched(self):
+    # 30 km/h and below: exactly the model curvature (the -0.05 inward bias was removed 2026-10-06)
     for v in (V30, 20 * CV.KPH_TO_MS):
       for k in (0.006, 0.02, -0.02):
-        out = apply_curve_outward_bias(k, v)
-        self.assertGreater(abs(out), abs(k))
-        self.assertGreater(out * k, 0.0)
-        self.assertAlmostEqual(out, k * (1.0 - CURVE_OUTWARD_FRAC_V[0]), places=9)
+        self.assertEqual(apply_curve_outward_bias(k, v), k)
 
   def test_schedule_is_monotonic_and_bounded(self):
     self.assertEqual(list(CURVE_OUTWARD_V_BP), sorted(CURVE_OUTWARD_V_BP))
     self.assertEqual(list(CURVE_OUTWARD_FRAC_V), sorted(CURVE_OUTWARD_FRAC_V))
-    self.assertEqual([round(f, 3) for f in CURVE_OUTWARD_FRAC_V], [-0.05, 0.02, 0.06, 0.085, 0.09, 0.155, 0.155, 0.155])
+    self.assertEqual([round(f, 3) for f in CURVE_OUTWARD_FRAC_V], [0.0, 0.02, 0.06, 0.085, 0.09, 0.155, 0.155, 0.155])
     self.assertGreaterEqual(min(CURVE_OUTWARD_FRAC_V), -0.1)
     self.assertLessEqual(max(CURVE_OUTWARD_FRAC_V), 0.25)
     for k in (0.05, -0.05):

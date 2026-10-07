@@ -5,22 +5,51 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import time
+import numpy as np
 
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal import log, custom
 
 from opendbc.car import structs
 from openpilot.common.params import Params
+from openpilot.common.realtime import DT_CTRL
+from openpilot.common.constants import CV
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import BlinkerPauseLateral
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
+from openpilot.sunnypilot import get_tn_switch
+
+
+# cap how fast the commanded curvature builds at the start of a lane change so the switch eases in instead of
+# snapping over (ported from tncr18 / Corolla Cross feedback 2026-09-23). The cap ramps with time-in-lane-change:
+# gentle for the first second, then opening up so the move still completes. 1/m per second, interpolated over seconds
+# since the start. The ramp is also speed dependent (feedback 2026-09-24: at 70-80 km/h the gentle ramp left too
+# little steering to finish the change): at or below 50 km/h the original flat 0.004 cap applies, at or above 100 km/h
+# the 0.001->0.003 ramp applies, and each ramp point is interpolated linearly with speed in between.
+LANE_CHANGE_START_CURV_RATE_T = (1.0, 3.0)                    # seconds since laneChangeStarting began
+LANE_CHANGE_START_CURV_RATE_BP = (50. * CV.KPH_TO_MS, 100. * CV.KPH_TO_MS)  # m/s
+LANE_CHANGE_START_CURV_RATE_V1 = (0.004, 0.001)              # 1/m per second at t <= 1 s, low / high speed
+LANE_CHANGE_START_CURV_RATE_V3 = (0.004, 0.003)              # 1/m per second at t >= 3 s, low / high speed
+
+
+def _lane_change_start_curv_rate(t: float, v_ego: float) -> float:
+  t1, t3 = LANE_CHANGE_START_CURV_RATE_T
+  r1 = float(np.interp(v_ego, LANE_CHANGE_START_CURV_RATE_BP, LANE_CHANGE_START_CURV_RATE_V1))
+  r3 = float(np.interp(v_ego, LANE_CHANGE_START_CURV_RATE_BP, LANE_CHANGE_START_CURV_RATE_V3))
+  if t <= t1:
+    return r1
+  if t >= t3:
+    return r3
+  return r1 + (r3 - r1) * (t - t1) / (t3 - t1)
 
 
 class ControlsExt(ModelStateBase):
   def __init__(self, CP: structs.CarParams, params: Params):
+    self.lane_change_rate_enabled = get_tn_switch(params, "TnLaneChangeStartRate")  # tnpb2 Params switch
+    self.lane_change_start_t = 0.0
     ModelStateBase.__init__(self)
     self.CP = CP
     self.params = params
@@ -117,3 +146,16 @@ class ControlsExt(ModelStateBase):
   def run_ext(self, sm: messaging.SubMaster, pm: messaging.PubMaster) -> None:
     CC_SP = self.state_control_ext(sm)
     self.publish_ext(CC_SP, sm, pm)
+
+  def lane_change_start_rate_sp(self, new_desired_curvature: float, desired_curvature: float, lane_change_state,
+                                v_ego: float) -> float:
+    """tnpb2 (Params key TnLaneChangeStartRate): called by stock controlsd after it takes the model's new
+    desired curvature; limits how fast it moves away from the previous one during laneChangeStarting."""
+    if not self.lane_change_rate_enabled:
+      return new_desired_curvature
+    if lane_change_state == log.LaneChangeState.laneChangeStarting:
+      self.lane_change_start_t += DT_CTRL
+      max_lc_delta = _lane_change_start_curv_rate(self.lane_change_start_t, v_ego) * DT_CTRL
+      return min(max(new_desired_curvature, desired_curvature - max_lc_delta), desired_curvature + max_lc_delta)
+    self.lane_change_start_t = 0.0
+    return new_desired_curvature

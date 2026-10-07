@@ -253,6 +253,23 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"AccelPersonalityEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"AccelPersonality", {PERSISTENT | BACKUP, INT, "1"}},
 
+    // tnpb2 Altis feature switches. Default on; set a key to 0 to restore that feature's stock behavior.
+    {"TnLateralPathCorrections", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnLateralKpSchedule", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnNnlcLowSpeedHandover", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnPlannerExtensions", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnMpcDesiredDistance", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnRadarMatchFilters", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnLeadDropoutHold", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnLaneChangeStartRate", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnToyotaClusterSpeed", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnToyotaWheelPulse", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnToyotaHybridCanDetect", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnToyotaBrakeOvershoot", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnToyotaBrakeUnderdelivery", {PERSISTENT | BACKUP, BOOL, "1"}},
+
+    // end tnpb2 Altis feature switches
+
     // sunnypilot model params
     {"CameraOffset", {PERSISTENT | BACKUP, FLOAT, "0.0"}},
     {"LagdToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
