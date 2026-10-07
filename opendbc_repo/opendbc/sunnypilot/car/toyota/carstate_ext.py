@@ -38,6 +38,17 @@ CLUSTER_SPEED_GAIN = 1.05           # dash km/h per true km/h (stock openpilot: 
 CLUSTER_SPEED_OFFSET_KPH = 1.47     # km/h added on top
 CLUSTER_HYST_KPH = 0.1              # display hysteresis (stock 0.5): steady-cruise vEgo noise is ~+-0.08 km/h
 CLUSTER_MIN_KPH = 5.0               # below this the screen shows the true speed
+# Set speed on the same scale (owner 2026-10-07 22:50: "set speed 100, the dash and the C3X both show 99 - make them
+# agree"). Route 00000110: the PCM turns the dash set speed into its own integer target (UI 100 -> SET_SPEED 93,
+# UI 98 -> 91) and openpilot cruised exactly there (vEgo 92.99 / 91.00), which this speedometer shows as 99.1 / 97.0.
+# So the cruise target is taken from the speedometer model instead: the true speed at which the dash reads the set
+# speed plus SET_SPEED_SCREEN_MARGIN_KPH (100 -> 94.1 km/h, dash 100.3; 98 -> 92.2, dash 98.3). Metric dash only.
+SET_SPEED_SCREEN_MARGIN_KPH = 0.3
+
+
+def set_speed_target(ui_set_kph: float) -> float:
+  """true speed (m/s) at which the speedometer reads the dash set speed (+ margin)"""
+  return (ui_set_kph + SET_SPEED_SCREEN_MARGIN_KPH - CLUSTER_SPEED_OFFSET_KPH) / CLUSTER_SPEED_GAIN * CV.KPH_TO_MS
 
 
 def cluster_speed(v_ego: float) -> float:
@@ -216,6 +227,13 @@ class CarStateExt:
   # crawling and standstill stay exact. Tunables: CLUSTER_SPEED_GAIN, CLUSTER_SPEED_OFFSET_KPH.
   def cluster_speed_sp(self, v_ego: float, stock_value: float) -> float:
     return cluster_speed(v_ego) if self.cluster_speed_enabled else stock_value
+
+  def set_speed_target_sp(self, stock_speed: float, cluster_set_speed: float, is_metric: bool) -> float:
+    """cruise target on the speedometer's scale (see SET_SPEED_SCREEN_MARGIN_KPH); stock when off or not metric"""
+    ui_kph = cluster_set_speed * CV.MS_TO_KPH
+    if not self.cluster_speed_enabled or not is_metric or stock_speed <= 0.0 or ui_kph < 2 * CLUSTER_MIN_KPH:
+      return stock_speed
+    return set_speed_target(ui_kph)
 
   def wheel_pulse_creep_sp(self, ret, cp) -> None:
     """below the ~0.5 km/h speed floor the wheel pulse counter still shows a creeping car (wheel_pulse.py)"""
