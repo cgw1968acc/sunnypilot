@@ -1,7 +1,8 @@
 import unittest
 
 from opendbc.sunnypilot.car.toyota.brake_onset import (BrakeOvershootLimiter, OVERSHOOT_CMD_CEIL, OVERSHOOT_DEADBAND,
-                                                       OVERSHOOT_MAX, OVERSHOOT_MOD_DEADBAND, OVERSHOOT_MOD_KEEP)
+                                                       OVERSHOOT_MAX, OVERSHOOT_MOD_DEADBAND, OVERSHOOT_MOD_KEEP,
+                                                       OVERSHOOT_MOD_RATE)
 
 DT = 0.03
 
@@ -62,7 +63,7 @@ class TestModerateBand(unittest.TestCase):
 
   def test_17_38_41_overshoot_is_taken_back(self):
     lim = self.run_steady(-1.60, -1.95, 45.0)
-    self.assertAlmostEqual(lim.lift, 0.8 * (0.35 - OVERSHOOT_MOD_DEADBAND), places=6)
+    self.assertAlmostEqual(lim.lift, 0.8 * (0.35 - OVERSHOOT_MOD_DEADBAND), places=4)  # low-pass converged
     self.assertAlmostEqual(lim.apply(-1.60), -1.60 + lim.lift, places=6)
 
   def test_never_lighter_than_three_quarters_of_the_command(self):
@@ -71,7 +72,7 @@ class TestModerateBand(unittest.TestCase):
 
   def test_off_for_other_cars_low_speed_and_light_requests(self):
     self.assertEqual(self.run_steady(-1.60, -1.95, 45.0, moderate=False).lift, 0.0)
-    self.assertEqual(self.run_steady(-1.60, -1.95, 15.0).lift, 0.0)
+    self.assertEqual(self.run_steady(-1.60, -1.95, 10.0).lift, 0.0)
     self.assertEqual(self.run_steady(-0.9, -1.4, 45.0).lift, 0.0)
     self.assertEqual(self.run_steady(-1.60, -1.70, 45.0).lift, 0.0)  # inside the deadband
 
@@ -79,6 +80,17 @@ class TestModerateBand(unittest.TestCase):
     lim = self.run_steady(-3.4, -4.3, 45.0)
     self.assertAlmostEqual(lim.lift, 0.8 * (0.9 - OVERSHOOT_DEADBAND), places=6)
     self.assertAlmostEqual(lim.apply(-3.4), -3.4 + lim.lift, places=6)
+
+
+  def test_moderate_band_is_a_slow_smooth_trim(self):
+    lim = BrakeOvershootLimiter(DT, moderate=True)
+    prev = 0.0
+    for k in range(100):
+      a = -1.95 if k % 2 else -1.45   # noisy aEgo around -1.70 at a steady -1.60 request
+      lift = lim.update(-1.60, a, True, v_ego=45 / 3.6, a_ego=a)
+      self.assertLessEqual(abs(lift - prev), OVERSHOOT_MOD_RATE * DT + 1e-9)
+      prev = lift
+    self.assertEqual(lift, 0.0)   # averaged overshoot 0.10 is inside the deadband
 
 
 if __name__ == "__main__":

@@ -151,9 +151,15 @@ OVERSHOOT_CMD_CEIL = -1.5  # m/s^2: the lifted command always stays a firm brake
 # a smaller deadband, and the lifted command never gets lighter than OVERSHOOT_MOD_KEEP of the command (the request
 # is never weakened by more than a quarter). The hard band above is unchanged for every car.
 OVERSHOOT_MOD_ACCEL = -1.0  # m/s^2
-OVERSHOOT_MOD_V = 20.0 / 3.6  # m/s
+OVERSHOOT_MOD_V = 12.0 / 3.6  # m/s (0000010d 23:54:58: asked -1.72 at 17-23 km/h, delivered -1.96..-2.19)
 OVERSHOOT_MOD_DEADBAND = 0.15  # m/s^2
 OVERSHOOT_MOD_KEEP = 0.75
+# The moderate band works as a slow trim, not a fast limiter: a replay of 17:38:36-38 with the hard band's logic
+# (predicted aEgo, 3.0 / 2.0 m/s^3) pulsed the command by 0.2-0.3 m/s^2 for 0.2 s at a time on the noisy aEgo (-1.2 ..
+# -1.8 at a steady request), and the stock PID was already lifting the command (-1.6 asked, ~-1.1 sent). So the band
+# uses the overshoot of the measured aEgo, low-passed over OVERSHOOT_MOD_TAU, and moves at OVERSHOOT_MOD_RATE.
+OVERSHOOT_MOD_TAU = 0.5  # s
+OVERSHOOT_MOD_RATE = 0.5  # m/s^3
 
 
 class BrakeOvershootLimiter:
@@ -162,21 +168,35 @@ class BrakeOvershootLimiter:
     self.moderate = moderate  # also the moderate band (Altis Hybrid, OVERSHOOT_MOD_*)
     self.lift = 0.0
     self.in_moderate = False
+    self.mod_excess = 0.0
 
   def reset(self) -> None:
     self.lift = 0.0
     self.in_moderate = False
+    self.mod_excess = 0.0
 
-  def update(self, accel_request: float, a_ego_future: float, active: bool = True, v_ego: float = 0.0) -> float:
+  def update(self, accel_request: float, a_ego_future: float, active: bool = True, v_ego: float = 0.0,
+             a_ego: float | None = None) -> float:
     """returns the lift (>= 0, m/s^2) to add to the command"""
     target = 0.0
     hard = accel_request < OVERSHOOT_ACTIVE_ACCEL
     self.in_moderate = (self.moderate and not hard and accel_request < OVERSHOOT_MOD_ACCEL and v_ego > OVERSHOOT_MOD_V)
-    if active and (hard or self.in_moderate):
-      deadband = OVERSHOOT_DEADBAND if hard else OVERSHOOT_MOD_DEADBAND
-      excess = accel_request - a_ego_future - deadband  # > 0: decelerating harder than asked
+    if self.in_moderate:
+      measured = a_ego_future if a_ego is None else a_ego
+      alpha = self.dt / (OVERSHOOT_MOD_TAU + self.dt)
+      self.mod_excess += alpha * ((accel_request - measured) - self.mod_excess)
+    else:
+      self.mod_excess = 0.0
+    if active and hard:
+      excess = accel_request - a_ego_future - OVERSHOOT_DEADBAND  # > 0: decelerating harder than asked
       target = float(np.clip(OVERSHOOT_GAIN * excess, 0.0, OVERSHOOT_MAX))
-    self.lift = float(np.clip(target, self.lift - OVERSHOOT_RATE_DOWN * self.dt, self.lift + OVERSHOOT_RATE_UP * self.dt))
+    elif active and self.in_moderate:
+      target = float(np.clip(OVERSHOOT_GAIN * (self.mod_excess - OVERSHOOT_MOD_DEADBAND), 0.0, OVERSHOOT_MAX))
+    if self.in_moderate and not hard:
+      step = OVERSHOOT_MOD_RATE * self.dt
+      self.lift = float(np.clip(target, self.lift - step, self.lift + step))
+    else:
+      self.lift = float(np.clip(target, self.lift - OVERSHOOT_RATE_DOWN * self.dt, self.lift + OVERSHOOT_RATE_UP * self.dt))
     return self.lift
 
   def apply(self, accel_cmd: float) -> float:
@@ -276,10 +296,11 @@ class BrakeCommandCorrections:
       self.overshoot.reset()
     self.handover.reset()
 
-  def apply(self, accel_cmd: float, accel_request: float, a_ego_future: float, v_ego: float, stopping: bool, fcw: bool) -> float:
+  def apply(self, accel_cmd: float, accel_request: float, a_ego_future: float, v_ego: float, stopping: bool, fcw: bool,
+            a_ego: float | None = None) -> float:
     if self.overshoot is not None:
       # take back braking the car delivers beyond a hard request (never under FCW)
-      self.overshoot.update(accel_request, a_ego_future, active=not stopping and not fcw, v_ego=v_ego)
+      self.overshoot.update(accel_request, a_ego_future, active=not stopping and not fcw, v_ego=v_ego, a_ego=a_ego)
       accel_cmd = self.overshoot.apply(accel_cmd)
     # (Altis Hybrid only) feed-forward the braking the car does not deliver in the low-speed regen hand-over
     self.handover.update(accel_request, v_ego, active=not fcw)
