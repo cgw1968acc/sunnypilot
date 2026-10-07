@@ -226,6 +226,7 @@ class CarState(CarStateBase, CarStateExt):
     if ret.cruiseState.speed != 0:
       conversion_factor = CV.KPH_TO_MS if is_metric else CV.MPH_TO_MS
       ret.cruiseState.speedCluster = cluster_set_speed * conversion_factor
+      ret.cruiseState.speed = self.set_speed_target_sp(ret.cruiseState.speed, ret.cruiseState.speedCluster, is_metric)  # sunnypilot hook
 
     if self.CP.flags & ToyotaFlags.TSS2 and not self.CP.flags & ToyotaFlags.DISABLE_RADAR.value:
       if not (self.CP_SP.flags & ToyotaFlagsSP.SMART_DSU.value):
