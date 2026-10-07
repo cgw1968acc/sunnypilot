@@ -186,24 +186,32 @@ class BrakeOvershootLimiter:
     return min(accel_cmd + self.lift, max(accel_cmd, ceiling))
 
 
-# Low-speed brake under-delivery compensation - Corolla Altis Hybrid only (owner 2026-10-07: "only for the Altis
-# Hybrid, no effect on other cars"). Route 0000010d 23:54:58-23:55:03 (engaged stop): between 20 and 9 km/h the
-# request eased only from -1.8 to -1.0 m/s^2 but the car cut its own friction brake (BRAKE 0xA6 BRAKE_FORCE) from
-# 1640 N to 440 N and delivered -0.54 at 9 km/h; below 9 km/h the force came back (1160 N at 3.6 km/h). Over routes
-# 00000100 and 00000107-0000010a the car delivered ~70-75% of the request below 15 km/h, felt as "brakes, goes light,
-# brakes again". The hybrid regen signals described for the Prius (0x2C9 / 0x32E / 0x3CF) do not carry that meaning on
-# the Altis, so the hand-over cannot be read directly; instead the delivered deceleration is watched: inside the band
-# below, when the car decelerates more than UNDER_DEADBAND LESS than requested (predicted a moment ahead, as the PID
-# does), the shortfall times UNDER_GAIN is added to the braking command, at most UNDER_MAX, changing at UNDER_RATE. It
-# acts only while the car is actually short, so it is silent above ~20 km/h where the car already gives as much or more.
-# (Replaces the speed-table gain tried on 2026-10-06, which also boosted where the car was not short.)
-UNDER_V_BP = [5.0 / 3.6, 7.0 / 3.6, 18.0 / 3.6, 22.0 / 3.6]  # m/s
-UNDER_V_W = [0.0, 1.0, 1.0, 0.0]
-UNDER_MIN_REQUEST = -0.3  # m/s^2: only for a real braking request
-UNDER_DEADBAND = 0.2  # m/s^2 of shortfall that is left alone
-UNDER_GAIN = 0.8
-UNDER_MAX = 0.5  # m/s^2 largest extra braking
-UNDER_RATE = 1.0  # m/s^3 how fast the extra may grow or shrink
+# Low-speed regen hand-over feed-forward - Corolla Altis Hybrid only (owner 2026-10-07: "only for the Altis Hybrid,
+# no effect on other cars"). History: route 0000010d 23:54:58-23:55:03 - between 20 and 9 km/h the car cut its own
+# friction brake (BRAKE 0xA6 BRAKE_FORCE 1640 -> 440 N) and delivered ~70% of the request, felt as "brakes, goes light,
+# brakes again". A feedback compensation (shortfall x 0.8 past a 0.2 deadband, 1.0 m/s^3) was the first fix; its
+# first drive, route 0000010e 2026-10-07, showed it acting only in 0.1-0.25 m/s^2 pulses that never filled the gap
+# (owner: "the stops are sometimes soft, sometimes still not smooth; several stops still braked twice").
+# Measured on routes 00000100..0000010e (engaged stops, request / delivered, m/s^2): the request eases smoothly, but the
+# delivered decel DIPS at 15-9 km/h (10e: -0.84 asked, -0.61 delivered; 109: -0.87 / -0.69; 107: -1.04 / -0.81) and
+# comes back ON TOP of the request at 7-1 km/h (10e: -0.47 / -0.60; 109: -0.54 / -0.80), the second part pushed by the
+# PID integrator that wound up during the dip (command - request -0.10..-0.17 there). So, instead of feedback:
+#  - a FEED-FORWARD extra brake by speed, the measured dip: HANDOVER_EXTRA_MAX (or HANDOVER_EXTRA_FRAC of a lighter
+#    request) at 10-14 km/h, fading to 0 at 6 and 17 km/h, changing at HANDOVER_RATE, only while braking harder than
+#    HANDOVER_MIN_REQUEST;
+#  - below PID_HOLD_V, while the request brakes, the PID integrator is frozen and bled toward zero (a positive
+#    integral, left over from a launch, faster), so the catch-up no longer adds braking at the end of the stop.
+# Expected delivered decel on 10e (by speed band 15-12/12-9/9-7/7-5/5-3/3-1 km/h): -0.86/-0.81/-0.75/-0.75/-0.63/-0.48,
+# continuous easing, instead of -0.66/-0.61/-0.75/-0.75/-0.71/-0.60.
+HANDOVER_V_BP = [6.0 / 3.6, 8.0 / 3.6, 10.0 / 3.6, 14.0 / 3.6, 17.0 / 3.6]  # m/s
+HANDOVER_V_W = [0.0, 0.5, 1.0, 1.0, 0.0]
+HANDOVER_MIN_REQUEST = -0.3  # m/s^2
+HANDOVER_EXTRA_MAX = 0.2  # m/s^2
+HANDOVER_EXTRA_FRAC = 0.25  # of the request, for lighter requests
+HANDOVER_RATE = 1.0  # m/s^3
+PID_HOLD_V = 9.0 / 3.6  # m/s
+PID_BLEED_NEG = 0.5  # m/s^2 per s: a braking integral fades this fast
+PID_BLEED_POS = 2.0  # m/s^2 per s: a gas integral (left from the launch) fades this fast
 
 # Firmware part-number prefixes that identify a Corolla sedan/hatch (E210, "12" series) as opposed to the Corolla
 # Cross ("16" series), which shares the TOYOTA_COROLLA_TSS2 platform. Altis (C3X): eps 8965B12470, abs F152612800,
@@ -218,7 +226,7 @@ def is_altis_hybrid(CP) -> bool:
   return any(p in fw.fwVersion for fw in CP.carFw for p in ALTIS_FW_PREFIXES)
 
 
-class BrakeUnderdeliveryComp:
+class BrakeHandoverFeedforward:
   def __init__(self, dt: float, enabled: bool):
     self.dt = dt
     self.enabled = enabled
@@ -227,19 +235,28 @@ class BrakeUnderdeliveryComp:
   def reset(self) -> None:
     self.extra = 0.0
 
-  def update(self, accel_request: float, a_ego_future: float, v_ego: float, active: bool = True) -> float:
+  def update(self, accel_request: float, v_ego: float, active: bool = True) -> float:
     """returns the extra braking (>= 0, m/s^2) to subtract from the command"""
     target = 0.0
-    if self.enabled and active and accel_request < UNDER_MIN_REQUEST:
-      w = float(np.interp(v_ego, UNDER_V_BP, UNDER_V_W))
-      shortfall = a_ego_future - accel_request - UNDER_DEADBAND  # > 0: decelerating less than asked
-      target = w * float(np.clip(UNDER_GAIN * shortfall, 0.0, UNDER_MAX))
-    step = UNDER_RATE * self.dt
+    if self.enabled and active and accel_request < HANDOVER_MIN_REQUEST:
+      w = float(np.interp(v_ego, HANDOVER_V_BP, HANDOVER_V_W))
+      target = w * min(HANDOVER_EXTRA_MAX, HANDOVER_EXTRA_FRAC * -accel_request)
+    step = HANDOVER_RATE * self.dt
     self.extra = float(np.clip(target, self.extra - step, self.extra + step))
     return self.extra
 
   def apply(self, accel_cmd: float) -> float:
     return accel_cmd - self.extra
+
+  def condition_pid(self, pid, accel_request: float, v_ego: float) -> bool:
+    """below PID_HOLD_V while braking: bleed the integrator toward zero; returns True = freeze it this step"""
+    if not self.enabled or v_ego >= PID_HOLD_V or accel_request >= 0.0:
+      return False
+    if pid.i > 0.0:
+      pid.i = max(0.0, pid.i - PID_BLEED_POS * self.dt)
+    else:
+      pid.i = min(0.0, pid.i + PID_BLEED_NEG * self.dt)
+    return True
 
 
 class BrakeCommandCorrections:
@@ -251,19 +268,23 @@ class BrakeCommandCorrections:
     moderate = altis and (params is None or get_tn_switch(params, "TnToyotaBrakeOvershootModerate"))
     self.overshoot = (BrakeOvershootLimiter(dt, moderate=moderate)
                       if params is None or get_tn_switch(params, "TnToyotaBrakeOvershoot") else None)
-    underdelivery_enabled = params is None or get_tn_switch(params, "TnToyotaBrakeUnderdelivery")
-    self.underdelivery = BrakeUnderdeliveryComp(dt, enabled=underdelivery_enabled and is_altis_hybrid(CP))
+    handover_enabled = params is None or get_tn_switch(params, "TnToyotaBrakeUnderdelivery")
+    self.handover = BrakeHandoverFeedforward(dt, enabled=handover_enabled and altis)
 
   def reset(self) -> None:
     if self.overshoot is not None:
       self.overshoot.reset()
-    self.underdelivery.reset()
+    self.handover.reset()
 
   def apply(self, accel_cmd: float, accel_request: float, a_ego_future: float, v_ego: float, stopping: bool, fcw: bool) -> float:
     if self.overshoot is not None:
       # take back braking the car delivers beyond a hard request (never under FCW)
       self.overshoot.update(accel_request, a_ego_future, active=not stopping and not fcw, v_ego=v_ego)
       accel_cmd = self.overshoot.apply(accel_cmd)
-    # (Altis Hybrid only) add back the braking the car does not deliver in the low-speed regen hand-over
-    self.underdelivery.update(accel_request, a_ego_future, v_ego, active=not fcw)
-    return self.underdelivery.apply(accel_cmd)
+    # (Altis Hybrid only) feed-forward the braking the car does not deliver in the low-speed regen hand-over
+    self.handover.update(accel_request, v_ego, active=not fcw)
+    return self.handover.apply(accel_cmd)
+
+  def condition_pid(self, pid, accel_request: float, v_ego: float) -> bool:
+    """(Altis Hybrid only) called before the stock PID update; True = freeze the integrator this step"""
+    return self.handover.condition_pid(pid, accel_request, v_ego)
