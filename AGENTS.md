@@ -46,9 +46,9 @@ Traditional Chinese; rav4kumar (sunnypilot maintainer) pulls commits from here. 
 | Lane-change start curvature rate | `ControlsExt.lane_change_start_rate_sp()` (`openpilot/sunnypilot/selfdrive/controls/controlsd_ext.py`) | `controlsd.py`, 1 hook |
 | Screen speed, wheel-pulse creep | `*_sp` methods of `CarStateExt` (`opendbc/sunnypilot/car/toyota/carstate_ext.py`); helper `wheel_pulse.py` | `carstate.py`, 4 hooks |
 | Hybrid detection from CAN | `hybrid_can_messages()` in `opendbc/sunnypilot/car/toyota/fingerprints_ext.py` | `interface.py`, 1 condition |
-| Brake onset shaping, overshoot limit, Altis regen-hand-over compensation | `opendbc/sunnypilot/car/toyota/brake_onset.py` | `carcontroller.py` |
+| Brake onset shaping (+ creep-follow gas release), overshoot limit (+ Altis moderate band, `TnToyotaBrakeOvershootModerate`), Altis regen hand-over feed-forward + low-speed PID hold (`TnToyotaBrakeUnderdelivery`) | `opendbc/sunnypilot/car/toyota/brake_onset.py` | `carcontroller.py` (shaper/corrections construction, `condition_pid` before the PID, `apply` after it) |
 | Auto brake hold | `opendbc/sunnypilot/car/toyota/auto_brake_hold.py` | `carcontroller.py` (Kumar's) |
-| End of stop / standstill hold | `openpilot/sunnypilot/selfdrive/controls/lib/stopping_controller.py` | `controlsd.py` (Kumar's) |
+| End of stop / standstill hold; Altis: re-roll hold (`TnStopRerollHold`), flat-ground hold -1.2 (`TnStandstillHoldFlat`), creep-follow stop at -0.24 (`TnCreepFollowStop`) | `openpilot/sunnypilot/selfdrive/controls/lib/stopping_controller.py` | `controlsd.py` (Kumar's; passes `CP` and `pitch`) |
 
 Known stock touch points that are fixes, not features: `selfdrived.py` (micd/qcomgpsd ignored), `system/micd.py`,
 `system/qcomgpsd/qcomgpsd.py`, `system/timed.py` (a dead mic/GPS must not block engagement; clock restore),
