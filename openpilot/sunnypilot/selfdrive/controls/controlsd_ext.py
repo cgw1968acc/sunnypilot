@@ -20,6 +20,7 @@ from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import BlinkerPauseLateral
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
+from openpilot.sunnypilot import get_tn_switch
 
 
 # cap how fast the commanded curvature builds at the start of a lane change so the switch eases in instead of
@@ -47,7 +48,7 @@ def _lane_change_start_curv_rate(t: float, v_ego: float) -> float:
 
 class ControlsExt(ModelStateBase):
   def __init__(self, CP: structs.CarParams, params: Params):
-    self.lane_change_rate_enabled = params.get("TnLaneChangeStartRate", return_default=True)  # tnpb2 Params switch
+    self.lane_change_rate_enabled = get_tn_switch(params, "TnLaneChangeStartRate")  # tnpb2 Params switch
     self.lane_change_start_t = 0.0
     ModelStateBase.__init__(self)
     self.CP = CP

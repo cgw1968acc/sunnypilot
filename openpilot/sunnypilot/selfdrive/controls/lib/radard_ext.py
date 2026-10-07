@@ -6,8 +6,9 @@ See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.common.params import Params
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_dropout_hold import LeadDropoutHold
+from openpilot.sunnypilot import get_tn_switch
 
-RADAR_MATCH_FILTERS_ENABLED = Params().get("TnRadarMatchFilters", return_default=True)
+RADAR_MATCH_FILTERS_ENABLED = get_tn_switch(Params(), "TnRadarMatchFilters")
 
 STATIONARY_TRACK_V = 1.0   # m/s, radar point counted as stationary
 VISION_MOVING_V = 4.0      # m/s, camera lead counted as clearly moving
@@ -52,7 +53,7 @@ def reject_match(track, lead, tracks, v_ego: float, offset_vision_dist: float) -
 class RadardExt:
   """tnpb2 lead post-processing controlled by Params key TnLeadDropoutHold."""
   def __init__(self, dt: float):
-    self.lead_dropout_hold = LeadDropoutHold(dt) if Params().get("TnLeadDropoutHold", return_default=True) else None
+    self.lead_dropout_hold = LeadDropoutHold(dt) if get_tn_switch(Params(), "TnLeadDropoutHold") else None
 
   def lead_one(self, lead: dict, v_ego: float) -> dict:
     return lead if self.lead_dropout_hold is None else self.lead_dropout_hold.update(lead, v_ego)

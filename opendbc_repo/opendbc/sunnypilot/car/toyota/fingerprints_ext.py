@@ -1,4 +1,5 @@
 from opendbc.car.structs import CarParams
+from opendbc.sunnypilot.car.toyota.values import get_tn_switch
 
 Ecu = CarParams.Ecu
 
@@ -22,7 +23,7 @@ def hybrid_can_messages(fingerprint: dict[int, dict[int, int]]) -> bool:
   Gated by Params key TnToyotaHybridCanDetect; called next to the stock firmware check."""
   from opendbc.car.toyota.carstate import get_host_params
   params = get_host_params()
-  if params is not None and not params.get("TnToyotaHybridCanDetect", return_default=True):
+  if params is not None and not get_tn_switch(params, "TnToyotaHybridCanDetect"):
     return False
   bus0 = fingerprint.get(0, {})
   return 0x127 in bus0 and 0x245 in bus0 and 0x2C1 not in bus0

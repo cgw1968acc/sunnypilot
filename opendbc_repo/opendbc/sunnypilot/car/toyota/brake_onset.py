@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import numpy as np
+from opendbc.sunnypilot.car.toyota.values import get_tn_switch
 
 ONSET_T_BP = [0.0, 0.15, 0.6]  # s
 # Speed schedule of the brake onset. Below 10 km/h (creep follow: the lead moves a little, the car catches up and
@@ -228,8 +229,8 @@ class BrakeCommandCorrections:
   def __init__(self, dt: float, CP):
     from opendbc.car.toyota.carstate import get_host_params
     params = get_host_params()
-    self.overshoot = BrakeOvershootLimiter(dt) if params is None or params.get("TnToyotaBrakeOvershoot", return_default=True) else None
-    underdelivery_enabled = params is None or params.get("TnToyotaBrakeUnderdelivery", return_default=True)
+    self.overshoot = BrakeOvershootLimiter(dt) if params is None or get_tn_switch(params, "TnToyotaBrakeOvershoot") else None
+    underdelivery_enabled = params is None or get_tn_switch(params, "TnToyotaBrakeUnderdelivery")
     self.underdelivery = BrakeUnderdeliveryComp(dt, enabled=underdelivery_enabled and is_altis_hybrid(CP))
 
   def reset(self) -> None:

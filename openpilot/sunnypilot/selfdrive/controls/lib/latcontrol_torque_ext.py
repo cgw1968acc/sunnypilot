@@ -10,6 +10,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_override 
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.corrections import LateralPathCorrections
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.gains import KP_INTERP_TN
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.nnlc_blend import get_nnlc_weight
+from openpilot.sunnypilot import get_tn_switch
 
 
 class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverride):
@@ -22,11 +23,11 @@ class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverri
     from openpilot.selfdrive.controls.lib.latcontrol_torque import INTERP_SPEEDS, LatControlTorque
     self.tn_stock_controller = isinstance(lac_torque, LatControlTorque)
     # tnpb2: Altis low-speed KP schedule on the stock torque PID (same speed breakpoints as stock)
-    if self.tn_stock_controller and self.params.get("TnLateralKpSchedule", return_default=True):
+    if self.tn_stock_controller and get_tn_switch(self.params, "TnLateralKpSchedule"):
       lac_torque.pid._k_p = [INTERP_SPEEDS, KP_INTERP_TN]
     # tnpb2: corrections to the model's desired curvature (lateral_path/), applied via correct_desired_curvature()
-    self.path_corrections = LateralPathCorrections(lac_torque.dt) if self.params.get("TnLateralPathCorrections", return_default=True) else None
-    self.nnlc_low_speed_handover = self.tn_stock_controller and self.params.get("TnNnlcLowSpeedHandover", return_default=True)
+    self.path_corrections = LateralPathCorrections(lac_torque.dt) if get_tn_switch(self.params, "TnLateralPathCorrections") else None
+    self.nnlc_low_speed_handover = self.tn_stock_controller and get_tn_switch(self.params, "TnNnlcLowSpeedHandover")
 
   def correct_desired_curvature(self, desired_curvature: float, CS, active: bool) -> float:
     """Hook called by LatControlTorque.update() before it uses the desired curvature; stock = unchanged."""

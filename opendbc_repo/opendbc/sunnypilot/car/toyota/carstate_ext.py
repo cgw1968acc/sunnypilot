@@ -14,6 +14,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.toyota.values import ToyotaFlags
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 from opendbc.sunnypilot.car.toyota.wheel_pulse import WheelPulseCreep
+from opendbc.sunnypilot.car.toyota.values import get_tn_switch
 
 ENGINE_RUNNING_RPM = 300.0
 
@@ -58,9 +59,9 @@ class CarStateExt:
     # tnpb2 additions, called from hooks in the stock Toyota CarState (see the *_sp methods at the end)
     from opendbc.car.toyota.carstate import get_host_params
     self.params = get_host_params()
-    self.cluster_speed_enabled = self.params is None or self.params.get("TnToyotaClusterSpeed", return_default=True)
+    self.cluster_speed_enabled = self.params is None or get_tn_switch(self.params, "TnToyotaClusterSpeed")
     self.wheel_pulse = (WheelPulseCreep() if self.params is None or
-                        self.params.get("TnToyotaWheelPulse", return_default=True) else None)
+                        get_tn_switch(self.params, "TnToyotaWheelPulse") else None)
     self.wheel_encoder = float('nan')  # SPEED (0xB4) ENCODER: wheel pulse counter, still counts below the ~0.5 km/h speed floor
     self.zss_cruise_active_last = False
     self.zss_angle_offset = 0.
@@ -233,6 +234,6 @@ class CarStateExt:
     # slow creep is not mistaken for a stop (wheel_pulse.py). Alive check skipped.
     from opendbc.car.toyota.carstate import get_host_params
     params = get_host_params()
-    if (params is None or params.get("TnToyotaWheelPulse", return_default=True)) and "SPEED" in name_to_msg:
+    if (params is None or get_tn_switch(params, "TnToyotaWheelPulse")) and "SPEED" in name_to_msg:
       return [("SPEED", float('nan'))]
     return []

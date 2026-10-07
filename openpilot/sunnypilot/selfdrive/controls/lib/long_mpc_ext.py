@@ -7,6 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 import numpy as np
 
 from openpilot.common.params import Params
+from openpilot.sunnypilot import get_tn_switch
 
 # SP (Altis, driver 2026-10-03): the MPC wants v^2/(2*COMFORT_BRAKE) + T_FOLLOW*v + STOP_DISTANCE in front of it at
 # every horizon node. Both constants are compiled into the prebuilt solver, so the driver's adjustment is applied from
@@ -56,7 +57,7 @@ class LongMpcObstacleExt:
   stopped-equivalence obstacle (by that lead's predicted speed) and the trim minus the margin is added per node at the
   planned ego speed. The margins are added before the stock code picks the closest lead, exactly as before."""
   def __init__(self):
-    self.enabled = Params().get("TnMpcDesiredDistance", return_default=True)
+    self.enabled = get_tn_switch(Params(), "TnMpcDesiredDistance")
 
   def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan):
     if not self.enabled:

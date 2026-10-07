@@ -24,6 +24,7 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 from openpilot.sunnypilot.models.helpers import get_active_bundle
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedRamp
+from openpilot.sunnypilot import get_tn_switch
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
@@ -80,7 +81,7 @@ class LongitudinalPlannerSP:
 
     # tnpb2 additions (Params switch TnPlannerExtensions), called from five hooks in stock LongitudinalPlanner.update()
     self.params = Params()
-    self.planner_ext_enabled = self.params.get("TnPlannerExtensions", return_default=True)
+    self.planner_ext_enabled = get_tn_switch(self.params, "TnPlannerExtensions")
     self._sp_dt = mpc.dt
     self.lead_start_assist = LeadStartAssist(mpc.dt)
     self._sp_v_cruise_prev = 0.0

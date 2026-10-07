@@ -21,8 +21,12 @@ Traditional Chinese; rav4kumar (sunnypilot maintainer) pulls commits from here. 
   returns the stock value unchanged when the feature is off. Method names in those classes end in `_sp`.
 - Every feature has a dedicated **Params key**, defined in `openpilot/common/params_keys.h`, persistent and default-on
   in tnpb2 (e.g. `TnLeadDropoutHold`). Set the relevant key to false with `Params.put_bool()` to restore that feature's
-  stock behavior. Read it with `Params.get(..., return_default=True)` so an unset key uses the schema default. The
-  device build must include the updated `params_keys.h`; do not use JSON override files or another feature registry.
+  stock behavior. Read it with `get_tn_switch(params, key)` (`openpilot/sunnypilot/__init__.py`, opendbc twin in
+  `opendbc/sunnypilot/car/toyota/values.py`): it is `Params.get(..., return_default=True)`, but on a prebuilt whose
+  compiled `libparams_c.so` predates the key (UnknownKeyName - the C3X on 2026-10-07) it reads the param file
+  `/data/params/d/<key>` directly (missing = on, `0` = off), so `printf 0 > /data/params/d/TnLeadDropoutHold` works
+  either way. A prebuilt built with the updated `params_keys.h` uses the normal Params path. Do not use JSON override
+  files or another feature registry.
 - With every switch off the behaviour must equal stock. Prove it (see 4).
 - Car-specific code must check the car: the Altis is `TOYOTA_COROLLA_TSS2` + `ToyotaFlags.HYBRID` + a Corolla-sedan
   ("12" series) firmware part number (`is_altis_hybrid()` in `opendbc/sunnypilot/car/toyota/brake_onset.py`); the
