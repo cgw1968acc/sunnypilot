@@ -5,10 +5,13 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+import math
+
 import numpy as np
 
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
+from openpilot.sunnypilot import get_tn_switch
 
 
 class StoppingController:
@@ -95,8 +98,58 @@ class StoppingController:
   RELEASE_BAND_LO = -0.6  # m/s^2
   RELEASE_BAND_HI = 0.4  # m/s^2
 
-  def __init__(self, stop_accel):
+  # The three tnpb2 additions below are Corolla Altis Hybrid only (is_altis_hybrid) and each has its own Params switch.
+  # B - re-roll at a standstill (switch TnStopRerollHold). Route 0000010e 17:38:48: the car stood behind the lead at the
+  # end request -0.30 (BRAKE 0xA6 640 N, less than the ~760-800 N the hybrid's creep torque needs); 0.9 s later, still
+  # inside the 1.0 s hold delay, all four wheel speeds read 0.8 km/h for 1.1 s (the pulse counter did not step: < 0.2 m)
+  # while the creep path raised the request only at 0.3 -> 1.0 m/s^2/s; it stood again once the force reached ~1300 N
+  # (-0.8). Now, once the car moves again after it has stood (creeping), the request steps down to REROLL_ACCEL at
+  # REROLL_JERK (0.05 s from -0.30), then continues on the creep / hold path. A car that stays still is not affected.
+  REROLL_ACCEL = -0.6  # m/s^2 (~1100 N or more)
+  REROLL_JERK = 6.0  # m/s^3
+  # C - lighter standstill hold on the flat (switch TnStandstillHoldFlat). The launch from a standstill takes 2.1 s
+  # (median, routes fc..10e) from the lead moving to the wheels moving, against 1.7 s before 2026-10-04; most of the
+  # wait is the PCM bleeding the -2.0 hold (3240 N, BRAKE 0xA6) - 1.1 s from 3240 N to 0 on route 0000010d 23:56:58.
+  # On the flat the hold now stops at FLAT_HOLD_ACCEL (~2000 N, still 2.5x the creep torque and above the 1360 N the
+  # auto brake hold uses on the flat); on a slope (|pitch - FLAT_PITCH_DEG| >= SLOPE_PITCH_DEG, as in auto_brake_hold)
+  # or without a pitch, or while the car creeps, the stock stopAccel applies.
+  FLAT_HOLD_ACCEL = -1.2  # m/s^2
+  FLAT_PITCH_DEG = 1.0  # deg, what this car reports standing on the flat
+  SLOPE_PITCH_DEG = 2.0  # deg away from flat that counts as a slope
+  # H - creep-follow stop (switch TnCreepFollowStop). Owner 2026-10-07: "at a standstill the lead moves a little, we
+  # follow and stop again - still not soft; release smoothly, roll forward, then stop smoothly with -0.24". Route
+  # 0000010d 23:56:59: after the release the plan turned to -0.4 within 0.2 s, but the command stayed positive for
+  # ~0.7 s (soft-onset shaper + a PID integral left from the launch), the end-of-stop line asked -0.48 at 2.5 km/h, and
+  # the brake bit 0 -> 1640 N in 0.4 s (aEgo +0.36 -> -0.88). Now, when the car has left a standstill less than
+  # CF_WINDOW ago and has not gone faster than CF_V_MAX, a stop asked by the plan (a_target <= CF_TRIGGER) is made with
+  # CF_END to the wheel stop: any positive request is dropped at once, the braking side is entered at CF_RATE (below the
+  # onset shaper's threshold, so it passes unshaped), and the end-of-stop line is not used. The plan still wins when it
+  # needs more: from CF_PLAN_SOFT the request blends to the plan, which it follows below CF_PLAN_FIRM (a lead that
+  # brakes, or the gap closing because -0.24 is too little). A plan that wants to go (a_target > 0) ends it.
+  CF_WINDOW = 10.0  # s
+  CF_V_MAX = 8.0 / 3.6  # m/s
+  CF_TRIGGER = -0.15  # m/s^2
+  CF_END = -0.24  # m/s^2
+  CF_PLAN_SOFT = -0.45  # m/s^2
+  CF_PLAN_FIRM = -0.70  # m/s^2
+  CF_RATE = 0.9  # m/s^3
+
+  def __init__(self, stop_accel, CP=None):
     self.stop_accel = stop_accel
+    altis = False
+    if CP is not None:
+      from opendbc.sunnypilot.car.toyota.brake_onset import is_altis_hybrid
+      altis = is_altis_hybrid(CP)
+    params = None
+    if altis:
+      from openpilot.common.params import Params
+      params = Params()
+    self.reroll_enabled = altis and get_tn_switch(params, "TnStopRerollHold")
+    self.flat_hold_enabled = altis and get_tn_switch(params, "TnStandstillHoldFlat")
+    self.creep_follow_enabled = altis and get_tn_switch(params, "TnCreepFollowStop")
+    self.cf_t: float | None = None  # time since leaving a standstill (creep-follow window)
+    self.cf_vmax = 0.0
+    self.cf_stopping = False
     self.standstill_t = 0.0
     self.stopping_t = 0.0
     self.go_t = 0.0
@@ -117,7 +170,40 @@ class StoppingController:
     step = self.END_RATE * DT_CTRL
     return float(np.clip(target, prev_accel - step, prev_accel + step))
 
-  def update(self, prev_state, state, CS, a_target, prev_accel, stock_accel, accel_limits, has_lead=False):
+  def _hold_floor(self, pitch, creeping):
+    if not self.flat_hold_enabled or creeping or pitch is None or not math.isfinite(pitch):
+      return self.stop_accel
+    if abs(math.degrees(pitch) - self.FLAT_PITCH_DEG) >= self.SLOPE_PITCH_DEG:
+      return self.stop_accel
+    return max(self.stop_accel, self.FLAT_HOLD_ACCEL)
+
+  def _cf_request(self, a_target, prev_accel):
+    target = float(np.interp(a_target, [self.CF_PLAN_FIRM, self.CF_PLAN_SOFT], [self.CF_PLAN_FIRM, self.CF_END]))
+    target = min(target, a_target) if a_target < self.CF_PLAN_FIRM else target
+    if target < prev_accel:
+      return max(target, min(prev_accel, 0.0) - self.CF_RATE * DT_CTRL)
+    return min(target, prev_accel + self.END_RATE * DT_CTRL)
+
+  def _update_creep_follow(self, state, CS, a_target):
+    if not self.creep_follow_enabled or state == LongCtrlState.off:
+      self.cf_t, self.cf_stopping = None, False
+      return False
+    if CS.standstill:
+      self.cf_t = 0.0 if self.standstill_t > 0.5 else self.cf_t
+      self.cf_vmax, self.cf_stopping = 0.0, False
+      return False
+    if self.cf_t is None:
+      return False
+    self.cf_t += DT_CTRL
+    self.cf_vmax = max(self.cf_vmax, CS.vEgo)
+    if self.cf_t > self.CF_WINDOW or self.cf_vmax >= self.CF_V_MAX or a_target > 0.0 and self.cf_stopping:
+      self.cf_t, self.cf_stopping = None, False
+      return False
+    if a_target <= self.CF_TRIGGER:
+      self.cf_stopping = True
+    return self.cf_stopping
+
+  def update(self, prev_state, state, CS, a_target, prev_accel, stock_accel, accel_limits, has_lead=False, pitch=None):
     if prev_state == LongCtrlState.stopping and state == LongCtrlState.pid and CS.standstill:
       self.go_t += DT_CTRL
       if self.go_t < self.STOPPING_EXIT_DEBOUNCE:
@@ -135,6 +221,7 @@ class StoppingController:
 
     creeping = self.stopped_once and not CS.standstill and CS.vEgo > self.CREEP_V_MIN
     self.creep_t = self.creep_t + DT_CTRL if creeping else 0.0
+    cf_stop = self._update_creep_follow(state, CS, a_target)
 
     # end-of-stop window: rolling below BLEND_V with a plan that is braking to a stop
     rolling = not CS.standstill and not self.stopped_once
@@ -145,6 +232,8 @@ class StoppingController:
       self.a_entry = min(prev_accel, self.END_HI)  # the line starts where the request is now, at least END_HI
 
     if state != LongCtrlState.stopping:
+      if cf_stop:
+        return state, float(np.clip(self._cf_request(a_target, prev_accel), accel_limits[0], accel_limits[1]))
       if self.end_active:
         return state, float(np.clip(self._end_request(a_target, prev_accel, CS.vEgo), accel_limits[0], accel_limits[1]))
       # coming off the hold: linear, slow through the hand-over band (see RELEASE_*)
@@ -159,11 +248,14 @@ class StoppingController:
       return state, stock_accel
 
     output_accel = prev_accel
-    if output_accel > self.stop_accel:
+    hold_floor = self._hold_floor(pitch, creeping)
+    if output_accel > hold_floor:
       output_accel = min(output_accel, 0.0)
       if not CS.standstill and not self.stopped_once and a_target < self.STOPPING_FOLLOW_MIN and a_target > output_accel:
         output_accel = min(a_target, output_accel + self.STOPPING_FOLLOW_RATE * DT_CTRL)
-      if self.end_active:
+      if cf_stop:
+        output_accel = self._cf_request(a_target, prev_accel)
+      elif self.end_active:
         # still rolling inside the end window: the line (or the plan where it is firmer), never the eased-off curve
         output_accel = self._end_request(a_target, prev_accel, CS.vEgo)
 
@@ -172,12 +264,18 @@ class StoppingController:
         rate = 0.0  # just engaged at a standstill: no brake pulse before the launch
       elif self.standstill_t >= hold_delay:
         rate = self.STANDSTILL_HOLD_RATE
+      elif creeping and self.reroll_enabled and output_accel > self.REROLL_ACCEL:
+        output_accel = max(self.REROLL_ACCEL, output_accel - self.REROLL_JERK * DT_CTRL)  # B: moving again - hold now
+        rate = 0.0
       elif creeping:
         rate = min(self.STOPPING_DECEL_RATE + self.CREEP_RATE_GROWTH * self.creep_t, self.CREEP_RATE_MAX)
       elif self.stopping_t >= self.STOPPING_FREEZE_MAX:
         rate = self.STOPPING_DECEL_RATE
       else:
         rate = 0.0
-      output_accel -= rate * DT_CTRL
+      if hold_floor != self.stop_accel:
+        output_accel = max(output_accel - rate * DT_CTRL, min(hold_floor, output_accel))  # C: stop at the flat hold
+      else:
+        output_accel -= rate * DT_CTRL
 
     return state, float(np.clip(output_accel, accel_limits[0], accel_limits[1]))
