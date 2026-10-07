@@ -133,6 +133,15 @@ class StoppingController:
   CF_PLAN_SOFT = -0.45  # m/s^2
   CF_PLAN_FIRM = -0.70  # m/s^2
   CF_RATE = 0.9  # m/s^3
+  # ... and once the wheels stop after such a creep-follow stop (owner 2026-10-07, route 00000112 23:16:57: "stopped
+  # with -0.24, then the hold came as a second brake"; there the request sat at -0.24 (~650 N, less than the creep
+  # torque) for the 1.0 s hold delay, then ramped to -1.2 within ~1 s - two separate pushes. Owner: "if it stops with
+  # -0.24, just add a little brake after the stop"): the brake is added straight away and smoothly, CF_SETTLE_ACCEL
+  # within ~0.5 s (CF_SETTLE_JERK), enough to hold the creep torque, then the rest of the hold very slowly
+  # (CF_HOLD_RATE) - one continuous motion, no hold delay. A re-roll still goes through B.
+  CF_SETTLE_ACCEL = -0.6  # m/s^2 (~1100 N)
+  CF_SETTLE_JERK = 0.72  # m/s^3: -0.24 -> -0.6 in 0.5 s
+  CF_HOLD_RATE = 0.3  # m/s^2/s: -0.6 -> -1.2 in 2 s
 
   def __init__(self, stop_accel, CP=None):
     self.stop_accel = stop_accel
@@ -150,6 +159,7 @@ class StoppingController:
     self.cf_t: float | None = None  # time since leaving a standstill (creep-follow window)
     self.cf_vmax = 0.0
     self.cf_stopping = False
+    self.cf_stopped = False  # the wheels stopped at the end of a creep-follow stop
     self.standstill_t = 0.0
     self.stopping_t = 0.0
     self.go_t = 0.0
@@ -186,12 +196,15 @@ class StoppingController:
 
   def _update_creep_follow(self, state, CS, a_target):
     if not self.creep_follow_enabled or state == LongCtrlState.off:
-      self.cf_t, self.cf_stopping = None, False
+      self.cf_t, self.cf_stopping, self.cf_stopped = None, False, False
       return False
     if CS.standstill:
+      if self.cf_stopping:
+        self.cf_stopped = True
       self.cf_t = 0.0 if self.standstill_t > 0.5 else self.cf_t
       self.cf_vmax, self.cf_stopping = 0.0, False
       return False
+    self.cf_stopped = False
     if self.cf_t is None:
       return False
     self.cf_t += DT_CTRL
@@ -262,6 +275,11 @@ class StoppingController:
       hold_delay = self.STANDSTILL_HOLD_DELAY_LEAD if has_lead else self.STANDSTILL_HOLD_DELAY_NO_LEAD
       if CS.standstill and not has_lead and self.engaged_t < self.ENGAGE_STANDSTILL_GRACE:
         rate = 0.0  # just engaged at a standstill: no brake pulse before the launch
+      elif self.cf_stopped and CS.standstill and output_accel > self.CF_SETTLE_ACCEL:
+        output_accel = max(self.CF_SETTLE_ACCEL, output_accel - self.CF_SETTLE_JERK * DT_CTRL)  # H: a little brake now
+        rate = 0.0
+      elif self.cf_stopped and CS.standstill:
+        rate = self.CF_HOLD_RATE  # H: then the rest of the hold, slowly
       elif self.standstill_t >= hold_delay:
         rate = self.STANDSTILL_HOLD_RATE
       elif creeping and self.reroll_enabled and output_accel > self.REROLL_ACCEL:
