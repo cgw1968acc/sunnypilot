@@ -1,7 +1,7 @@
 import unittest
 
 from opendbc.sunnypilot.car.toyota.brake_onset import (BrakeOvershootLimiter, OVERSHOOT_CMD_CEIL, OVERSHOOT_DEADBAND,
-                                                       OVERSHOOT_MAX)
+                                                       OVERSHOOT_MAX, OVERSHOOT_MOD_DEADBAND, OVERSHOOT_MOD_KEEP)
 
 DT = 0.03
 
@@ -50,6 +50,35 @@ class TestBrakeOvershootLimiter(unittest.TestCase):
     for _ in range(100):
       lim.update(-3.4, -4.3, active=False)
     self.assertEqual(lim.lift, 0.0)
+
+
+class TestModerateBand(unittest.TestCase):
+  """Altis Hybrid only: route 0000010e 17:38:41, asked -1.60 at 40-50 km/h, the car delivered -1.95."""
+  def run_steady(self, req, a_ego, v_kph, moderate=True, n=200):
+    lim = BrakeOvershootLimiter(DT, moderate=moderate)
+    for _ in range(n):
+      lim.update(req, a_ego, True, v_ego=v_kph / 3.6)
+    return lim
+
+  def test_17_38_41_overshoot_is_taken_back(self):
+    lim = self.run_steady(-1.60, -1.95, 45.0)
+    self.assertAlmostEqual(lim.lift, 0.8 * (0.35 - OVERSHOOT_MOD_DEADBAND), places=6)
+    self.assertAlmostEqual(lim.apply(-1.60), -1.60 + lim.lift, places=6)
+
+  def test_never_lighter_than_three_quarters_of_the_command(self):
+    lim = self.run_steady(-1.2, -3.0, 45.0)
+    self.assertAlmostEqual(lim.apply(-1.2), OVERSHOOT_MOD_KEEP * -1.2, places=6)
+
+  def test_off_for_other_cars_low_speed_and_light_requests(self):
+    self.assertEqual(self.run_steady(-1.60, -1.95, 45.0, moderate=False).lift, 0.0)
+    self.assertEqual(self.run_steady(-1.60, -1.95, 15.0).lift, 0.0)
+    self.assertEqual(self.run_steady(-0.9, -1.4, 45.0).lift, 0.0)
+    self.assertEqual(self.run_steady(-1.60, -1.70, 45.0).lift, 0.0)  # inside the deadband
+
+  def test_hard_band_unchanged_with_moderate_on(self):
+    lim = self.run_steady(-3.4, -4.3, 45.0)
+    self.assertAlmostEqual(lim.lift, 0.8 * (0.9 - OVERSHOOT_DEADBAND), places=6)
+    self.assertAlmostEqual(lim.apply(-3.4), -3.4 + lim.lift, places=6)
 
 
 if __name__ == "__main__":

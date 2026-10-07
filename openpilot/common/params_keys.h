@@ -267,6 +267,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TnToyotaHybridCanDetect", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TnToyotaBrakeOvershoot", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TnToyotaBrakeUnderdelivery", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnToyotaBrakeOvershootModerate", {PERSISTENT | BACKUP, BOOL, "1"}},
 
     // end tnpb2 Altis feature switches
 
