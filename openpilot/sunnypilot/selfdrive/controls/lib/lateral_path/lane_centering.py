@@ -40,7 +40,7 @@ LANE_CENTER_WIDTH_TAU = 3.0        # s; filter of the lane width, fed only by co
 LANE_CENTER_WIDTH_TOL = 0.7        # m; a width this far from the filtered one means one line is not the ego lane's
 LANE_CENTER_WIDTH_RANGE = (2.6, 4.6)  # m; outside this the pair is not the ego lane
 LANE_CENTER_FIT_RANGE = 12.0       # m ahead used to fit the lane centre (offset + heading + curvature)
-LANE_CENTER_DEADBAND = 0.015       # m; no position correction inside this (0.03 -> 0.015, 2026-09-30: the driver felt the
+LANE_CENTER_DEADBAND = 0.02        # m; no position correction inside this (0.015 -> 0.02 2026-10-08, see LAT_SPEED_DEADBAND) (0.03 -> 0.015, 2026-09-30: the driver felt the
                                    # ... -> 0.0075 2026-10-04: route 000000f2 10:34 at 82-88 km/h he felt the corrections again
                                    # and asked for a smaller dead band once more. Note: the offset there wandered -20..+15 cm
                                    # with a 4-6 s rhythm, far outside any dead band, so the next lever is the gain, not this.
@@ -48,6 +48,13 @@ LANE_CENTER_DEADBAND = 0.015       # m; no position correction inside this (0.03
                                    # asked for smaller, more continuous ones; a narrower dead band starts them earlier and smaller)
 # 2026-10-06: back to 0.015 (from 0.0075) with the highway smoothing below; recomputed on the highway logs the smaller dead
 # band added only ~10% more centering correction, and the driver felt more side-to-side motion on tnpb2.
+# 2026-10-08 (owner, after friction x1.3/x1.4 made the highway steadier: "with the higher friction, the dead band and
+# the correction frequency can be relaxed a little"): open-loop over route 00000110 (191 s > 75 km/h) the centering
+# correction is a ~4.1 s rhythm, std 0.044 m/s^2, above 0.05 m/s^2 33% of the time - and most of that activity is the
+# DAMPING (lateral speed) term, which had no dead band: widening the position dead band alone (1.5 -> 3-4 cm) changed it
+# by <= 8%. A small dead band on the lateral speed as well: 2.0 cm / 1 cm/s -> std 0.036 (-18%), 0.3-1 Hz -17%, rate
+# -19%, active 19% of the time (2.5 / 1.5: -27%; 3 / 3: -48%). First step 2.0 cm / 1 cm/s.
+LANE_CENTER_LAT_SPEED_DEADBAND = 0.01  # m/s; no damping correction for a lateral drift slower than this (was none)
 LANE_CENTER_KP = 0.35              # m/s^2 of lateral accel per metre of offset
 LANE_CENTER_KD = 1.20              # m/s^2 per m/s of lateral speed toward/away from the centre (damping, ~critical)
 LANE_CENTER_KI = 0.05              # m/s^2 per metre per second: slowly takes over what the model keeps pulling
@@ -135,6 +142,7 @@ class LaneCentering:
     self.heading = self.heading_filter.update(meas[1])
     error = self.offset - float(np.clip(self.offset, -LANE_CENTER_DEADBAND, LANE_CENTER_DEADBAND))  # deadband
     lateral_speed = v_ego * math.sin(self.heading)  # positive = drifting LEFT
+    lateral_speed -= float(np.clip(lateral_speed, -LANE_CENTER_LAT_SPEED_DEADBAND, LANE_CENTER_LAT_SPEED_DEADBAND))
 
     self.integral = float(np.clip(self.integral + LANE_CENTER_KI * error * self.dt, -LANE_CENTER_I_LIMIT, LANE_CENTER_I_LIMIT))
     lat_accel = LANE_CENTER_KP * error + LANE_CENTER_KD * lateral_speed + self.integral
