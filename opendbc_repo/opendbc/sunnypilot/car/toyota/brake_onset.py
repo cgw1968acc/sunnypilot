@@ -229,6 +229,10 @@ HANDOVER_MIN_REQUEST = -0.3  # m/s^2
 HANDOVER_EXTRA_MAX = 0.2  # m/s^2
 HANDOVER_EXTRA_FRAC = 0.25  # of the request, for lighter requests
 HANDOVER_RATE = 1.0  # m/s^3
+# The dip is a moderate-brake effect: at a firm request the regen gives MORE, not less (0000010d 15-12 km/h: asked
+# -1.46, delivered -1.72), so the extra fades out between these requests (full at -1.0 and lighter, none at -1.5).
+HANDOVER_REQ_BP = [-1.5, -1.0]  # m/s^2
+HANDOVER_REQ_W = [0.0, 1.0]
 PID_HOLD_V = 9.0 / 3.6  # m/s
 PID_BLEED_NEG = 0.5  # m/s^2 per s: a braking integral fades this fast
 PID_BLEED_POS = 2.0  # m/s^2 per s: a gas integral (left from the launch) fades this fast
@@ -259,7 +263,7 @@ class BrakeHandoverFeedforward:
     """returns the extra braking (>= 0, m/s^2) to subtract from the command"""
     target = 0.0
     if self.enabled and active and accel_request < HANDOVER_MIN_REQUEST:
-      w = float(np.interp(v_ego, HANDOVER_V_BP, HANDOVER_V_W))
+      w = float(np.interp(v_ego, HANDOVER_V_BP, HANDOVER_V_W)) * float(np.interp(accel_request, HANDOVER_REQ_BP, HANDOVER_REQ_W))
       target = w * min(HANDOVER_EXTRA_MAX, HANDOVER_EXTRA_FRAC * -accel_request)
     step = HANDOVER_RATE * self.dt
     self.extra = float(np.clip(target, self.extra - step, self.extra + step))
