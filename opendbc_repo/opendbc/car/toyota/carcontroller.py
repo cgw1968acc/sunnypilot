@@ -286,10 +286,11 @@ class CarController(CarControllerBase, GasInterceptorCarController):
                                                -MAX_PITCH_COMPENSATION, MAX_PITCH_COMPENSATION))
             pcm_accel_cmd += pitch_compensation
 
+          freeze_i = self.brake_corrections.condition_pid(self.long_pid, self.prev_accel, CS.out.vEgo)  # sunnypilot hook
           pcm_accel_cmd = self.long_pid.update(error_future,
                                                speed=CS.out.vEgo,
                                                feedforward=pcm_accel_cmd,
-                                               freeze_integrator=actuators.longControlState != LongCtrlState.pid)
+                                               freeze_integrator=actuators.longControlState != LongCtrlState.pid or freeze_i)
           pcm_accel_cmd = self.brake_corrections.apply(pcm_accel_cmd, self.prev_accel, a_ego_future, CS.out.vEgo, stopping,
                                                        fcw_alert)  # sunnypilot hook
         else:
