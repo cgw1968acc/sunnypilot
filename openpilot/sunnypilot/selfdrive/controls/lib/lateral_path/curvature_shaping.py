@@ -51,8 +51,15 @@ class DesiredCurvatureJerkLimiter:
 # curvature above 80 km/h takes out the faster part of that swing (2-4 s: -20..-45% with 0.5 s) and leaves slower
 # motion and steady curves alone; a highway curve is entered ~0.5 s later. Fades in from 70 km/h like the centering;
 # bypassed during lane changes and when lateral control is inactive.
+# DISABLED 2026-10-07 (tau 0): its first highway drive on the torque controller, route 0000010f 22:36 at 79 km/h, wove
+# side to side ("clearly swaying left and right at 80 km/h"). The model's desired lateral accel swung +-0.8 m/s^2 with a
+# 3.3 s period (steering angle std 1.1-2.1 deg per 10 s) against +-0.2 and 0.4-0.6 deg on route 00000100 at the same
+# speed, same Macrostiff model, same v1 controller, same corrections except this filter. The feedforward lagged the
+# model by ~0.2 s at ~75% amplitude, exactly what a 0.45 s first-order filter does to a 3.3 s swing: the model steers
+# from the car's position, so the lag sits inside a closed loop and loses ~40 deg of phase there - it amplified the
+# swing it was meant to smooth. (It was designed on logs where the corrections never ran: V0 was active.)
 HIGHWAY_SMOOTH_BP = [19.4, 22.2]  # m/s (70, 80 km/h)
-HIGHWAY_SMOOTH_TAU_V = [0.0, 0.5]  # s
+HIGHWAY_SMOOTH_TAU_V = [0.0, 0.0]  # s (was [0.0, 0.5])
 
 
 class HighwayCurvatureSmoother:

@@ -15,11 +15,10 @@ def test_untouched_below_70kph():
   assert abs(swing_amplitude(60 / 3.6, 3.0) - 1.0) < 1e-6
 
 
-def test_highway_swing_is_reduced_and_slow_motion_kept():
-  fast = swing_amplitude(100 / 3.6, 2.0)
-  slow = swing_amplitude(100 / 3.6, 30.0)
-  assert 0.5 < fast < 0.6   # 2 s swing: ~-46%
-  assert slow > 0.99        # a 30 s drift / a steady curve is kept
+def test_disabled_at_highway_speed():
+  # tau 0 since route 0000010f (2026-10-07): the filter's lag inside the model/steering loop amplified the 3.3 s weave
+  assert abs(swing_amplitude(100 / 3.6, 2.0) - 1.0) < 1e-6
+  assert abs(swing_amplitude(100 / 3.6, 30.0) - 1.0) < 1e-6
 
 
 def test_steady_curve_reaches_full_curvature():
