@@ -8,7 +8,7 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.nnlc import NeuralNetworkLateralControl
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_override import LatControlTorqueExtOverride
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.corrections import LateralPathCorrections
-from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.gains import KP_INTERP_TN
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.gains import KP_INTERP_TN, get_highway_friction_scale
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.nnlc_blend import get_nnlc_weight
 from openpilot.sunnypilot import get_tn_switch
 
@@ -28,9 +28,27 @@ class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverri
     # tnpb2: corrections to the model's desired curvature (lateral_path/), applied via correct_desired_curvature()
     self.path_corrections = LateralPathCorrections(lac_torque.dt) if get_tn_switch(self.params, "TnLateralPathCorrections") else None
     self.nnlc_low_speed_handover = self.tn_stock_controller and get_tn_switch(self.params, "TnNnlcLowSpeedHandover")
+    # tnpb2: highway friction feed-forward scale (lateral_path/gains.py), applied in update_override_torque_params()
+    self.hwy_friction = self.tn_stock_controller and get_tn_switch(self.params, "TnLateralHighwayFriction")
+    self._fric_base: float | None = None
+    self._fric_applied: float | None = None
+    self._v_ego = 0.0
+
+  def update_override_torque_params(self, torque_params) -> bool:
+    """sunnypilot hook at the start of LatControlTorque.update(): the override first, then the tnpb2 highway friction
+    scale on top of whatever friction is current (torqued / override). Stock = unchanged."""
+    changed = LatControlTorqueExtOverride.update_override_torque_params(self, torque_params)
+    if not self.hwy_friction:
+      return changed
+    if self._fric_applied is None or torque_params.friction != self._fric_applied:
+      self._fric_base = torque_params.friction  # set by torqued or the override since our last scaling
+    torque_params.friction = self._fric_base * get_highway_friction_scale(self._v_ego)
+    self._fric_applied = torque_params.friction  # read back: the capnp field is float32
+    return changed
 
   def correct_desired_curvature(self, desired_curvature: float, CS, active: bool) -> float:
     """Hook called by LatControlTorque.update() before it uses the desired curvature; stock = unchanged."""
+    self._v_ego = CS.vEgo
     if self.path_corrections is None:
       return desired_curvature
     return self.path_corrections.update(desired_curvature, CS, active, self.model_v2, self.set_path_correction)

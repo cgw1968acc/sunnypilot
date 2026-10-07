@@ -256,6 +256,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // tnpb2 Altis feature switches. Default on; set a key to 0 to restore that feature's stock behavior.
     {"TnLateralPathCorrections", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TnLateralKpSchedule", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnLateralHighwayFriction", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TnNnlcLowSpeedHandover", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TnPlannerExtensions", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TnMpcDesiredDistance", {PERSISTENT | BACKUP, BOOL, "1"}},
