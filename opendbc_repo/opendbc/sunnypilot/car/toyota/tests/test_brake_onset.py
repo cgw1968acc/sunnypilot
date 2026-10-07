@@ -141,3 +141,37 @@ class TestCreepGasRelease:
     for sh, v in ((self._shaper(False), 2.0), (self._shaper(True), 20.0)):
       step = sh.down_step(-0.24, 0.5, v_ego=v / 3.6)
       assert step > -4.0 * DT_CTRL * 3 + 1e-9
+
+
+class TestResumeSoftStart:
+  """RES while coasting at 46 km/h: start from the coasting decel, 0.6 m/s^3 for 0.4 s, stock by 0.8 s"""
+  def _run(self, soft, a_ego=-0.45, v=46.0, req=0.4, edge=True, n=40):
+    from opendbc.sunnypilot.car.toyota.brake_onset import EngageOnsetShaper
+    sh = EngageOnsetShaper(DT, 4.0)
+    sh.resume_soft = soft
+    sh.cruise_state(False)
+    sh.cruise_state(True if edge else False)
+    if not edge:
+      for _ in range(30):
+        sh.cruise_state(True)
+    prev, out = 0.0, []
+    for _ in range(n):
+      prev = sh.start_accel(prev, a_ego, v / 3.6)
+      prev = rate_limit(req, prev, -4.0 * DT, sh.up_step(True))
+      out.append(prev)
+    return np.array(out)
+
+  def test_gentle_first_0_4s_then_stock(self):
+    out = self._run(True)
+    assert abs(out[0] - (-0.45 + 0.6 * DT)) < 1e-9          # starts from the coasting decel
+    assert at(out, 0.39) < -0.45 + 0.6 * 0.4 + 0.02         # 0.6 m/s^3 for the first 0.4 s
+    assert np.isclose(out[-1], 0.4)                          # reaches the plan
+    old = self._run(False)
+    assert old[0] == 4.0 * DT and np.isclose(at(old, 0.12), 0.4)
+
+  def test_not_at_low_speed_or_a_gas_override_release(self):
+    assert self._run(True, v=10.0)[0] == 4.0 * DT
+    assert self._run(True, edge=False)[0] == 4.0 * DT
+
+  def test_a_positive_a_ego_starts_from_zero(self):
+    assert abs(self._run(True, a_ego=0.3)[0] - 0.6 * DT) < 1e-9

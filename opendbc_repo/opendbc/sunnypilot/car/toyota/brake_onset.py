@@ -112,16 +112,50 @@ ENGAGE_T_BP = [0.0, 0.1, 0.6]  # s; the window is still used to keep the soft BR
 # following the eco/normal/sport profile". The gas-side engage ramp (0.25 -> 0.6 -> 4.0 m/s^3 over 0.6 s) is gone:
 # the up jerk after engaging is the stock windup limit; the accel profile sets how much.
 ENGAGE_J_UP = [4.0, 4.0, 4.0]  # m/s^3
+# Resume while moving - Corolla Altis Hybrid only (switch TnResumeSoftStart). Owner 2026-10-08: "when resuming the
+# speed (RES), can the first 0.4 s accelerate more gently?". Routes 0000010e-00000112, eight RES engagements at 15-61
+# km/h: the car was coasting at -0.3..-0.5 m/s^2 (regen), the command started from 0 and reached +0.3..+0.5 within
+# 0.4-0.6 s, so in the first 0.4 s the regen vanished AND the gas came in (aEgo -0.43 -> +0.19 in 0.4 s at 23:09:07,
+# +0.12 -> +0.64 in 0.6 s at 17:43:01, ~1.5-2 m/s^3). Now, when engaging above RESUME_V_MIN, the command starts from
+# the coasting decel (aEgo, clipped to RESUME_START_MIN..0) instead of 0, and rises at RESUME_J_UP: 0.6 m/s^3 for the
+# first 0.4 s, opening to the stock limit by 0.8 s. Replays of the logged plans: the command meets the stock one by
+# 0.6-0.8 s, identical afterwards (the eco/normal/sport profile is untouched). Standstill launches are not affected.
+RESUME_V_MIN = 15.0 / 3.6  # m/s
+RESUME_T_BP = [0.0, 0.4, 0.8]  # s since engaging
+RESUME_J_UP = [0.6, 0.6, 4.0]  # m/s^3
+RESUME_START_MIN = -0.6  # m/s^2
+RESUME_EDGE_T = 0.5  # s: the engagement must follow the cruise switching on (not a gas-override release)
 
 
 class EngageOnsetShaper:
-  def __init__(self, dt: float, stock_up_jerk: float):
+  def __init__(self, dt: float, stock_up_jerk: float, CP=None):
     self.dt = dt
     self.stock_up_jerk = stock_up_jerk
     self.t_engaged: float | None = None
+    self.resume = False
+    self.resume_soft = False
+    self.cruise_on_t = 1e9  # s since the PCM cruise went from off to on (RES / SET)
+    self.prev_cruise = False
+    if CP is not None and is_altis_hybrid(CP):
+      from opendbc.car.toyota.carstate import get_host_params
+      params = get_host_params()
+      self.resume_soft = params is None or get_tn_switch(params, "TnResumeSoftStart")
 
   def reset(self) -> None:
     self.t_engaged = None
+    self.resume = False
+
+  def cruise_state(self, cruise_enabled: bool) -> None:
+    """called every frame: tracks RES / SET (cruise off -> on), so a gas-override release is not a resume"""
+    self.cruise_on_t = 0.0 if (cruise_enabled and not self.prev_cruise) else self.cruise_on_t + self.dt
+    self.prev_cruise = cruise_enabled
+
+  def start_accel(self, prev_accel: float, a_ego: float, v_ego: float) -> float:
+    """on the first engaged frame of a resume while moving, the command starts from the coasting decel"""
+    if self.t_engaged is None and self.resume_soft and v_ego > RESUME_V_MIN and self.cruise_on_t < RESUME_EDGE_T:
+      self.resume = True
+      return float(np.clip(a_ego, RESUME_START_MIN, 0.0))
+    return prev_accel
 
   @property
   def in_engage_window(self) -> bool:
@@ -141,6 +175,10 @@ class EngageOnsetShaper:
       self.t_engaged = 0.0
     else:
       self.t_engaged += self.dt
+    if self.resume:
+      if self.t_engaged < RESUME_T_BP[-1]:
+        return min(float(np.interp(self.t_engaged, RESUME_T_BP, RESUME_J_UP)), self.stock_up_jerk) * self.dt
+      self.resume = False
     if self.t_engaged >= ENGAGE_T_BP[-1]:
       return self.stock_up_jerk * self.dt
     j_up = float(np.interp(self.t_engaged, ENGAGE_T_BP, ENGAGE_J_UP))

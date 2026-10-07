@@ -272,6 +272,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TnStopRerollHold", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TnStandstillHoldFlat", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TnCreepFollowStop", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"TnResumeSoftStart", {PERSISTENT | BACKUP, BOOL, "1"}},
 
     // end tnpb2 Altis feature switches
 
