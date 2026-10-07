@@ -67,7 +67,7 @@ class StoppingController:
   # now piecewise linear through (BLEND_V, a_entry) -> (END_V_HI, END_HI) -> (0, END_LO); a_entry is at least END_HI.
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
-  END_HI = -0.60  # m/s^2 at END_V_HI (~1200 N)
+  END_HI = -0.65  # m/s^2 at END_V_HI (~1200 N); -0.60 -> -0.65 2026-10-08, see END_CURVE_A
   END_LO = -0.30  # m/s^2 at 0-1 km/h; driver 2026-10-04: -0.30 "closer to perfect", -0.25 the threshold; 2026-10-06 back to -0.30
   # Driver 2026-10-04 (route 000000f2): "between 5 and 0 km/h not linear but parabolic: steeper from 5 to 2, flat from
   # 2 to 0" -> x^2 parabola -0.50/-0.41/-0.34/-0.29/-0.26/-0.25 ("closer to perfect"). An S-shaped table
@@ -82,7 +82,12 @@ class StoppingController:
   # a = END_LO + (END_HI - END_LO) * (1 - ((5 - v) / 4)^2) -> -0.60/-0.58/-0.51/-0.40/-0.25/-0.25 at 5..0 km/h.
   # Driver 2026-10-06 night: "the end of the stop is not ideal, make 1-0 -0.3": END_LO -0.30, same parabola above it
   # -> -0.60/-0.58/-0.53/-0.43/-0.30/-0.30.
-  END_CURVE_A = [END_LO, END_LO, -0.43, -0.53, -0.58, END_HI]  # m/s^2
+  # Driver 2026-10-08 (routes 00000112-00000116): "just before the stop, around 4-2 km/h, the brake feels released a little
+  # too much". Since the low-speed PID hold (c14c0dbae1) the integrator no longer adds its catch-up there, and the car
+  # delivered -0.44 / -0.55 / -0.49 / -0.45 at 5-4 / 4-3 / 3-2 / 2-1 km/h (BRAKE 0xA6 870-1010 N) against ~-0.7 / -0.7 /
+  # -0.6 before. Driver chose the table 5 km/h -0.65, 4 -0.65, 3 -0.60, 2 -0.48, 1-0 -0.30 unchanged (expected delivered
+  # ~-0.61 / -0.55 / -0.48 at 4-3 / 3-2 / 2-1 km/h). Was -0.60/-0.58/-0.53/-0.43/-0.30/-0.30.
+  END_CURVE_A = [END_LO, END_LO, -0.48, -0.60, -0.65, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
