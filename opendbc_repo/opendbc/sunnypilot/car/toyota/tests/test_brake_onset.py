@@ -120,3 +120,24 @@ class TestCreepOnset:
           at_02 = a
       assert at_02 > light_limit, (v, at_02)
       assert a < -0.9, (v, a)   # the full request arrives within the window at both speeds
+
+
+class TestCreepGasRelease:
+  """route 0000010d 23:56:59: the drop from a +0.5 launch request was shaped like a brake onset"""
+  def _shaper(self, on):
+    from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper
+    sh = BrakeOnsetShaper(DT_CTRL * 3, 4.0)
+    sh.creep_gas_release = on
+    return sh
+
+  def test_positive_part_goes_at_the_stock_rate_below_8kph(self):
+    sh = self._shaper(True)
+    step = sh.down_step(-0.24, 0.5, v_ego=2.0 / 3.6)
+    assert abs(step - (-4.0 * DT_CTRL * 3)) < 1e-9
+    step = sh.down_step(-0.24, 0.05, v_ego=2.0 / 3.6)
+    assert abs(step - (-0.05)) < 1e-9            # stops at zero; the braking starts from there
+
+  def test_off_or_faster_keeps_the_soft_onset(self):
+    for sh, v in ((self._shaper(False), 2.0), (self._shaper(True), 20.0)):
+      step = sh.down_step(-0.24, 0.5, v_ego=v / 3.6)
+      assert step > -4.0 * DT_CTRL * 3 + 1e-9

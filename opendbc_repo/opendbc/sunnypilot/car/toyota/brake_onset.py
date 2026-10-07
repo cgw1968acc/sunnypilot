@@ -43,11 +43,25 @@ URGENT_J = 1.0  # m/s^3
 URGENT_T_RAMP = 0.1  # s
 
 
+# Creep-follow gas release - Corolla Altis Hybrid only, with the creep-follow stop (switch TnCreepFollowStop, see
+# stopping_controller.py). Route 0000010d 23:56:59: after a +0.5 launch the plan turned to braking within 0.2 s, but the
+# soft onset above treated the drop from +0.5 as the start of a brake (0.3 m/s^3) and the command stayed positive for
+# ~0.7 s while the car kept accelerating into a 2 m gap; then the brake bit 0 -> 1640 N. Taking away gas is not
+# braking: below CREEP_GAS_V the positive part of the command is now taken away at the stock rate; the soft onset
+# starts from zero, where the braking starts.
+CREEP_GAS_V = 8.0 / 3.6  # m/s
+
+
 class BrakeOnsetShaper:
-  def __init__(self, dt: float, stock_down_jerk: float):
+  def __init__(self, dt: float, stock_down_jerk: float, CP=None):
     self.dt = dt
     self.stock_down_jerk = stock_down_jerk
     self.t_onset = 0.0
+    self.creep_gas_release = False
+    if CP is not None and is_altis_hybrid(CP):
+      from opendbc.car.toyota.carstate import get_host_params
+      params = get_host_params()
+      self.creep_gas_release = params is None or get_tn_switch(params, "TnCreepFollowStop")
 
   def reset(self) -> None:
     self.t_onset = 0.0
@@ -69,6 +83,10 @@ class BrakeOnsetShaper:
     if bypass:
       self.t_onset = 0.0
       return -self.stock_down_jerk * self.dt
+
+    if self.creep_gas_release and prev_accel > 0.0 and v_ego < CREEP_GAS_V and accel_request < prev_accel:
+      self.t_onset = 0.0
+      return -min(self.stock_down_jerk * self.dt, prev_accel - max(accel_request, 0.0))
 
     if urgent:
       t_bp, j_bp = [0.0, URGENT_T, URGENT_T + max(URGENT_T_RAMP, self.dt)], [URGENT_J, URGENT_J, self.stock_down_jerk]

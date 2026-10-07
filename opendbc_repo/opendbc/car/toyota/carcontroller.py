@@ -85,7 +85,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     self.accel = 0
     self.prev_accel = 0
-    self.brake_onset = BrakeOnsetShaper(DT_CTRL * 3, -ACCEL_WINDDOWN_LIMIT / (DT_CTRL * 3))
+    self.brake_onset = BrakeOnsetShaper(DT_CTRL * 3, -ACCEL_WINDDOWN_LIMIT / (DT_CTRL * 3), CP)
     self.engage_onset = EngageOnsetShaper(DT_CTRL * 3, ACCEL_WINDUP_LIMIT / (DT_CTRL * 3))
     self.brake_corrections = BrakeCommandCorrections(DT_CTRL * 3, CP)  # sunnypilot: see brake_onset.py
     # *** end long control state ***
