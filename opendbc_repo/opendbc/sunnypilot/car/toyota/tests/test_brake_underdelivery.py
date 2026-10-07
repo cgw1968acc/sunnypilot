@@ -60,6 +60,10 @@ class TestHandoverFeedforward(unittest.TestCase):
     self.assertEqual(self.run_steady(-1.0, 20.0).extra, 0.0)
     self.assertEqual(self.run_steady(-0.25, 12.0).extra, 0.0)
 
+  def test_fades_out_for_a_firm_request(self):
+    self.assertEqual(self.run_steady(-1.5, 12.0).extra, 0.0)   # 0000010d: at -1.46 the car delivered -1.72
+    self.assertAlmostEqual(self.run_steady(-1.25, 12.0).extra, 0.5 * HANDOVER_EXTRA_MAX, places=6)
+
   def test_gradual(self):
     c = BrakeHandoverFeedforward(DT, True)
     prev = 0.0
