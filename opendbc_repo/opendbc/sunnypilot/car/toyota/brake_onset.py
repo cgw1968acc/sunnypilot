@@ -143,21 +143,38 @@ OVERSHOOT_MAX = 1.0  # m/s^2 largest lift
 OVERSHOOT_RATE_UP = 3.0  # m/s^3 how fast the lift may grow
 OVERSHOOT_RATE_DOWN = 2.0  # m/s^3 how fast it is given back (also when the hard request ends)
 OVERSHOOT_CMD_CEIL = -1.5  # m/s^2: the lifted command always stays a firm brake
+# Moderate band - Corolla Altis Hybrid only (owner 2026-10-07, route 0000010e 17:38:41: "at 50 km/h the braking started
+# soft, but the speed dropped too fast, still a bit fierce"). A stopped queue appeared 74 m ahead after a lane change;
+# openpilot asked for at most -1.60 m/s^2, the car delivered -1.82..-1.95 (regen on top). Routes 00000100..0000010e:
+# above 20 km/h the Altis delivers 0.1-0.4 m/s^2 more than a -1.0..-2.0 request (e.g. 0000010d 15-25 km/h: asked
+# -1.68, got -2.05). So above OVERSHOOT_MOD_V the limit also works for requests harder than OVERSHOOT_MOD_ACCEL, with
+# a smaller deadband, and the lifted command never gets lighter than OVERSHOOT_MOD_KEEP of the command (the request
+# is never weakened by more than a quarter). The hard band above is unchanged for every car.
+OVERSHOOT_MOD_ACCEL = -1.0  # m/s^2
+OVERSHOOT_MOD_V = 20.0 / 3.6  # m/s
+OVERSHOOT_MOD_DEADBAND = 0.15  # m/s^2
+OVERSHOOT_MOD_KEEP = 0.75
 
 
 class BrakeOvershootLimiter:
-  def __init__(self, dt: float):
+  def __init__(self, dt: float, moderate: bool = False):
     self.dt = dt
+    self.moderate = moderate  # also the moderate band (Altis Hybrid, OVERSHOOT_MOD_*)
     self.lift = 0.0
+    self.in_moderate = False
 
   def reset(self) -> None:
     self.lift = 0.0
+    self.in_moderate = False
 
-  def update(self, accel_request: float, a_ego_future: float, active: bool = True) -> float:
+  def update(self, accel_request: float, a_ego_future: float, active: bool = True, v_ego: float = 0.0) -> float:
     """returns the lift (>= 0, m/s^2) to add to the command"""
     target = 0.0
-    if active and accel_request < OVERSHOOT_ACTIVE_ACCEL:
-      excess = accel_request - a_ego_future - OVERSHOOT_DEADBAND  # > 0: decelerating harder than asked
+    hard = accel_request < OVERSHOOT_ACTIVE_ACCEL
+    self.in_moderate = (self.moderate and not hard and accel_request < OVERSHOOT_MOD_ACCEL and v_ego > OVERSHOOT_MOD_V)
+    if active and (hard or self.in_moderate):
+      deadband = OVERSHOOT_DEADBAND if hard else OVERSHOOT_MOD_DEADBAND
+      excess = accel_request - a_ego_future - deadband  # > 0: decelerating harder than asked
       target = float(np.clip(OVERSHOOT_GAIN * excess, 0.0, OVERSHOOT_MAX))
     self.lift = float(np.clip(target, self.lift - OVERSHOOT_RATE_DOWN * self.dt, self.lift + OVERSHOOT_RATE_UP * self.dt))
     return self.lift
@@ -165,7 +182,8 @@ class BrakeOvershootLimiter:
   def apply(self, accel_cmd: float) -> float:
     if self.lift <= 0.0:
       return accel_cmd
-    return min(accel_cmd + self.lift, max(accel_cmd, OVERSHOOT_CMD_CEIL))
+    ceiling = OVERSHOOT_MOD_KEEP * accel_cmd if self.in_moderate else OVERSHOOT_CMD_CEIL
+    return min(accel_cmd + self.lift, max(accel_cmd, ceiling))
 
 
 # Low-speed brake under-delivery compensation - Corolla Altis Hybrid only (owner 2026-10-07: "only for the Altis
@@ -229,7 +247,10 @@ class BrakeCommandCorrections:
   def __init__(self, dt: float, CP):
     from opendbc.car.toyota.carstate import get_host_params
     params = get_host_params()
-    self.overshoot = BrakeOvershootLimiter(dt) if params is None or get_tn_switch(params, "TnToyotaBrakeOvershoot") else None
+    altis = is_altis_hybrid(CP)
+    moderate = altis and (params is None or get_tn_switch(params, "TnToyotaBrakeOvershootModerate"))
+    self.overshoot = (BrakeOvershootLimiter(dt, moderate=moderate)
+                      if params is None or get_tn_switch(params, "TnToyotaBrakeOvershoot") else None)
     underdelivery_enabled = params is None or get_tn_switch(params, "TnToyotaBrakeUnderdelivery")
     self.underdelivery = BrakeUnderdeliveryComp(dt, enabled=underdelivery_enabled and is_altis_hybrid(CP))
 
@@ -241,7 +262,7 @@ class BrakeCommandCorrections:
   def apply(self, accel_cmd: float, accel_request: float, a_ego_future: float, v_ego: float, stopping: bool, fcw: bool) -> float:
     if self.overshoot is not None:
       # take back braking the car delivers beyond a hard request (never under FCW)
-      self.overshoot.update(accel_request, a_ego_future, active=not stopping and not fcw)
+      self.overshoot.update(accel_request, a_ego_future, active=not stopping and not fcw, v_ego=v_ego)
       accel_cmd = self.overshoot.apply(accel_cmd)
     # (Altis Hybrid only) add back the braking the car does not deliver in the low-speed regen hand-over
     self.underdelivery.update(accel_request, a_ego_future, v_ego, active=not fcw)
