@@ -86,7 +86,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
     self.accel = 0
     self.prev_accel = 0
     self.brake_onset = BrakeOnsetShaper(DT_CTRL * 3, -ACCEL_WINDDOWN_LIMIT / (DT_CTRL * 3), CP)
-    self.engage_onset = EngageOnsetShaper(DT_CTRL * 3, ACCEL_WINDUP_LIMIT / (DT_CTRL * 3))
+    self.engage_onset = EngageOnsetShaper(DT_CTRL * 3, ACCEL_WINDUP_LIMIT / (DT_CTRL * 3), CP)
     self.brake_corrections = BrakeCommandCorrections(DT_CTRL * 3, CP)  # sunnypilot: see brake_onset.py
     # *** end long control state ***
 
@@ -241,7 +241,9 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
         # internal PCM gas command can get stuck unwinding from negative accel so we apply a generous rate limit
         pcm_accel_cmd = actuators.accel
+        self.engage_onset.cruise_state(CS.out.cruiseState.enabled)  # sunnypilot hook
         if CC.longActive:
+          self.prev_accel = self.engage_onset.start_accel(self.prev_accel, CS.out.aEgo, CS.out.vEgo)  # sunnypilot hook
           # a hard request bypasses the soft brake onset, except in the first 0.6 s after engaging (FCW always does)
           urgent = self.brake_onset.is_urgent(pcm_accel_cmd, False) and not self.engage_onset.in_engage_window
           winddown_step = self.brake_onset.down_step(pcm_accel_cmd, self.prev_accel, bypass=fcw_alert, v_ego=CS.out.vEgo,
