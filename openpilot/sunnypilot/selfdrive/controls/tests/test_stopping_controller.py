@@ -307,3 +307,24 @@ class TestCreepFollowStop:
     outs = self._creep(sc, -0.40, secs=0.5)
     _, out = sc.update(PID, PID, cs(2.0), 0.5, outs[-1], 0.5, LIMITS, has_lead=True)
     assert out == 0.5 and not sc.cf_stopping
+
+  def test_after_the_creep_stop_a_little_brake_at_once_then_the_hold_slowly(self):
+    """route 00000112 23:16:57: -0.24 for the 1.0 s hold delay, then -1.2 within ~1 s felt like a second brake"""
+    sc = altis_sc(creep=True, flat=True)
+    outs = self._creep(sc, -0.40)
+    out, state, trace = outs[-1], STOPPING, []
+    for _ in range(300):
+      state, out = sc.update(state, STOPPING, cs(0.0, standstill=True), -0.05, out, -0.05, LIMITS, has_lead=True,
+                             pitch=FLAT)
+      trace.append(out)
+    assert trace[50] <= StoppingController.CF_SETTLE_ACCEL + 1e-9          # -0.6 within 0.5 s, no hold delay
+    assert trace[10] > StoppingController.CF_SETTLE_ACCEL                    # but gradually
+    assert abs(trace[150] - (StoppingController.CF_SETTLE_ACCEL - 1.0 * StoppingController.CF_HOLD_RATE)) < 0.02
+    assert abs(trace[-1] - StoppingController.FLAT_HOLD_ACCEL) < 1e-9       # the flat hold after ~2.5 s
+    steps = [a - b for a, b in zip(trace, trace[1:], strict=False)]
+    assert max(steps) <= StoppingController.CF_SETTLE_JERK * DT_CTRL + 1e-9
+
+  def test_an_ordinary_stop_keeps_the_hold_delay(self):
+    sc = altis_sc(creep=True, flat=True)
+    out = stand(sc, 0.9, pitch=FLAT)
+    assert abs(out - END_LO) < 1e-9
