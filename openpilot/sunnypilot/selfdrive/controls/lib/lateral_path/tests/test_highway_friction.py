@@ -19,8 +19,8 @@ def _params(friction=0.1):
 
 def test_schedule():
   assert get_highway_friction_scale(50 / 3.6) == 1.0
-  assert abs(get_highway_friction_scale(65 / 3.6) - 1.15) < 1e-9
-  assert get_highway_friction_scale(100 / 3.6) == 1.3
+  assert abs(get_highway_friction_scale(65 / 3.6) - 1.2) < 1e-9
+  assert get_highway_friction_scale(100 / 3.6) == 1.4
 
 
 def test_no_compounding_and_follows_a_new_base():
@@ -28,10 +28,10 @@ def test_no_compounding_and_follows_a_new_base():
   ext._v_ego = 100 / 3.6
   for _ in range(500):
     LatControlTorqueExt.update_override_torque_params(ext, tp)
-  assert abs(tp.friction - 0.13) < 1e-6
+  assert abs(tp.friction - 0.14) < 1e-6
   tp.friction = 0.2  # torqued / the override sets a new value
   LatControlTorqueExt.update_override_torque_params(ext, tp)
-  assert abs(tp.friction - 0.26) < 1e-6
+  assert abs(tp.friction - 0.28) < 1e-6
   ext._v_ego = 40 / 3.6
   LatControlTorqueExt.update_override_torque_params(ext, tp)
   assert abs(tp.friction - 0.2) < 1e-6
