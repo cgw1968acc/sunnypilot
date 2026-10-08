@@ -220,6 +220,10 @@ OVERSHOOT_MOD_KEEP = 0.75
 # margin the close gap needs (open loop, no planner reaction: +6 m travelled). Tonight's Relaxed drives (routes
 # 00000112-00000116) never triggered it. Owner: "keep D in Relaxed". The carcontroller passes
 # hud_control.leadDistanceBars == 3 (controlsd: personality + 1; relaxed = 2 -> 3 bars).
+# OFF since 2026-10-08 (owner: "so D never acted in Relaxed last night? then switch it off and try"): routes
+# 00000112-00000116 never triggered it, and in Aggressive close following it removes margin. Kept in the code; set True
+# to bring it back (Relaxed only). Done in code because on the current prebuilt the Tn param file is deleted at boot.
+OVERSHOOT_MOD_ENABLED = False
 OVERSHOOT_MOD_TAU = 0.5  # s
 OVERSHOOT_MOD_RATE = 0.5  # m/s^3
 
@@ -352,7 +356,7 @@ class BrakeCommandCorrections:
     from opendbc.car.toyota.carstate import get_host_params
     params = get_host_params()
     altis = is_altis_hybrid(CP)
-    moderate = altis and (params is None or get_tn_switch(params, "TnToyotaBrakeOvershootModerate"))
+    moderate = altis and OVERSHOOT_MOD_ENABLED and (params is None or get_tn_switch(params, "TnToyotaBrakeOvershootModerate"))
     self.overshoot = (BrakeOvershootLimiter(dt, moderate=moderate)
                       if params is None or get_tn_switch(params, "TnToyotaBrakeOvershoot") else None)
     handover_enabled = params is None or get_tn_switch(params, "TnToyotaBrakeUnderdelivery")
