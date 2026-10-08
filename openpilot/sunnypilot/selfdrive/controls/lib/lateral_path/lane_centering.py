@@ -49,7 +49,13 @@ LANE_CENTER_DEADBAND = 0.015       # m; no position correction inside this (0.03
 # 2026-10-06: back to 0.015 (from 0.0075) with the highway smoothing below; recomputed on the highway logs the smaller dead
 # band added only ~10% more centering correction, and the driver felt more side-to-side motion on tnpb2.
 LANE_CENTER_KP = 0.35              # m/s^2 of lateral accel per metre of offset
-LANE_CENTER_KD = 1.20              # m/s^2 per m/s of lateral speed toward/away from the centre (damping, ~critical)
+# 1.20 -> 0.90 2026-10-08 (owner: "it centres, but the corrections are a little large - as small as possible, but held
+# firmly in the centre"). Open-loop over routes 00000110 + 00000114 (> 75 km/h straights): the correction splits into
+# position 0.018, DAMPING 0.043, integral 0.029 m/s^2 (std); the position dead band (0-1.5 cm) changes nothing (p95
+# 0.090-0.094). The firm hold is position + integral, the visible activity mostly damping: KD 0.9 -> p95 |correction|
+# 0.090 -> 0.074 (-18%), 0.3-1 Hz -26%, active 26% -> 18% of the time; damping ratio 1.0 -> 0.76 (~3% overshoot);
+# 0.6 would halve the 0.3-1 Hz part but at 0.51 (~16% overshoot) risks a slow weave with the car/model lag.
+LANE_CENTER_KD = 0.90              # m/s^2 per m/s of lateral speed toward/away from the centre (damping)
 LANE_CENTER_KI = 0.05              # m/s^2 per metre per second: slowly takes over what the model keeps pulling
 LANE_CENTER_I_LIMIT = 0.45         # m/s^2; cap on the integrated part
 # 2026-10-06 (route 00000109 23:27-23:34, ~103 km/h): the car sat LEFT of the lane centre the whole stretch (straight
