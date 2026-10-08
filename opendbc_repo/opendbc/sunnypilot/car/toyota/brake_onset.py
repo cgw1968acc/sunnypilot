@@ -214,6 +214,12 @@ OVERSHOOT_MOD_KEEP = 0.75
 # (predicted aEgo, 3.0 / 2.0 m/s^3) pulsed the command by 0.2-0.3 m/s^2 for 0.2 s at a time on the noisy aEgo (-1.2 ..
 # -1.8 at a steady request), and the stock PID was already lifting the command (-1.6 asked, ~-1.1 sent). So the band
 # uses the overshoot of the measured aEgo, low-passed over OVERSHOOT_MOD_TAU, and moves at OVERSHOOT_MOD_RATE.
+# Relaxed personality only (owner 2026-10-08). A process_replay of 14 Aggressive-mode segments (routes fe/100/101/104/
+# 107/109) found the band acting mostly in CLOSE following: 0000109 23:19:44, lead 16 m away and still braking, request
+# -1.99/-1.75 at 26-21 km/h, the car delivered -2.73/-2.27 and the band lifted the command by up to 0.35 - taking away a
+# margin the close gap needs (open loop, no planner reaction: +6 m travelled). Tonight's Relaxed drives (routes
+# 00000112-00000116) never triggered it. Owner: "keep D in Relaxed". The carcontroller passes
+# hud_control.leadDistanceBars == 3 (controlsd: personality + 1; relaxed = 2 -> 3 bars).
 OVERSHOOT_MOD_TAU = 0.5  # s
 OVERSHOOT_MOD_RATE = 0.5  # m/s^3
 
@@ -232,11 +238,12 @@ class BrakeOvershootLimiter:
     self.mod_excess = 0.0
 
   def update(self, accel_request: float, a_ego_future: float, active: bool = True, v_ego: float = 0.0,
-             a_ego: float | None = None) -> float:
+             a_ego: float | None = None, moderate_allowed: bool = True) -> float:
     """returns the lift (>= 0, m/s^2) to add to the command"""
     target = 0.0
     hard = accel_request < OVERSHOOT_ACTIVE_ACCEL
-    self.in_moderate = (self.moderate and not hard and accel_request < OVERSHOOT_MOD_ACCEL and v_ego > OVERSHOOT_MOD_V)
+    self.in_moderate = (self.moderate and moderate_allowed and not hard and accel_request < OVERSHOOT_MOD_ACCEL and
+                        v_ego > OVERSHOOT_MOD_V)
     if self.in_moderate:
       measured = a_ego_future if a_ego is None else a_ego
       alpha = self.dt / (OVERSHOOT_MOD_TAU + self.dt)
@@ -357,10 +364,11 @@ class BrakeCommandCorrections:
     self.handover.reset()
 
   def apply(self, accel_cmd: float, accel_request: float, a_ego_future: float, v_ego: float, stopping: bool, fcw: bool,
-            a_ego: float | None = None) -> float:
+            a_ego: float | None = None, relaxed: bool = True) -> float:
     if self.overshoot is not None:
-      # take back braking the car delivers beyond a hard request (never under FCW)
-      self.overshoot.update(accel_request, a_ego_future, active=not stopping and not fcw, v_ego=v_ego, a_ego=a_ego)
+      # take back braking the car delivers beyond a hard request (never under FCW); the moderate band only in Relaxed
+      self.overshoot.update(accel_request, a_ego_future, active=not stopping and not fcw, v_ego=v_ego, a_ego=a_ego,
+                            moderate_allowed=relaxed)
       accel_cmd = self.overshoot.apply(accel_cmd)
     # (Altis Hybrid only) feed-forward the braking the car does not deliver in the low-speed regen hand-over
     self.handover.update(accel_request, v_ego, active=not fcw)
