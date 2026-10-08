@@ -328,3 +328,35 @@ class TestCreepFollowStop:
     sc = altis_sc(creep=True, flat=True)
     out = stand(sc, 0.9, pitch=FLAT)
     assert abs(out - END_LO) < 1e-9
+
+
+class TestConfirmedStopEarlyHold:
+  """hold 0.2 s after a CONFIRMED stop (standstill flag + the body's deceleration collapsing), else the 1.0 s delay"""
+  def _stop(self, sc, collapse):
+    out, state = -0.40, PID
+    for k in range(100):  # rolling to the stop at -0.45 m/s^2 (body)
+      state, out = sc.update(state, STOPPING, cs(2.0 - 0.019 * k), -0.3, out, -0.3, LIMITS, has_lead=True, pitch=FLAT, a_long=-0.45)
+    trace = []
+    for k in range(150):  # standing: the body pitches back (deceleration collapses) after 0.1 s, or not
+      a = -0.05 if (collapse and k >= 10) else -0.45
+      state, out = sc.update(state, STOPPING, cs(0.0, True), -0.05, out, -0.05, LIMITS, has_lead=True, pitch=FLAT, a_long=a)
+      trace.append(out)
+    return trace
+
+  def test_confirmed_stop_holds_after_0_2s(self):
+    sc = altis_sc(); sc.early_hold_enabled = True
+    tr = self._stop(sc, True)
+    assert tr[25] == tr[0]                 # 0.1 s to the pitch-back + 0.2 s: nothing yet at 0.25 s
+    assert tr[40] < tr[0] - 0.05           # holding by 0.4 s
+    sc2 = altis_sc()                       # switch off: the 1.0 s delay
+    tr2 = self._stop(sc2, True)
+    assert tr2[90] == tr2[0] and tr2[110] < tr2[0]
+
+  def test_no_confirmation_keeps_the_1s_delay(self):
+    sc = altis_sc(); sc.early_hold_enabled = True
+    tr = self._stop(sc, False)
+    assert tr[90] == tr[0] and tr[110] < tr[0]
+
+  def test_no_pose_keeps_the_1s_delay(self):
+    sc = altis_sc(); sc.early_hold_enabled = True
+    assert not sc.stop_confirm.update(True, 0.0, None)

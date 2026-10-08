@@ -14,6 +14,49 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.sunnypilot import get_tn_switch
 
 
+# Confirmed stop (switch TnStopEarlyHold, Corolla Altis Hybrid only). Owner 2026-10-08: "can the brake be added 0.2 s
+# after the stop, but only when it is 100% certain the car has stopped?". The wheel-pulse standstill flag alone is not
+# certain: on 2 of 30 engaged stops (route 00000100 18:59:09, 19:37:50) the pulse counter still stepped 0.06 s after
+# it (~0.2 m). The body's own signature is: while the car still rolls it decelerates; at the real stop the deceleration
+# collapses (the body pitches back). Using BOTH - the flag AND the longitudinal acceleration (calibrated pose) risen
+# STOP_CONFIRM_RISE above the braking level it had above STOP_LEVEL_V - no wheel pulse followed in any of the 30 stops
+# (routes fe..118). The hold then starts STOP_CONFIRM_DELAY later instead of after the 1.0 s hold delay; without a
+# confirmation (a very light stop, no pitch-back) the 1.0 s delay applies as before.
+STOP_LEVEL_V = 0.4  # m/s (~1.4 km/h): above this the braking level is tracked
+STOP_LEVEL_TAU = 0.2  # s
+STOP_CONFIRM_RISE = 0.2  # m/s^2
+STOP_CONFIRM_DELAY = 0.2  # s
+
+
+class StopConfirm:
+  def __init__(self):
+    self.reset()
+
+  def reset(self):
+    self.level: float | None = None
+    self.collapsed = False
+    self.confirmed_t = -1.0
+
+  def update(self, standstill: bool, v_ego: float, a_long: float | None) -> bool:
+    """returns True once the stop is confirmed and STOP_CONFIRM_DELAY has passed"""
+    if a_long is None or not math.isfinite(a_long):
+      self.reset()
+      return False
+    if v_ego > STOP_LEVEL_V and not standstill:
+      alpha = DT_CTRL / (STOP_LEVEL_TAU + DT_CTRL)
+      self.level = a_long if self.level is None else self.level + alpha * (a_long - self.level)
+      self.collapsed = False
+      self.confirmed_t = -1.0
+      return False
+    if self.level is not None and a_long >= self.level + STOP_CONFIRM_RISE:
+      self.collapsed = True
+    if standstill and self.collapsed:
+      self.confirmed_t = 0.0 if self.confirmed_t < 0.0 else self.confirmed_t + DT_CTRL
+    elif not standstill:
+      self.confirmed_t = -1.0
+    return self.confirmed_t >= STOP_CONFIRM_DELAY - 1e-9
+
+
 class StoppingController:
   """Optional terminal-stop policy applied after stock LongControl.update()."""
 
@@ -163,6 +206,8 @@ class StoppingController:
     self.reroll_enabled = altis and get_tn_switch(params, "TnStopRerollHold")
     self.flat_hold_enabled = altis and get_tn_switch(params, "TnStandstillHoldFlat")
     self.creep_follow_enabled = altis and get_tn_switch(params, "TnCreepFollowStop")
+    self.early_hold_enabled = altis and get_tn_switch(params, "TnStopEarlyHold")
+    self.stop_confirm = StopConfirm()
     self.cf_t: float | None = None  # time since leaving a standstill (creep-follow window)
     self.cf_vmax = 0.0
     self.cf_stopping = False
@@ -223,7 +268,8 @@ class StoppingController:
       self.cf_stopping = True
     return self.cf_stopping
 
-  def update(self, prev_state, state, CS, a_target, prev_accel, stock_accel, accel_limits, has_lead=False, pitch=None):
+  def update(self, prev_state, state, CS, a_target, prev_accel, stock_accel, accel_limits, has_lead=False, pitch=None,
+             a_long=None):
     if prev_state == LongCtrlState.stopping and state == LongCtrlState.pid and CS.standstill:
       self.go_t += DT_CTRL
       if self.go_t < self.STOPPING_EXIT_DEBOUNCE:
@@ -242,6 +288,7 @@ class StoppingController:
     creeping = self.stopped_once and not CS.standstill and CS.vEgo > self.CREEP_V_MIN
     self.creep_t = self.creep_t + DT_CTRL if creeping else 0.0
     cf_stop = self._update_creep_follow(state, CS, a_target)
+    stop_confirmed = self.early_hold_enabled and self.stop_confirm.update(CS.standstill, CS.vEgo, a_long)
 
     # end-of-stop window: rolling below BLEND_V with a plan that is braking to a stop
     rolling = not CS.standstill and not self.stopped_once
@@ -287,7 +334,7 @@ class StoppingController:
         rate = 0.0
       elif self.cf_stopped and CS.standstill:
         rate = self.CF_HOLD_RATE  # H: then the rest of the hold, slowly
-      elif self.standstill_t >= hold_delay:
+      elif self.standstill_t >= hold_delay or stop_confirmed:
         rate = self.STANDSTILL_HOLD_RATE
       elif creeping and self.reroll_enabled and output_accel > self.REROLL_ACCEL:
         output_accel = max(self.REROLL_ACCEL, output_accel - self.REROLL_JERK * DT_CTRL)  # B: moving again - hold now
