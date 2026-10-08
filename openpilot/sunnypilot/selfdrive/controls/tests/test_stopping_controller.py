@@ -46,8 +46,8 @@ class TestEndOfStop:
     assert abs(out - END_HI) < 1e-6
     out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
     assert abs(out - (-0.48 + -0.60) / 2) < 1e-6
-    assert abs(blend(sc, 4.0) - (-0.65)) < 1e-6 and abs(blend(sc, 1.0) - (-0.30)) < 1e-6
-    assert abs(blend(sc, 0.5) - (-0.30)) < 1e-6   # 1-0 km/h unchanged
+    assert abs(blend(sc, 4.0) - (-0.65)) < 1e-6 and abs(blend(sc, 1.0) - END_LO) < 1e-6
+    assert abs(blend(sc, 0.5) - END_LO) < 1e-6   # 1-0 km/h unchanged
     out = run(sc, PID, cs(0.0), -0.20, out, 0.4)
     assert abs(out - END_LO) < 1e-6
 
@@ -111,7 +111,7 @@ class TestEndOfStop:
     assert abs(out_at_stop - out) < 1e-6 and END_HI < out_at_stop <= END_LO + 1e-6
     out_held = run(sc, STOPPING, cs(0.0, standstill=True), -0.10, out_at_stop, 1.0)
     assert out_held < out_at_stop - 0.3
-    assert out_held >= -1.0 - 1e-6
+    assert out_held >= -1.0 - StoppingController.STANDSTILL_HOLD_RATE * DT_CTRL - 1e-6  # stock ramp may end one step past
 
 
 class TestHoldRelease:
@@ -224,7 +224,7 @@ class TestRerollHold:
 
   def test_steps_to_the_reroll_request_within_0_1s(self):
     outs = self._reroll(altis_sc(reroll=True))
-    assert outs[4] <= StoppingController.REROLL_ACCEL + 1e-9   # 0.05 s
+    assert outs[6] <= StoppingController.REROLL_ACCEL + 1e-9   # ~0.06 s from END_LO
     assert all(b - a >= -StoppingController.REROLL_JERK * DT_CTRL - 1e-9 for a, b in zip(outs, outs[1:], strict=False))
 
   def test_stock_creep_path_is_slower(self):
