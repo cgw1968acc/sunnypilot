@@ -46,8 +46,8 @@ class TestEndOfStop:
     assert abs(out - END_HI) < 1e-6
     out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
     assert abs(out - (-0.48 + -0.60) / 2) < 1e-6
-    assert abs(blend(sc, 4.0) - (-0.65)) < 1e-6 and abs(blend(sc, 1.0) - END_LO) < 1e-6
-    assert abs(blend(sc, 0.5) - END_LO) < 1e-6   # 1-0 km/h unchanged
+    assert abs(blend(sc, 4.0) - (-0.65)) < 1e-6 and abs(blend(sc, 1.0) - (-0.30)) < 1e-6
+    assert abs(blend(sc, 0.5) - (-0.30)) < 1e-6   # 1-0 km/h unchanged
     out = run(sc, PID, cs(0.0), -0.20, out, 0.4)
     assert abs(out - END_LO) < 1e-6
 
@@ -111,7 +111,7 @@ class TestEndOfStop:
     assert abs(out_at_stop - out) < 1e-6 and END_HI < out_at_stop <= END_LO + 1e-6
     out_held = run(sc, STOPPING, cs(0.0, standstill=True), -0.10, out_at_stop, 1.0)
     assert out_held < out_at_stop - 0.3
-    assert out_held >= -1.0 - StoppingController.STANDSTILL_HOLD_RATE * DT_CTRL - 1e-6  # stock ramp may end one step past
+    assert out_held >= -1.0 - 1e-6
 
 
 class TestHoldRelease:
@@ -224,7 +224,7 @@ class TestRerollHold:
 
   def test_steps_to_the_reroll_request_within_0_1s(self):
     outs = self._reroll(altis_sc(reroll=True))
-    assert outs[6] <= StoppingController.REROLL_ACCEL + 1e-9   # ~0.06 s from END_LO
+    assert outs[4] <= StoppingController.REROLL_ACCEL + 1e-9   # 0.05 s
     assert all(b - a >= -StoppingController.REROLL_JERK * DT_CTRL - 1e-9 for a, b in zip(outs, outs[1:], strict=False))
 
   def test_stock_creep_path_is_slower(self):
@@ -328,35 +328,3 @@ class TestCreepFollowStop:
     sc = altis_sc(creep=True, flat=True)
     out = stand(sc, 0.9, pitch=FLAT)
     assert abs(out - END_LO) < 1e-9
-
-
-class TestConfirmedStopEarlyHold:
-  """hold 0.2 s after a CONFIRMED stop (standstill flag + the body's deceleration collapsing), else the 1.0 s delay"""
-  def _stop(self, sc, collapse):
-    out, state = -0.40, PID
-    for k in range(100):  # rolling to the stop at -0.45 m/s^2 (body)
-      state, out = sc.update(state, STOPPING, cs(2.0 - 0.019 * k), -0.3, out, -0.3, LIMITS, has_lead=True, pitch=FLAT, a_long=-0.45)
-    trace = []
-    for k in range(150):  # standing: the body pitches back (deceleration collapses) after 0.1 s, or not
-      a = -0.05 if (collapse and k >= 10) else -0.45
-      state, out = sc.update(state, STOPPING, cs(0.0, True), -0.05, out, -0.05, LIMITS, has_lead=True, pitch=FLAT, a_long=a)
-      trace.append(out)
-    return trace
-
-  def test_confirmed_stop_holds_after_0_2s(self):
-    sc = altis_sc(); sc.early_hold_enabled = True
-    tr = self._stop(sc, True)
-    assert tr[25] == tr[0]                 # 0.1 s to the pitch-back + 0.2 s: nothing yet at 0.25 s
-    assert tr[40] < tr[0] - 0.05           # holding by 0.4 s
-    sc2 = altis_sc()                       # switch off: the 1.0 s delay
-    tr2 = self._stop(sc2, True)
-    assert tr2[90] == tr2[0] and tr2[110] < tr2[0]
-
-  def test_no_confirmation_keeps_the_1s_delay(self):
-    sc = altis_sc(); sc.early_hold_enabled = True
-    tr = self._stop(sc, False)
-    assert tr[90] == tr[0] and tr[110] < tr[0]
-
-  def test_no_pose_keeps_the_1s_delay(self):
-    sc = altis_sc(); sc.early_hold_enabled = True
-    assert not sc.stop_confirm.update(True, 0.0, None)

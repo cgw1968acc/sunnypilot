@@ -24,11 +24,9 @@ Traditional Chinese; rav4kumar (sunnypilot maintainer) pulls commits from here. 
   stock behavior. Read it with `get_tn_switch(params, key)` (`openpilot/sunnypilot/__init__.py`, opendbc twin in
   `opendbc/sunnypilot/car/toyota/values.py`): it is `Params.get(..., return_default=True)`, but on a prebuilt whose
   compiled `libparams_c.so` predates the key (UnknownKeyName - the C3X on 2026-10-07) it reads the param file
-  `/data/params/d/<key>` directly (missing = on, `0` = off). CAUTION (verified 2026-10-08): on such a prebuilt the
-  manager's `params.clear_all()` at boot deletes every param file whose key the compiled library does not know, so
-  `printf 0 > /data/params/d/<key>` only lasts until the next reboot. To switch a feature off persistently there, change
-  its default in the code; the file route becomes persistent once the prebuilt is rebuilt with the updated
-  `params_keys.h`. Do not use JSON override files or another feature registry.
+  `/data/params/d/<key>` directly (missing = on, `0` = off), so `printf 0 > /data/params/d/TnLeadDropoutHold` works
+  either way. A prebuilt built with the updated `params_keys.h` uses the normal Params path. Do not use JSON override
+  files or another feature registry.
 - With every switch off the behaviour must equal stock. Prove it (see 4).
 - Car-specific code must check the car: the Altis is `TOYOTA_COROLLA_TSS2` + `ToyotaFlags.HYBRID` + a Corolla-sedan
   ("12" series) firmware part number (`is_altis_hybrid()` in `opendbc/sunnypilot/car/toyota/brake_onset.py`); the

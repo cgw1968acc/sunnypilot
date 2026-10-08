@@ -294,8 +294,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
                                                feedforward=pcm_accel_cmd,
                                                freeze_integrator=actuators.longControlState != LongCtrlState.pid or freeze_i)
           pcm_accel_cmd = self.brake_corrections.apply(pcm_accel_cmd, self.prev_accel, a_ego_future, CS.out.vEgo, stopping,
-                                                       fcw_alert, a_ego=a_ego_blended,
-                                                       relaxed=hud_control.leadDistanceBars == 3)  # sunnypilot hook
+                                                       fcw_alert, a_ego=a_ego_blended)  # sunnypilot hook
         else:
           self.long_pid.reset()
           self.brake_corrections.reset()  # sunnypilot hook

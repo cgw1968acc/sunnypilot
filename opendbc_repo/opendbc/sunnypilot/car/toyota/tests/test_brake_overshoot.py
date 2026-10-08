@@ -93,15 +93,5 @@ class TestModerateBand(unittest.TestCase):
     self.assertEqual(lift, 0.0)   # averaged overshoot 0.10 is inside the deadband
 
 
-  def test_moderate_band_only_in_relaxed(self):
-    lim = BrakeOvershootLimiter(DT, moderate=True)
-    for _ in range(200):
-      lim.update(-1.60, -1.95, True, v_ego=45 / 3.6, moderate_allowed=False)
-    self.assertEqual(lim.lift, 0.0)
-    for _ in range(200):
-      lim.update(-3.4, -4.3, True, v_ego=45 / 3.6, moderate_allowed=False)   # the hard band in every personality
-    self.assertGreater(lim.lift, 0.5)
-
-
 if __name__ == "__main__":
   unittest.main()
