@@ -19,6 +19,16 @@ M_PER_COUNT = 0.049     # m
 STEP_M = 4 * M_PER_COUNT  # m, one forward step
 V_FLOOR = 0.14          # m/s (0.5 km/h): below this the wheel speeds read 0
 CREEP_HOLD_T = 2.5      # s after a step during which the car still counts as creeping
+# Firm driver brake: a car held by a firm press cannot keep creeping, so a step it takes while settling counts only
+# briefly. C3X route 00000119 2026-10-09 09:26:28 and 09:26:31 (ramp, -9 deg, ACC main on): after the stop the car
+# settled one step (4 counts) forward under 3000 N, then stood still under 4000-7900 N with the counter unchanged for
+# 1.4 s - but the step kept it "creeping" at 0.5 km/h for the full CREEP_HOLD_T, so the auto brake hold never saw a
+# standstill; the driver lifted after 1.4 s expecting the hold and the car rolled to 4 km/h. With FIRM_BRAKE_N or more
+# (above any light stop, 600-1050 N, and the 1400 N firm-press hold trigger) the creep ends FIRM_SETTLE_T after the
+# step and stays ended while the driver lifts (that is when the hold takes over); a car that really still moves steps
+# again and is creeping again at once.
+FIRM_BRAKE_N = 2000.0   # N (BRAKE 0xA6 BRAKE_FORCE)
+FIRM_SETTLE_T = 0.5     # s
 DT = 0.01               # s, carstate step
 
 
@@ -29,8 +39,9 @@ class WheelPulseCreep:
     self.t_step = -1e9    # time of the last forward step (any speed)
     self.v_step = 0.0     # creep speed estimated at the last step taken while the wheels read 0
     self.t_zero_step = -1e9
+    self.settled = False  # a firm press held the car still after the last step (FIRM_*)
 
-  def update(self, encoder: float, wheels_zero: bool) -> float:
+  def update(self, encoder: float, wheels_zero: bool, brake_force: float = math.nan) -> float:
     """Returns the creep speed (m/s) to report while the wheel speeds read 0, else 0."""
     self.t += DT
     if math.isnan(encoder):
@@ -41,12 +52,16 @@ class WheelPulseCreep:
         if wheels_zero:
           self.v_step = min(delta * M_PER_COUNT / max(self.t - self.t_step, DT), V_FLOOR)
           self.t_zero_step = self.t
+          self.settled = False
         self.t_step = self.t
     self.prev = encoder
     if not wheels_zero:
       self.t_zero_step = -1e9
+      self.settled = False
       return 0.0
     since = self.t - self.t_zero_step
-    if since > CREEP_HOLD_T:
+    if brake_force >= FIRM_BRAKE_N and since > FIRM_SETTLE_T:
+      self.settled = True
+    if since > CREEP_HOLD_T or self.settled:
       return 0.0
     return min(self.v_step, STEP_M / max(since, DT))
