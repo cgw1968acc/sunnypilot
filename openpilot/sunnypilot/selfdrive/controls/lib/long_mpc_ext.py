@@ -33,8 +33,10 @@ from openpilot.cereal import log
 # (claude_work/mpc_replay_gap_dev.py): gap before the event 23.4 -> 27.2 m, peak -2.85 -> -2.54, time below -1.5
 # 3.6 -> 3.5 s, final stop gap unchanged 4.5 m (+2 m: -2.68, +6 m: -2.42, +8 m: -2.31). The plan's onset rate stays
 # ~-4 m/s^3; the onset feel is the friction-entry limiter's job. Applies to every personality.
+# Owner 2026-10-10: "+4 m -> +3 m, let's try" -> +5 m from 40 to 50 km/h (3 m more than before 10-09): gap before the
+# 09:23 event about 26.3 m, peak about -2.61 (between the replayed +2 m and +4 m rows).
 DESIRED_DIST_TRIM_BP = [15.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
-DESIRED_DIST_TRIM_V = [1.0, -6.0, -6.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+DESIRED_DIST_TRIM_V = [1.0, -5.0, -5.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
 # Driver 2026-10-04 night: "bring the soft brake at 40-45 km/h a little earlier, i.e. slightly more distance to the
 # lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
 # at 50, fading to 0 at 80 as before. Margin before the -1 m trim: +7.8 m at 35 km/h, +12.2 at 40, +13.8 at 45,
