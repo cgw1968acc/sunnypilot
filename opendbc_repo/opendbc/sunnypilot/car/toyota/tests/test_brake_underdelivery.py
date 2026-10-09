@@ -2,7 +2,8 @@ import unittest
 from types import SimpleNamespace
 
 from opendbc.sunnypilot.car.toyota.brake_onset import (BrakeHandoverFeedforward, HANDOVER_EXTRA_MAX,
-                                                       HANDOVER_EXTRA_FRAC, HANDOVER_RATE, PID_BLEED_NEG, PID_BLEED_POS)
+                                                       HANDOVER_EXTRA_FRAC, HANDOVER_RATE, PID_BLEED_NEG, PID_BLEED_POS,
+                                                       LOW_EXTRA)
 
 DT = 0.03
 class TestHandoverFeedforward(unittest.TestCase):
@@ -21,10 +22,19 @@ class TestHandoverFeedforward(unittest.TestCase):
     self.assertAlmostEqual(self.run_steady(-0.5, 12.0).extra, HANDOVER_EXTRA_FRAC * 0.5, places=9)
 
   def test_fades_at_the_edges(self):
-    self.assertAlmostEqual(self.run_steady(-1.0, 8.0).extra, 0.5 * HANDOVER_EXTRA_MAX, places=6)
-    self.assertEqual(self.run_steady(-1.0, 5.0).extra, 0.0)
+    self.assertAlmostEqual(self.run_steady(-1.0, 8.0).extra, 0.5 * HANDOVER_EXTRA_MAX + 0.25 * LOW_EXTRA[2], places=6)
+    self.assertEqual(self.run_steady(-1.0, 2.5).extra, 0.0)
     self.assertEqual(self.run_steady(-1.0, 20.0).extra, 0.0)
     self.assertEqual(self.run_steady(-0.25, 12.0).extra, 0.0)
+
+  def test_low_speed_extra(self):
+    # route 0000011c 00:19:10: asked -0.67 at 5-4 km/h, the car gave -0.28
+    self.assertAlmostEqual(self.run_steady(-0.67, 5.0).extra, 0.25, places=6)
+    self.assertAlmostEqual(self.run_steady(-0.67, 6.0).extra, 0.25, places=6)
+    self.assertAlmostEqual(self.run_steady(-0.62, 4.0).extra, 0.15, places=6)
+    self.assertEqual(self.run_steady(-0.6, 3.0).extra, 0.0)   # the last km/h already brakes on target
+    self.assertEqual(self.run_steady(-0.25, 5.0).extra, 0.0)  # not for a request lighter than HANDOVER_MIN_REQUEST
+    self.assertEqual(self.run_steady(-1.5, 5.0).extra, 0.0)   # nor for a firm one
 
   def test_fades_out_for_a_firm_request(self):
     self.assertEqual(self.run_steady(-1.5, 12.0).extra, 0.0)   # 0000010d: at -1.46 the car delivered -1.72
