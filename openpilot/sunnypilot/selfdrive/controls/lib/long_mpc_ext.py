@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import numpy as np
+from openpilot.cereal import log
 
 
 # SP (Altis, driver 2026-10-03): the MPC wants v^2/(2*COMFORT_BRAKE) + T_FOLLOW*v + STOP_DISTANCE in front of it at
@@ -26,8 +27,16 @@ import numpy as np
 # returns to the old value by 15 km/h is used up during the stop: +3 m -> peak -3.44 (was -3.60), +5 m -> -3.25, same
 # 5.0 m final gap (the trim is read per node at the planned speed). The driver chose the +3 m version: -1 m (as before)
 # up to 15 km/h, +2 m from 40 to 50 km/h (3 m more than before), stock at 70, the highway part unchanged.
+# Owner 2026-10-09 (route 00000119 09:23, Aggressive at 46 km/h 23 m behind, the lead braked to a stop, request
+# -2.62): "close following at 40 km/h should keep a bit more distance, so there is time to brake softly" -> +6 m from
+# 40 to 50 km/h (4 m more). C3X closed-loop replay of 09:23 started at 09:22:20 so the gap settles first
+# (claude_work/mpc_replay_gap_dev.py): gap before the event 23.4 -> 27.2 m, peak -2.85 -> -2.54, time below -1.5
+# 3.6 -> 3.5 s, final stop gap unchanged 4.5 m (+2 m: -2.68, +6 m: -2.42, +8 m: -2.31). The plan's onset rate stays
+# ~-4 m/s^3; the onset feel is the friction-entry limiter's job. Applies to every personality.
+# Owner 2026-10-10: "+4 m -> +3 m, let's try" -> +5 m from 40 to 50 km/h (3 m more than before 10-09): gap before the
+# 09:23 event about 26.3 m, peak about -2.61 (between the replayed +2 m and +4 m rows).
 DESIRED_DIST_TRIM_BP = [15.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
-DESIRED_DIST_TRIM_V = [1.0, -2.0, -2.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+DESIRED_DIST_TRIM_V = [1.0, -5.0, -5.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
 # Driver 2026-10-04 night: "bring the soft brake at 40-45 km/h a little earlier, i.e. slightly more distance to the
 # lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
 # at 50, fading to 0 at 80 as before. Margin before the -1 m trim: +7.8 m at 35 km/h, +12.2 at 40, +13.8 at 45,
@@ -36,6 +45,18 @@ DESIRED_DIST_TRIM_V = [1.0, -2.0, -2.0, 0.0, -2.5]  # m taken OFF the desired di
 # from 40 to 55 km/h (was back to 0.8 at 50), then fading to 0 at 80 as before.
 LIGHT_ONSET_BP = [35.0 / 3.6, 40.0 / 3.6, 55.0 / 3.6, 80.0 / 3.6]  # m/s
 LIGHT_ONSET_T_V = [0.8, 1.1, 1.1, 0.0]  # s of travel reserved for the light first press
+
+
+# Relaxed jerk factor. Owner 2026-10-09 (route 00000119 09:11:27, Relaxed at 61 km/h: a lead moving into the path was
+# confirmed only at 54 m, the plan went 0 -> -1.9 in 1.2 s): "make the first braking smoother, but it must still stop
+# smoothly". Stock uses 1.0 for relaxed (0.5 aggressive); a higher factor weights the jerk and accel-change costs more,
+# so the plan eases in. Closed-loop MPC replays on the C3X (claude_work/mpc_replay119_dev.py):
+#   09:11:27        max plan jerk -4.8 -> -1.8 m/s^3, peak -2.02 -> -1.88, closest gap 16.8 -> 15.0 m
+#   117 23:09:50    peak -3.04 -> -2.97, jerk -6.3 -> -5.3, closest gap 29.5 -> 28.9 m
+#   three Relaxed stops (09:07:56 / 09:10:14 / 09:16:35): below 15 km/h unchanged, decel at 5 km/h -0.50 -> -0.55,
+#   final gap 0.5-0.8 m shorter (e.g. 4.5 -> 3.7 m)
+# Standard and aggressive keep the stock factor.
+RELAXED_JERK_FACTOR = 3.0
 
 
 def get_light_onset_margin(v):
@@ -54,6 +75,11 @@ class LongMpcObstacleExt:
   through one hook right after it stacks the lead obstacles: the light-onset margin is added to each lead's
   stopped-equivalence obstacle (by that lead's predicted speed) and the trim minus the margin is added per node at the
   planned ego speed. The margins are added before the stock code picks the closest lead, exactly as before."""
+  @staticmethod
+  def jerk_factor(personality, stock_factor: float) -> float:
+    """called by stock LongitudinalMpc.set_weights: the relaxed jerk factor (RELAXED_JERK_FACTOR)"""
+    return RELAXED_JERK_FACTOR if personality == log.LongitudinalPersonality.relaxed else stock_factor
+
   def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan):
     x_obstacles = x_obstacles + np.column_stack([get_light_onset_margin(lead_xv_0[:, 1]), get_light_onset_margin(lead_xv_1[:, 1])])
     return x_obstacles + get_desired_dist_trim(v_plan)[:, None]
