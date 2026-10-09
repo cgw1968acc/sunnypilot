@@ -27,8 +27,14 @@ from openpilot.cereal import log
 # returns to the old value by 15 km/h is used up during the stop: +3 m -> peak -3.44 (was -3.60), +5 m -> -3.25, same
 # 5.0 m final gap (the trim is read per node at the planned speed). The driver chose the +3 m version: -1 m (as before)
 # up to 15 km/h, +2 m from 40 to 50 km/h (3 m more than before), stock at 70, the highway part unchanged.
+# Owner 2026-10-09 (route 00000119 09:23, Aggressive at 46 km/h 23 m behind, the lead braked to a stop, request
+# -2.62): "close following at 40 km/h should keep a bit more distance, so there is time to brake softly" -> +6 m from
+# 40 to 50 km/h (4 m more). C3X closed-loop replay of 09:23 started at 09:22:20 so the gap settles first
+# (claude_work/mpc_replay_gap_dev.py): gap before the event 23.4 -> 27.2 m, peak -2.85 -> -2.54, time below -1.5
+# 3.6 -> 3.5 s, final stop gap unchanged 4.5 m (+2 m: -2.68, +6 m: -2.42, +8 m: -2.31). The plan's onset rate stays
+# ~-4 m/s^3; the onset feel is the friction-entry limiter's job. Applies to every personality.
 DESIRED_DIST_TRIM_BP = [15.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
-DESIRED_DIST_TRIM_V = [1.0, -2.0, -2.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+DESIRED_DIST_TRIM_V = [1.0, -6.0, -6.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
 # Driver 2026-10-04 night: "bring the soft brake at 40-45 km/h a little earlier, i.e. slightly more distance to the
 # lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
 # at 50, fading to 0 at 80 as before. Margin before the -1 m trim: +7.8 m at 35 km/h, +12.2 at 40, +13.8 at 45,
