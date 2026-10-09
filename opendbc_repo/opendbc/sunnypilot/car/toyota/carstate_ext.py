@@ -236,7 +236,8 @@ class CarStateExt:
       return
     if "SPEED" in cp.vl:
       self.wheel_encoder = float(cp.vl["SPEED"]["ENCODER"])
-    creep_v = self.wheel_pulse.update(self.wheel_encoder, abs(ret.vEgoRaw) < 1e-3)
+    # brake force of the previous frame (parsed later in the stock update); nan when not parsed -> unchanged behaviour
+    creep_v = self.wheel_pulse.update(self.wheel_encoder, abs(ret.vEgoRaw) < 1e-3, getattr(self, "brake_force", float('nan')))
     if creep_v > 0.0:
       ret.vEgoRaw = creep_v
       ret.vEgo = max(ret.vEgo, creep_v)
