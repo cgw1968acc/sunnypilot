@@ -64,8 +64,10 @@ LANE_CENTER_I_LIMIT = 0.45         # m/s^2; cap on the integrated part
 # The centering has no upper speed limit (full from 80 km/h up, e.g. 140 km/h).
 LANE_CENTER_MAX_LAT_ACCEL = 0.6    # m/s^2; cap on the total correction as felt by the driver
 LANE_CENTER_MAX_CURV = 3.5e-3      # 1/m; cap on the total correction (radius ~290 m)
-LANE_CENTER_JERK = 0.5             # m/s^3; how fast the correction may change, as lateral jerk so it feels the same at
+LANE_CENTER_JERK = 0.3             # m/s^3; how fast the correction may change, as lateral jerk so it feels the same at
                                    # every speed (driver 2026-09-26: corrections at ~90 km/h felt stiff; was 3e-3 1/m/s = 1.9 m/s^3 there)
+                                   # 0.5 -> 0.3 (owner 2026-10-10: "highway corrections still slightly noticeable"; route 0000011b
+                                   # 85 km/h, 514 s: unlimited correction rate p95 0.12 / p99 0.20 m/s^3, the limit binds 0.1% -> 0.4%)
 LANE_CENTER_FILTER_TAU = 0.5       # s; low-pass on the measured offset and heading
 
 
