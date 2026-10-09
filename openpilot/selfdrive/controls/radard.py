@@ -261,7 +261,8 @@ class RadarD:
 
       self.radar_state.leadOne = self.radard_ext.lead_one(get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego,
                                                                    self.lead_prob_filters[0].x, self.CP, self.CP_SP,
-                                                                   low_speed_override=True), self.v_ego)  # sunnypilot hook
+                                                                   low_speed_override=True), self.v_ego,
+                                                        self.tracks, sm['modelV2'].position)  # sunnypilot hook
       self.radar_state.leadTwo = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.lead_prob_filters[1].x,
                                           self.CP, self.CP_SP, low_speed_override=False)
 
