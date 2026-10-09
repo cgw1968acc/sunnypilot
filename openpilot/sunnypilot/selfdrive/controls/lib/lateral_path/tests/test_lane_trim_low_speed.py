@@ -48,6 +48,20 @@ class TestLaneTrimLowSpeed(unittest.TestCase):
     c2 = step(lc, tr, 0.0, v, int(6.0 / DT))
     self.assertLess(c2, c * 0.2)
 
+  def test_a_trim_built_in_a_curve_is_released_at_the_curve_exit(self):
+    v = 65 * CV.KPH_TO_MS
+    lc, tr = make()
+    c = step(lc, tr, 0.6, v, int(6.0 / DT), k_model=-0.009)   # left curve, car still off centre: trim built
+    self.assertGreater(c, 0.0)
+    c_curve = step(lc, tr, 0.6, v, int(0.5 / DT), k_model=-0.008)
+    self.assertGreater(c_curve, c * 0.8)                       # still in the curve: kept
+    c_exit = step(lc, tr, 0.6, v, int(1.5 / DT), k_model=-0.002)
+    self.assertEqual(c_exit, 0.0)                              # curvature below half the peak: gone within 1.5 s
+    lc, tr = make()
+    step(lc, tr, 0.6, v, int(6.0 / DT), k_model=-0.009)
+    c_held = step(lc, tr, 0.6, v, int(1.5 / DT), k_model=-0.009)
+    self.assertGreater(c_held, 0.0)                            # same curve, no exit: not released
+
 
 if __name__ == "__main__":
   unittest.main()
