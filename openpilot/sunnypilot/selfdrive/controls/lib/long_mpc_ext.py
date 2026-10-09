@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import numpy as np
+from openpilot.cereal import log
 
 
 # SP (Altis, driver 2026-10-03): the MPC wants v^2/(2*COMFORT_BRAKE) + T_FOLLOW*v + STOP_DISTANCE in front of it at
@@ -38,6 +39,18 @@ LIGHT_ONSET_BP = [35.0 / 3.6, 40.0 / 3.6, 55.0 / 3.6, 80.0 / 3.6]  # m/s
 LIGHT_ONSET_T_V = [0.8, 1.1, 1.1, 0.0]  # s of travel reserved for the light first press
 
 
+# Relaxed jerk factor. Owner 2026-10-09 (route 00000119 09:11:27, Relaxed at 61 km/h: a lead moving into the path was
+# confirmed only at 54 m, the plan went 0 -> -1.9 in 1.2 s): "make the first braking smoother, but it must still stop
+# smoothly". Stock uses 1.0 for relaxed (0.5 aggressive); a higher factor weights the jerk and accel-change costs more,
+# so the plan eases in. Closed-loop MPC replays on the C3X (claude_work/mpc_replay119_dev.py):
+#   09:11:27        max plan jerk -4.8 -> -1.8 m/s^3, peak -2.02 -> -1.88, closest gap 16.8 -> 15.0 m
+#   117 23:09:50    peak -3.04 -> -2.97, jerk -6.3 -> -5.3, closest gap 29.5 -> 28.9 m
+#   three Relaxed stops (09:07:56 / 09:10:14 / 09:16:35): below 15 km/h unchanged, decel at 5 km/h -0.50 -> -0.55,
+#   final gap 0.5-0.8 m shorter (e.g. 4.5 -> 3.7 m)
+# Standard and aggressive keep the stock factor.
+RELAXED_JERK_FACTOR = 3.0
+
+
 def get_light_onset_margin(v):
   v = np.maximum(v, 0.0)
   return v * np.interp(v, LIGHT_ONSET_BP, LIGHT_ONSET_T_V)
@@ -54,6 +67,11 @@ class LongMpcObstacleExt:
   through one hook right after it stacks the lead obstacles: the light-onset margin is added to each lead's
   stopped-equivalence obstacle (by that lead's predicted speed) and the trim minus the margin is added per node at the
   planned ego speed. The margins are added before the stock code picks the closest lead, exactly as before."""
+  @staticmethod
+  def jerk_factor(personality, stock_factor: float) -> float:
+    """called by stock LongitudinalMpc.set_weights: the relaxed jerk factor (RELAXED_JERK_FACTOR)"""
+    return RELAXED_JERK_FACTOR if personality == log.LongitudinalPersonality.relaxed else stock_factor
+
   def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan):
     x_obstacles = x_obstacles + np.column_stack([get_light_onset_margin(lead_xv_0[:, 1]), get_light_onset_margin(lead_xv_1[:, 1])])
     return x_obstacles + get_desired_dist_trim(v_plan)[:, None]
