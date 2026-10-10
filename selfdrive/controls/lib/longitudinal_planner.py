@@ -127,6 +127,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       accel_clip = [ACCEL_MIN, self.accel_personality.max_accel(v_ego, get_max_accel(v_ego))]  # sunnypilot hook
       steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
       accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
+      self.mpc.cruise_max_accel = accel_clip[1]  # sunnypilot hook: let the cruise target follow the accel personality
     else:
       accel_clip = [ACCEL_MIN, ACCEL_MAX]
 

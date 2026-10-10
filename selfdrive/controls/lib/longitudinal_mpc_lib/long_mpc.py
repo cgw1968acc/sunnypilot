@@ -223,6 +223,7 @@ def gen_long_ocp():
 
 class LongitudinalMpc:
   def __init__(self, mode='acc', dt=DT_MDL):
+    self.cruise_max_accel = CRUISE_MAX_ACCEL  # sunnypilot: raised by the accel personality (planner)
     self.mode = mode
     self.dt = dt
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
@@ -352,7 +353,7 @@ class LongitudinalMpc:
       # when the leads are no factor.
       v_lower = v_ego + (T_IDXS * CRUISE_MIN_ACCEL * 1.05)
       # TODO does this make sense when max_a is negative?
-      v_upper = v_ego + (T_IDXS * CRUISE_MAX_ACCEL * 1.05)
+      v_upper = v_ego + (T_IDXS * max(CRUISE_MAX_ACCEL, self.cruise_max_accel) * 1.05)  # sunnypilot hook: accel personality
       v_cruise_clipped = np.clip(v_cruise * np.ones(N+1),
                                  v_lower,
                                  v_upper)
