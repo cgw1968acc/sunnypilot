@@ -77,6 +77,62 @@ class HighwayCurvatureSmoother:
     return self.x
 
 
+# Highway plan averaging (owner 2026-10-08 night: "the only thing left that clearly evens out the corrections is smoothing
+# the model path - try it"). The 2026-10-05 low-pass above added ~0.2 s of LAG inside the model/steering loop and made a
+# 3.3 s weave (route 0000010f). This uses the model's own plan instead: the planned curvature (orientationRate.z /
+# velocity.x) averaged over the next PLAN_AVG_T seconds is FORWARD-looking. Over routes 00000110 + 00000114 (1202 s of
+# straights > 75 km/h) the 0.0-0.6 s average had 27% less of the 0.3-1 Hz wobble (0.0521 -> 0.0380 m/s^2) and 10% less
+# 0.05-0.3 Hz drift, and it LEADS the model's action by ~0.25 s (cross-correlation) - no lag. The plain average holds
+# steady curves at ~93% of the action, so only the faster part of (average - action) is used: its high-pass over
+# PLAN_AVG_HP_TAU is added to the action, keeping the action's steady curve value. Fades in 70-80 km/h like the
+# centering; bypassed during lane changes and when lateral control is inactive.
+# OFF since 2026-10-09 (owner: "use the original for now, plus the stronger brake after the stop" - the plan averaging was
+# not part of that set). Set True to try it.
+PLAN_AVG_ENABLED = False
+PLAN_AVG_T = (0.0, 0.6)  # s of the model plan averaged
+PLAN_AVG_N = 13
+PLAN_AVG_HP_TAU = 5.0  # s
+PLAN_AVG_BP = [19.4, 22.2]  # m/s (70, 80 km/h)
+PLAN_AVG_W = [0.0, 1.0]
+# Only the small wobble is replaced: the change is capped at PLAN_AVG_MAX_LAT_ACCEL (as lateral accel), so curve entries and
+# exits - where the forward average would start turning ~0.2 s earlier, up to 0.97 m/s^2 different - keep the action.
+PLAN_AVG_MAX_LAT_ACCEL = 0.15  # m/s^2
+
+
+def plan_average_curvature(model_v2) -> float | None:
+  try:
+    o = model_v2.orientationRate
+    t = np.asarray(o.t); z = np.asarray(o.z); vx = np.maximum(np.asarray(model_v2.velocity.x), 1.0)
+  except Exception:
+    return None
+  if len(t) < 4 or len(z) != len(t) or len(vx) != len(t):
+    return None
+  tt = np.linspace(PLAN_AVG_T[0], PLAN_AVG_T[1], PLAN_AVG_N)
+  return float(np.mean(np.interp(tt, t, z / vx)))
+
+
+class PlanAverageSmoother:
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.lp = None  # low-pass of (average - action): the steady part that is NOT used
+
+  def reset(self):
+    self.lp = None
+
+  def update(self, desired_curvature: float, model_v2, v_ego: float, active: bool, lane_changing: bool) -> float:
+    w = float(np.interp(v_ego, PLAN_AVG_BP, PLAN_AVG_W))
+    avg = plan_average_curvature(model_v2) if model_v2 is not None else None
+    if not active or lane_changing or w <= 0.0 or avg is None:
+      self.reset()
+      return desired_curvature
+    diff = avg - float(model_v2.action.desiredCurvature)
+    if self.lp is None:
+      self.lp = diff
+    self.lp += self.dt / (PLAN_AVG_HP_TAU + self.dt) * (diff - self.lp)
+    cap = PLAN_AVG_MAX_LAT_ACCEL / max(v_ego, 1.0) ** 2
+    return desired_curvature + w * float(np.clip(diff - self.lp, -cap, cap))
+
+
 # Turn-exit counter-swing limit (driver 2026-10-06: "at 30 km/h the wheel still sways when straightening out of a turn;
 # out of 40 km/h curves too"). Route 00000100 19:00:04 and 20:00:33: the controller tracked its setpoint within ~0.15 s,
 # but the MODEL's own path swung past straight after the turn (-2.05 -> +0.33 -> -0.16 m/s^2; -0.14 -> +0.27 -> -0.18)
