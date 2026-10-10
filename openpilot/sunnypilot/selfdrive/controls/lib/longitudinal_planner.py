@@ -50,9 +50,11 @@ SET_SPEED_INTENT_T = 6.0  # s
 # feels natural and safe - scale it by the grade, the steeper the weaker". The car's pitch (carControl.orientationNED,
 # + = nose up; this car reads ~+1.0 deg on the flat, see auto_brake_hold.FLAT_PITCH_DEG) scales the accel profile's
 # ceiling: full up to 1 deg above flat, 0.8x at 4 deg, 0.6x at 8 deg and beyond. Downhill is untouched.
+# Owner 2026-10-11: "on a climb I want the speed recovered slowly - lower the uphill scaling a little more" ->
+# 0.7x at 4 deg, 0.5x at 8 deg (was 0.8 / 0.6); full up to 1 deg unchanged, so the flat and gentle grades feel the same.
 UPHILL_PITCH_FLAT_DEG = 1.0
 UPHILL_ACCEL_BP = [1.0, 4.0, 8.0]  # deg of climb above flat
-UPHILL_ACCEL_V = [1.0, 0.8, 0.6]  # factor on the max acceleration
+UPHILL_ACCEL_V = [1.0, 0.7, 0.5]  # factor on the max acceleration
 
 
 def get_uphill_accel_factor(pitch_rad: float) -> float:

@@ -41,6 +41,6 @@ def test_gate_open_stays_open():
 
 def test_uphill_scales_the_ceiling_downhill_untouched():
   ext = TnPlannerExt(DT)
-  assert abs(ext.max_accel_sp(1.0, sm_with_pitch(5.0)) - 0.8 * (1.0 - 0.25 * 0.0) * 1.0) < 0.06
+  assert abs(ext.max_accel_sp(1.0, sm_with_pitch(5.0)) - 0.7 * (1.0 - 0.25 * 0.0) * 1.0) < 0.06
   assert ext.max_accel_sp(1.0, sm_with_pitch(-6.0)) == 1.0
   assert ext.max_accel_sp(None, sm_with_pitch(5.0)) is None
