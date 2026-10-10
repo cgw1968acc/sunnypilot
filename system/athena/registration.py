@@ -98,7 +98,8 @@ def register(show_spinner=False) -> str | None:
 
   if dongle_id:
     params.put("DongleId", dongle_id)
-    set_offroad_alert("Offroad_UnregisteredHardware", (dongle_id == UNREGISTERED_DONGLE_ID) and not PC)
+    # TN: this C3 is refused by the comma backend (pilotauth 403); the owner does not want the warning, so always clear it
+    set_offroad_alert("Offroad_UnregisteredHardware", False)
   return dongle_id
 
 
