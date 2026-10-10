@@ -11,6 +11,7 @@ import numpy as np
 
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
+from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_governor import StopGapGovernor
 
 
 # Confirmed stop. Owner 2026-10-08: "can the brake be added 0.2 s
@@ -212,6 +213,7 @@ class StoppingController:
     self.end_active = False
     self.a_entry = self.END_HI
     self.releasing = False
+    self.gap_governor = StopGapGovernor()
 
   def _blend(self, v_ego):
     if v_ego < self.END_V_HI:
@@ -260,7 +262,19 @@ class StoppingController:
     return self.cf_stopping
 
   def update(self, prev_state, state, CS, a_target, prev_accel, stock_accel, accel_limits, has_lead=False, pitch=None,
-             a_long=None):
+             a_long=None, lead_d=None, lead_v=None):
+    state, out = self._update(prev_state, state, CS, a_target, prev_accel, stock_accel, accel_limits, has_lead, pitch,
+                              a_long)
+    # stop 3.5-3.75 m behind the lead, and no creeping in at the end (see stop_gap_governor)
+    if state == LongCtrlState.off:
+      self.gap_governor.reset()
+      return state, out
+    braking = self.end_active or state == LongCtrlState.stopping or a_target <= self.END_PLAN_MIN
+    out = self.gap_governor.update(out, CS.vEgo, CS.standstill, a_target, braking, lead_d, lead_v)
+    return state, float(np.clip(out, accel_limits[0], accel_limits[1]))
+
+  def _update(self, prev_state, state, CS, a_target, prev_accel, stock_accel, accel_limits, has_lead=False, pitch=None,
+              a_long=None):
     if prev_state == LongCtrlState.stopping and state == LongCtrlState.pid and CS.standstill:
       self.go_t += DT_CTRL
       if self.go_t < self.STOPPING_EXIT_DEBOUNCE:

@@ -68,6 +68,13 @@ class ControlsExt(ModelStateBase):
     self.sm_services_ext = ['radarState', 'selfdriveStateSP']
     self.pm_services_ext = ['carControlSP']
 
+  def stop_gap_lead(self) -> dict:
+    """lead distance / speed for the stop-gap governor (StoppingController), from radarState"""
+    lead = self.sm['radarState'].leadOne
+    if not self.sm.valid['radarState'] or not lead.status:
+      return {}
+    return {'lead_d': float(lead.dRel), 'lead_v': float(lead.vLead)}
+
   def initialize_lateral_control(self, lac, CI, dt):
     enforce_torque_control = self.params.get_bool("EnforceTorqueControl")
     torque_versions = self.params.get("TorqueControlTune")
