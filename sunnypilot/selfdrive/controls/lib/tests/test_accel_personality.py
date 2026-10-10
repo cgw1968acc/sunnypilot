@@ -1,6 +1,6 @@
 import numpy as np
 
-from cereal import custom, log
+from cereal import custom
 from opendbc.car import structs
 from openpilot.selfdrive.car.helpers import convert_to_capnp
 from types import SimpleNamespace
@@ -49,21 +49,16 @@ class TestAccelPersonality:
         out.append(c.max_accel(v, stock_max(v)))
       assert out[0] <= out[1] + 1e-9 <= out[2] + 2e-9, (v, out)
 
-  def test_brake_response_by_distance_setting(self):
-    mpc = SimpleNamespace(jerk_scale=None, lead_tau_scale=None)
-    for pers, want in (('relaxed', (1.0, 1.0)), ('standard', (0.6, 0.5)), ('aggressive', (0.3, 0.3))):
-      sd = log.SelfdriveState.new_message(personality=pers)
-      AccelPersonalityController.apply_brake_response(mpc, sd.personality)
-      assert (mpc.jerk_scale, mpc.lead_tau_scale) == want
-
-  def test_brake_response_ignores_the_drive_mode(self):
+  def test_brake_response_by_drive_mode(self):
     c = AccelPersonalityController()
     mpc = SimpleNamespace(jerk_scale=None, lead_tau_scale=None)
-    sd = log.SelfdriveState.new_message(personality='standard')
-    for name in ('eco', 'normal', 'sport'):
+    c.update(FakeSM())
+    c.apply_brake_response(mpc)
+    assert (mpc.jerk_scale, mpc.lead_tau_scale) == (1.0, 1.0)  # no report yet = eco = stock
+    for name, want in (('eco', (1.0, 1.0)), ('normal', (0.75, 0.65)), ('sport', (0.65, 0.55))):
       c.update(FakeSM(name))
-      c.apply_brake_response(mpc, sd.personality)
-      assert (mpc.jerk_scale, mpc.lead_tau_scale) == (0.6, 0.5)
+      c.apply_brake_response(mpc)
+      assert (mpc.jerk_scale, mpc.lead_tau_scale) == want
 
   def test_never_above_toyota_accel_max(self):
     for prof in MAX_ACCEL_PROFILES.values():

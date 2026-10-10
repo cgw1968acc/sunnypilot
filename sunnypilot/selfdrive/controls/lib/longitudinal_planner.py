@@ -35,7 +35,7 @@ class LongitudinalPlannerSP:
   def update(self, sm: messaging.SubMaster) -> None:
     self.dec.update(sm)
     self.accel_personality.update(sm)
-    self.accel_personality.apply_brake_response(self._mpc, sm['selfdriveState'].personality)
+    self.accel_personality.apply_brake_response(self._mpc)
 
   def publish_longitudinal_plan_sp(self, sm: messaging.SubMaster, pm: messaging.PubMaster) -> None:
     plan_sp_send = messaging.new_message('longitudinalPlanSP')
