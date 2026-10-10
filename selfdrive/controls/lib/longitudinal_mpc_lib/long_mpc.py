@@ -224,6 +224,8 @@ def gen_long_ocp():
 class LongitudinalMpc:
   def __init__(self, mode='acc', dt=DT_MDL):
     self.cruise_max_accel = CRUISE_MAX_ACCEL  # sunnypilot: raised by the accel personality (planner)
+    self.jerk_scale = 1.0  # sunnypilot: accel personality brake response (planner)
+    self.lead_tau_scale = 1.0  # sunnypilot: accel personality brake response (planner)
     self.mode = mode
     self.dt = dt
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
@@ -276,7 +278,7 @@ class LongitudinalMpc:
       self.solver.cost_set(i, 'Zl', Zl)
 
   def set_weights(self, prev_accel_constraint=True, personality=log.LongitudinalPersonality.standard):
-    jerk_factor = get_jerk_factor(personality)
+    jerk_factor = get_jerk_factor(personality) * self.jerk_scale  # sunnypilot hook: accel personality
     if self.mode == 'acc':
       a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
       cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST, jerk_factor * a_change_cost, jerk_factor * J_EGO_COST]
@@ -311,7 +313,7 @@ class LongitudinalMpc:
       x_lead = lead.dRel
       v_lead = lead.vLead
       a_lead = lead.aLeadK
-      a_lead_tau = lead.aLeadTau
+      a_lead_tau = lead.aLeadTau * self.lead_tau_scale  # sunnypilot hook: accel personality
     else:
       # Fake a fast lead car, so mpc can keep running in the same mode
       x_lead = 50.0
