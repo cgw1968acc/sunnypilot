@@ -142,4 +142,11 @@ class CarControlSP:
 
 @auto_dataclass
 class CarStateSP:
-  pass
+  accelPersonality: 'CarStateSP.AccelerationPersonality' = field(
+    default_factory=lambda: CarStateSP.AccelerationPersonality.normal
+  )
+
+  class AccelerationPersonality(StrEnum):
+    sport = auto()
+    normal = auto()
+    eco = auto()

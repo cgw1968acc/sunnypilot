@@ -262,6 +262,13 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 }
 
 struct CarStateSP @0xb86e6369214c01c8 {
+  accelPersonality @0 :AccelerationPersonality;  # TN: from the car's drive mode switch (Toyota GEAR_PACKET)
+
+  enum AccelerationPersonality {
+    sport @0;
+    normal @1;
+    eco @2;
+  }
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {

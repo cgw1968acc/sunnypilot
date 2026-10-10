@@ -7,6 +7,7 @@ from opendbc.car.common.filter_simple import FirstOrderFilter
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.toyota.values import ToyotaFlags, CAR, DBC, STEER_THRESHOLD, NO_STOP_TIMER_CAR, \
                                                   TSS2_CAR, RADAR_ACC_CAR, EPS_SCALE, UNSUPPORTED_DSU_CAR
+from opendbc.sunnypilot.car.toyota.drive_mode import get_drive_mode
 
 ButtonType = structs.CarState.ButtonEvent.Type
 SteerControlType = structs.CarParams.SteerControlType
@@ -198,6 +199,9 @@ class CarState(CarStateBase):
 
         buttonEvents += create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
     ret.buttonEvents = buttonEvents
+
+    if not self.CP.flags & ToyotaFlags.SECOC.value:
+      ret_sp.accelPersonality = get_drive_mode(self.CP, cp)  # sunnypilot hook: drive mode switch -> accel personality
 
     return ret, ret_sp
 
