@@ -111,8 +111,8 @@ class StoppingController:
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
   END_HI = -0.65  # m/s^2 at END_V_HI (~1200 N); -0.60 -> -0.65 2026-10-08, see END_CURVE_A
-  END_LO = -0.35  # m/s^2 at 0-1 km/h; driver 2026-10-04: -0.30 "closer to perfect", -0.25 the threshold; 2026-10-06 back to -0.30;
-  # 2026-10-10 -0.30 -> -0.40 -> -0.35 (stops at 21:09 / 21:58 ended too close to the lead), see END_CURVE_A
+  END_LO = -0.30  # m/s^2 at 0 km/h (since 2026-10-10 late; was 0-1 km/h); driver 2026-10-04: -0.30 "closer to perfect", -0.25 the threshold; 2026-10-06 back to -0.30;
+  # 2026-10-10 -0.30 -> -0.40 -> -0.35 -> -0.30 at 0 km/h only (stops at 21:09 / 21:58 ended too close to the lead), see END_CURVE_A
   # Driver 2026-10-04 (route 000000f2): "between 5 and 0 km/h not linear but parabolic: steeper from 5 to 2, flat from
   # 2 to 0" -> x^2 parabola -0.50/-0.41/-0.34/-0.29/-0.26/-0.25 ("closer to perfect"). An S-shaped table
   # (-0.50/-0.47/-0.40/-0.29/-0.25/-0.24) was "not better" and reverted. Then the driver gave his own points, close to
@@ -136,7 +136,10 @@ class StoppingController:
   # the car re-roll), so the last metre was close to a coast. 2 km/h -0.48 -> -0.56, 1-0 km/h -0.30 -> -0.40 (~960 N);
   # 3-5 km/h unchanged. Was -0.30/-0.30/-0.48/-0.60/-0.65/-0.65. Driver, same night: "1-0 can be a little lighter"
   # -> END_LO -0.40 -> -0.35 (~900 N), 2 km/h stays -0.56.
-  END_CURVE_A = [END_LO, END_LO, -0.56, -0.60, -0.65, END_HI]  # m/s^2
+  # Driver, later the same night (after the stop-gap governor 97ec2dc1df, which now stops a creep-in): "2 km/h still
+  # needs -0.56, then down to -0.30 at 0 km/h, interpolated in between" -> 1 km/h -0.43 (the straight line), 0 km/h
+  # -0.30. Was -0.35/-0.35/-0.56 at 0/1/2 km/h.
+  END_CURVE_A = [END_LO, (END_LO + -0.56) / 2, -0.56, -0.60, -0.65, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
