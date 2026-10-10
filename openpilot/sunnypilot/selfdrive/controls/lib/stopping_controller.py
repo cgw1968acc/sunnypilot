@@ -110,7 +110,8 @@ class StoppingController:
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
   END_HI = -0.65  # m/s^2 at END_V_HI (~1200 N); -0.60 -> -0.65 2026-10-08, see END_CURVE_A
-  END_LO = -0.30  # m/s^2 at 0-1 km/h; driver 2026-10-04: -0.30 "closer to perfect", -0.25 the threshold; 2026-10-06 back to -0.30
+  END_LO = -0.40  # m/s^2 at 0-1 km/h; driver 2026-10-04: -0.30 "closer to perfect", -0.25 the threshold; 2026-10-06 back to -0.30;
+  # 2026-10-10 -0.30 -> -0.40 (stops at 21:09 / 21:58 ended too close to the lead), see END_CURVE_A
   # Driver 2026-10-04 (route 000000f2): "between 5 and 0 km/h not linear but parabolic: steeper from 5 to 2, flat from
   # 2 to 0" -> x^2 parabola -0.50/-0.41/-0.34/-0.29/-0.26/-0.25 ("closer to perfect"). An S-shaped table
   # (-0.50/-0.47/-0.40/-0.29/-0.25/-0.24) was "not better" and reverted. Then the driver gave his own points, close to
@@ -129,7 +130,11 @@ class StoppingController:
   # delivered -0.44 / -0.55 / -0.49 / -0.45 at 5-4 / 4-3 / 3-2 / 2-1 km/h (BRAKE 0xA6 870-1010 N) against ~-0.7 / -0.7 /
   # -0.6 before. Driver chose the table 5 km/h -0.65, 4 -0.65, 3 -0.60, 2 -0.48, 1-0 -0.30 unchanged (expected delivered
   # ~-0.61 / -0.55 / -0.48 at 4-3 / 3-2 / 2-1 km/h). Was -0.60/-0.58/-0.53/-0.43/-0.30/-0.30.
-  END_CURVE_A = [END_LO, END_LO, -0.48, -0.60, -0.65, END_HI]  # m/s^2
+  # Driver 2026-10-10 (on the road, 21:09 and 21:58: the car stopped too close, nearly touching the lead): "make the
+  # end, 2-0 km/h, firmer now, analyse later". -0.30 (~840 N) is about the hybrid's creep torque (B below: 640 N let
+  # the car re-roll), so the last metre was close to a coast. 2 km/h -0.48 -> -0.56, 1-0 km/h -0.30 -> -0.40 (~960 N);
+  # 3-5 km/h unchanged. Was -0.30/-0.30/-0.48/-0.60/-0.65/-0.65.
+  END_CURVE_A = [END_LO, END_LO, -0.56, -0.60, -0.65, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
