@@ -171,6 +171,13 @@ LANE_TRIM_RELEASE_OFFSET = 0.15  # m; inside this band the trim is released ...
 LANE_TRIM_RELEASE_DECAY = 0.15   # m/s^2 per s; ... at this rate
 LANE_TRIM_FLIP_CURV = 1.0e-3     # 1/m; the curve direction has flipped when the desired curvature is this far the other way
 LANE_TRIM_FLIP_DECAY = 0.30      # m/s^2 per s; a trim built in a left curve is bled off quickly in the following right curve
+# Curve exit (Altis owner 2026-10-10, route 0000011f 22:10:25-55 at 65 km/h): a left curve (R 120 m) built the trim to
+# its cap while the car cut 0.5-0.9 m inside; at the exit the trim was still +0.0005 1/m (pushing right) until the next,
+# right curve flipped the direction 2.5 s later, and the car ran +1.0 m right (inside) in that right curve. Owner: "after
+# a curve the car should be back in the middle at once". Now a trim built in a curve is bled off at FLIP_DECAY as soon
+# as the desired curvature falls below LANE_TRIM_EXIT_FRAC of the curve's peak (same direction): on 22:10 that starts at
+# 22:10:43.6 instead of 22:10:46.1.
+LANE_TRIM_EXIT_FRAC = 0.5
 LANE_TRIM_MAX_LAT_ACCEL = 0.25   # m/s^2; ~12% of the curve's own lateral accel at 50 km/h in a 70 m curve
 LANE_TRIM_HOLD_TIME = 3.0        # s; lines lost: hold the trim this long (the outer line flickers in these curves) ...
 LANE_TRIM_DECAY = 0.10           # m/s^2 per s; ... then bleed it off
@@ -187,6 +194,7 @@ class LaneTrimLowSpeed:
     self.correction = 0.0
     self.engage_t = 0.0
     self.engage_curv = 0.0  # desired curvature when the trim started building (to notice a curve-direction flip)
+    self.curve_peak = 0.0  # largest desired curvature in the trim's curve direction since it started building
     self.lost_t = 0.0
     self.valid = False
 
@@ -196,8 +204,13 @@ class LaneTrimLowSpeed:
     meas = self.centering.last_meas if usable else None
     self.valid = meas is not None
 
-    if self.lat_accel != 0.0 and self.engage_curv * desired_curvature < 0.0 and abs(desired_curvature) > LANE_TRIM_FLIP_CURV:
-      # the curve has changed direction since the trim was built: it is stale, bleed it off fast
+    if self.lat_accel != 0.0 and self.engage_curv * desired_curvature > 0.0:
+      self.curve_peak = max(self.curve_peak, abs(desired_curvature))
+    curve_exit = (self.lat_accel != 0.0 and self.curve_peak > LANE_TRIM_FLIP_CURV and
+                  self.engage_curv * desired_curvature >= 0.0 and abs(desired_curvature) < LANE_TRIM_EXIT_FRAC * self.curve_peak)
+    flipped = self.lat_accel != 0.0 and self.engage_curv * desired_curvature < 0.0 and abs(desired_curvature) > LANE_TRIM_FLIP_CURV
+    if flipped or curve_exit:
+      # the curve has ended or changed direction since the trim was built: it is stale, bleed it off fast
       self.lat_accel = float(np.clip(0.0, self.lat_accel - LANE_TRIM_FLIP_DECAY * self.dt, self.lat_accel + LANE_TRIM_FLIP_DECAY * self.dt))
       self.engage_t = 0.0
       if self.lat_accel == 0.0:
@@ -229,6 +242,7 @@ class LaneTrimLowSpeed:
       self.lat_accel = float(np.clip(0.0, self.lat_accel - decay * self.dt, self.lat_accel + decay * self.dt))
     if self.lat_accel == 0.0:
       self.engage_curv = 0.0
+      self.curve_peak = 0.0
 
     v2 = max(v_ego, LANE_TRIM_MIN_SPEED) ** 2
     target = self.lat_accel / v2 * float(np.interp(v_ego, LANE_TRIM_FADE_BP, LANE_TRIM_FADE_V))
