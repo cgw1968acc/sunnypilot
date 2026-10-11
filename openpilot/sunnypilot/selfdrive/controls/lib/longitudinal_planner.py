@@ -24,7 +24,6 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 from openpilot.sunnypilot.models.helpers import get_active_bundle
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedRamp
-from openpilot.sunnypilot.selfdrive.controls.lib.stop_law import StopLaw
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
@@ -85,7 +84,6 @@ class LongitudinalPlannerSP:
     self.params = Params()
     self._sp_dt = mpc.dt
     self.lead_start_assist = LeadStartAssist(mpc.dt)
-    self.stop_law = StopLaw(mpc.dt)
     self._sp_v_cruise_prev = 0.0
     self._sp_t_set_speed_up = SET_SPEED_INTENT_T  # s since the last set-speed increase
     self.set_speed_ramp = SetSpeedRamp()
@@ -264,7 +262,6 @@ class LongitudinalPlannerSP:
 
   def reset_sp(self) -> None:
     self.lead_start_assist.reset()
-    self.stop_law.reset()
 
   def max_accel_sp(self, max_accel_override: float | None, sm: messaging.SubMaster) -> float | None:
     """uphill scaling of the accel profile ceiling"""
@@ -294,17 +291,11 @@ class LongitudinalPlannerSP:
 
   def lead_start_sp(self, output_a_target: float, output_should_stop: bool, sm: messaging.SubMaster, v_ego: float,
                     long_control_off: bool, force_decel: bool, is_e2e: bool, output_should_stop_e2e: bool) -> tuple[float, bool]:
-    """Stop law (stop_law.py): while the lead is stopping, the stop is braked by the owner's soft-build / soft-end law
-    instead of the MPC. Lead start assist: when stopped behind a lead that starts to move, put a floor under the target
-    right away instead of waiting for the lead MPC to close the gap. Never while the driver or e2e is asking for a stop."""
+    """Lead start assist: when stopped behind a lead that starts to move, put a floor under the target right away
+    instead of waiting for the lead MPC to close the gap. Never while the driver or e2e is asking for a stop."""
     lead_one = sm['radarState'].leadOne
     long_allowed = (not long_control_off and not force_decel and not sm['carState'].brakePressed and
                     not sm['carState'].gasPressed)
-    a_law = self.stop_law.update(long_allowed and not self.fcw and not is_e2e, v_ego, sm['carState'].standstill,
-                                 lead_one.present, lead_one.dRel, lead_one.vLeadK, lead_one.aLeadK, output_a_target,
-                                 self.output_a_target)
-    if a_law is not None:
-      output_a_target = a_law
     assist_allowed = long_allowed and not (is_e2e and output_should_stop_e2e)
     a_start = self.lead_start_assist.update(assist_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, lead_one.vRel)
     if a_start is not None and a_start > output_a_target:
