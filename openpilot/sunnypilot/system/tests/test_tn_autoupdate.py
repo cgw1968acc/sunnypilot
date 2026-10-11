@@ -100,3 +100,11 @@ def test_reason_changes_are_logged_once_each():
   u.log_reason = lambda r, _l=logged, _u=u: (_l.append(r) if r != _u.reason else None, setattr(_u, 'reason', r))
   u.step(1.0, False, "gear park"); u.step(1.0, False, "gear park"); u.step(1.0, True); u.step(1.0, True)
   assert logged == ["gear park", "up to date"]
+
+
+def test_follows_the_checked_out_branch_not_the_target_param(monkeypatch):
+  # owner 2026-10-11: switched to tnpb2 by hand, UpdaterTargetBranch still said tnpb3
+  monkeypatch.setattr(M, "git", lambda *a, **k: "tnpb2")
+  assert M.DriveGearUpdater(FakeParams()).branch() == "tnpb2"
+  monkeypatch.setattr(M, "git", lambda *a, **k: "HEAD")  # detached: fall back to the param
+  assert M.DriveGearUpdater(FakeParams()).branch() == "tnpb3"
