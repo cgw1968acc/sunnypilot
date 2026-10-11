@@ -298,7 +298,8 @@ class LongitudinalPlannerSP:
     long_allowed = (not long_control_off and not force_decel and not sm['carState'].brakePressed and
                     not sm['carState'].gasPressed)
     assist_allowed = long_allowed and not (is_e2e and output_should_stop_e2e)
-    a_start = self.lead_start_assist.update(assist_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, lead_one.vRel)
+    a_start = self.lead_start_assist.update(assist_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, lead_one.vRel,
+                                            lead_one.vLeadK)
     if a_start is not None and a_start > output_a_target:
       return a_start, False
     return output_a_target, output_should_stop

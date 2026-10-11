@@ -55,10 +55,18 @@ class LeadStartAssist:
   def active(self) -> bool:
     return self.t_active is not None
 
-  def update(self, allowed: bool, v_ego: float, lead_present: bool, d_rel: float, v_lead: float, v_rel: float) -> float | None:
+  def update(self, allowed: bool, v_ego: float, lead_present: bool, d_rel: float, v_lead: float, v_rel: float,
+             v_lead_k: float | None = None) -> float | None:
     """Returns the acceleration floor to apply this cycle, or None when the assist has nothing to say.
 
     v_rel follows radarState: positive when the lead is faster than ego."""
+    # Owner 2026-10-11 (route 00000126 09:04:00.9): stopped 3.9 m behind a STILL lead, the raw radar lead speed read
+    # +0.25..+0.30 m/s for 0.3 s (gap unchanged, 3.85 m), the assist fired and released the brake, and the car moved
+    # ~0.7 m toward the lead. The Kalman-filtered speed only touched 0.25 for one frame. A departure now needs both
+    # the raw and the filtered lead speed: replayed on 6 routes (124, 126, 11c, 11e, 11f, 119) every one of the 20
+    # real departures still fires (0.17 s later on average, 0.40 s at most) and the 09:04:00.9 push is gone.
+    if v_lead_k is not None:
+      v_lead = min(v_lead, v_lead_k)
     lead_jumped = self.d_prev is not None and self.d_prev - d_rel > LEAD_JUMP
     if not allowed or not lead_present or not (LEAD_D_MIN <= d_rel <= LEAD_D_MAX) or lead_jumped:
       self.reset()
