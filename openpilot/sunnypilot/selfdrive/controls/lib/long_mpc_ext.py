@@ -4,8 +4,11 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import platform
+
 import numpy as np
 from openpilot.cereal import log
+from openpilot.sunnypilot.selfdrive.controls.lib.night_gap import NightGap
 
 
 # SP (Altis, driver 2026-10-03): the MPC wants v^2/(2*COMFORT_BRAKE) + T_FOLLOW*v + STOP_DISTANCE in front of it at
@@ -80,6 +83,16 @@ class LongMpcObstacleExt:
     """called by stock LongitudinalMpc.set_weights: the relaxed jerk factor (RELAXED_JERK_FACTOR)"""
     return RELAXED_JERK_FACTOR if personality == log.LongitudinalPersonality.relaxed else stock_factor
 
+  def __init__(self):
+    mem_params = None
+    try:
+      from openpilot.common.params import Params
+      mem_params = Params("/dev/shm/params") if platform.system() != "Darwin" else None
+    except Exception:
+      pass
+    self.night_gap = NightGap(mem_params)  # +5 m from 80 km/h at night, see night_gap.py
+
   def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan):
     x_obstacles = x_obstacles + np.column_stack([get_light_onset_margin(lead_xv_0[:, 1]), get_light_onset_margin(lead_xv_1[:, 1])])
-    return x_obstacles + get_desired_dist_trim(v_plan)[:, None]
+    self.night_gap.update()
+    return x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan))[:, None]
