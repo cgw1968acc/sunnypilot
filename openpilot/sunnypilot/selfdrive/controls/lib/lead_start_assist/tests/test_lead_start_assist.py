@@ -134,3 +134,17 @@ class TestLeadStartAssist(unittest.TestCase):
 
 if __name__ == "__main__":
   unittest.main()
+
+
+def test_radar_speed_spike_on_a_still_lead_does_not_launch_when_the_filtered_speed_stays_low():
+  """route 00000126 09:04:00.9: raw vLead +0.25..+0.30 for 0.3 s, vLeadK below 0.25, gap unchanged"""
+  a = LeadStartAssist(0.05)
+  for _ in range(10):
+    assert a.update(True, 0.0, True, 3.85, 0.0, 0.0, 0.0) is None
+  for k in range(8):
+    assert a.update(True, 0.0, True, 3.85, 0.28, 0.28, 0.10 + 0.015 * k) is None
+  # a real departure: both speeds up
+  out = None
+  for _ in range(8):
+    out = a.update(True, 0.0, True, 3.95, 0.6, 0.6, 0.4) or out
+  assert out is not None
