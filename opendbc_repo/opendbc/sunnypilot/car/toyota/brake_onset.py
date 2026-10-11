@@ -21,11 +21,25 @@ ONSET_T_BP = [0.0, 0.15, 0.6]  # s
 # 80 km/h, which stays as it was. The planner's light-onset margin (long_mpc) supplies the extra distance.
 # Driver 2026-10-05, same drive: "at 40-50 km/h the build from light to firm is still not smooth, a bit abrupt" -> the
 # jerk the onset ramps UP TO is also scheduled: 2.0 m/s^3 up to 60 km/h (was the stock 4.0 from 0.9 s on), stock at 80.
-ONSET_V_BP = [16.7, 22.2]  # m/s (60, 80 km/h)
-ONSET_T1_V = [0.3, 0.1]
-ONSET_T3_V = [0.9, 0.4]
-ONSET_J1_V = [0.3, 1.0]  # m/s^3 during the first phase
-ONSET_J3_V = [2.0, 4.0]  # m/s^3 the ramp ends at (the shaper never exceeds the stock limit)
+# Owner 2026-10-11 (route 00000127 10:18:58, 65 km/h, a 33 km/h car seen 73 m ahead): "the first brake should come in as
+# smoothly as the coast does, then build" - option D. There the plan went -0.3 -> -1.08 in 1 s, the car sat at -0.34
+# while the command waited for the friction, then went -0.34 -> -1.30 in 0.5 s (~1.9 m/s^3) and on to -2.07 against a
+# -1.77 request. From 45 to 75 km/h the onset is now 0.6 m/s^3 (a coast-like build) for 0.5 s, then up to 2.0 m/s^3 by
+# 1.0 s (-0.3 -> -1.7 in ~1.2 s), on the command (below) and on what the car delivers (COAST_LIKE_*). Below 40 km/h
+# and from 80 km/h it is as before (60 km/h was 0.3 m/s^3 for 0.3 s, 2.0 by 0.9 s).
+ONSET_V_BP = [40.0 / 3.6, 45.0 / 3.6, 75.0 / 3.6, 80.0 / 3.6]  # m/s
+ONSET_T1_V = [0.3, 0.5, 0.5, 0.1]
+ONSET_T3_V = [0.9, 1.0, 1.0, 0.4]
+ONSET_J1_V = [0.3, 0.6, 0.6, 1.0]  # m/s^3 during the first phase
+ONSET_J3_V = [2.0, 2.0, 2.0, 4.0]  # m/s^3 the ramp ends at (the shaper never exceeds the stock limit)
+# Delivered side of option D: in the first COAST_LIKE_T_MAX of a brake onset the command holds still whenever the car is
+# already decelerating more than the D profile allows from where the brake started (the PCM's late catch-up / the
+# friction biting), so the delivered build stays near 0.6 -> 2.0 m/s^3 instead of jumping.
+COAST_LIKE_V = (45.0 / 3.6, 75.0 / 3.6)  # m/s
+COAST_LIKE_T_BP = [0.0, 0.5, 1.0]  # s since the onset started
+COAST_LIKE_J_V = [0.6, 0.6, 2.0]  # m/s^3 allowed delivered build
+COAST_LIKE_MARGIN = 0.05  # m/s^2
+COAST_LIKE_T_MAX = 1.5  # s
 ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3 (reference shape; the first two entries follow ONSET_J1_V)
 # Engaging ACC (SET-) while creeping up to a lead (driver 2026-10-04: "the car used to brake hard the moment I press
 # SET-; the first ~0.2 s must be a light touch, then blend into the decel the speed needs"). Route 000000ee 11:48:07:
@@ -82,12 +96,34 @@ class BrakeOnsetShaper:
     self.t_entry = 0.0      # time spent limited by the friction entry in this brake
     self.catchup = False    # after an entry: close the gap gently
     self.friction_in = False
+    self.cl_t: float | None = None  # time since the coast-like onset started, None = not in one
+    self.cl_a0 = 0.0
+    self.cl_allow = 0.0
 
   def reset(self) -> None:
     self.t_onset = 0.0
     self.t_entry = 0.0
     self.catchup = False
     self.friction_in = False
+    self.cl_t = None
+
+  def coast_like_hold(self, accel_request: float, prev_accel: float, v_ego: float, a_ego: float | None) -> bool:
+    """True = do not move the command further down this step (the car is ahead of the D profile)"""
+    building = accel_request < prev_accel - ONSET_J_DOWN[0] * self.dt
+    if a_ego is None or not (COAST_LIKE_V[0] <= v_ego <= COAST_LIKE_V[1]):
+      self.cl_t = None
+      return False
+    if self.cl_t is None:
+      if not building or self.t_onset > 0.0:
+        return False
+      self.cl_t, self.cl_a0 = 0.0, min(a_ego, 0.0)
+      self.cl_allow = self.cl_a0
+    if not building or self.cl_t >= COAST_LIKE_T_MAX:
+      self.cl_t = None if not building else self.cl_t
+      return False
+    self.cl_allow -= float(np.interp(self.cl_t, COAST_LIKE_T_BP, COAST_LIKE_J_V)) * self.dt
+    self.cl_t += self.dt
+    return a_ego < self.cl_allow - COAST_LIKE_MARGIN
 
   def friction_entry_step(self, accel_request: float, prev_accel: float, v_ego: float, a_ego: float | None,
                           brake_force: float) -> float | None:
@@ -129,7 +165,10 @@ class BrakeOnsetShaper:
       self.t_entry, self.catchup = 0.0, False
       return -self.stock_down_jerk * self.dt
     entry = None if urgent else self.friction_entry_step(accel_request, prev_accel, v_ego, a_ego, brake_force)
+    hold = not urgent and self.coast_like_hold(accel_request, prev_accel, v_ego, a_ego)
     step = self._down_step(accel_request, prev_accel, v_ego, urgent, t_engaged)
+    if hold:
+      return 0.0
     return step if entry is None else -min(-step, entry)
 
   def _down_step(self, accel_request: float, prev_accel: float, v_ego: float, urgent: bool,
