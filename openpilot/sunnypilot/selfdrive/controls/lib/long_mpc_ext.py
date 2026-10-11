@@ -35,8 +35,12 @@ from openpilot.cereal import log
 # ~-4 m/s^3; the onset feel is the friction-entry limiter's job. Applies to every personality.
 # Owner 2026-10-10: "+4 m -> +3 m, let's try" -> +5 m from 40 to 50 km/h (3 m more than before 10-09): gap before the
 # 09:23 event about 26.3 m, peak about -2.61 (between the replayed +2 m and +4 m rows).
-DESIRED_DIST_TRIM_BP = [15.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
-DESIRED_DIST_TRIM_V = [1.0, -5.0, -5.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+# Owner 2026-10-11 (routes 00000124/126: plan -1.76 / -1.67 at 20 km/h behind a stopping lead): "the brake at 20 km/h is
+# a touch heavy, lighten it by the smallest step" -> 0.5 m more at 20 km/h (trim -0.2 -> -0.7 m), fading back to the old
+# line by 40 km/h (+0.38 m at 25, +0.25 at 30) and to nothing at 15 km/h, so the final stop gap is untouched. Rough
+# estimate from the braking distance left at 20 km/h (~12 m): about 4% lighter (-1.76 -> ~-1.69).
+DESIRED_DIST_TRIM_BP = [15.0 / 3.6, 20.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
+DESIRED_DIST_TRIM_V = [1.0, -0.7, -5.0, -5.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
 # Driver 2026-10-04 night: "bring the soft brake at 40-45 km/h a little earlier, i.e. slightly more distance to the
 # lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
 # at 50, fading to 0 at 80 as before. Margin before the -1 m trim: +7.8 m at 35 km/h, +12.2 at 40, +13.8 at 45,
