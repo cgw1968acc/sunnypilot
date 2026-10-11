@@ -36,6 +36,7 @@ def test_urgent_and_no_measurement_are_not_limited():
 
 def test_entry_limit_ends_after_entry_t_max():
   sh = BrakeOnsetShaper(DT, 4.0)
+  sh.t_onset = 2.0  # past the onset schedule (since option E it holds the build below CATCHUP_J until 1.4 s)
   cmd = -0.9
   for _ in range(int(ENTRY_T_MAX / DT) + 5):
     cmd += sh.down_step(-2.0, cmd, v_ego=12.8, a_ego=-0.55, brake_force=0.0)
