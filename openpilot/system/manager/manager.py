@@ -53,6 +53,11 @@ def manager_init() -> None:
   if not PC:
     run_migration(params)
 
+  # tn: brake onset + stopping controller default ON; only when never set, so a user's choice survives reboots
+  for k in ("ToyotaBrakeOnset", "SunnypilotStoppingController"):
+    if params.get(k) is None:
+      params.put_bool(k, True, block=True)
+
   # set unset params to their default value
   for k in params.all_keys():
     default_value = params.get_default_value(k)
