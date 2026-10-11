@@ -398,6 +398,24 @@ HANDOVER_REQ_W = [0.0, 1.0]
 # 0.5 km/h for the ~0.3 s actuator lag), added to the hand-over extra, same request gate and rate.
 LOW_EXTRA_V_BP = [3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6, 6.5 / 3.6, 8.5 / 3.6]  # m/s
 LOW_EXTRA = [0.0, 0.15, 0.25, 0.25, 0.0]  # m/s^2
+# Owner 2026-10-11 (route 00000133 15:04:47, Aggressive, 48 km/h 27 m behind a lead that braked to a stop at -2.2):
+# "a short-distance hard stop is still not good enough - soft start, soft end". Delivered (aEgo) vs request in the
+# firm part of the hand-over band: 18-9 km/h asked -1.64..-1.35, delivered -1.38..-1.13 (BRAKE_FORCE stuck at 800-1000 N);
+# 15:21:31 18-15 km/h -1.48/-1.37, -1.30/-1.17; 15:22:44 12-7 km/h -1.63/-1.57 .. -0.92/-0.82. The extra above fades out
+# for requests firmer than -1.0 (0000010d once over-delivered there), so nothing filled it; the stop-gap governor then
+# found the gap short at 9 km/h and pushed to -1.8 down to the stop (aEgo -1.70 at 3 km/h, -1.24 at the wheel stop, 3.0 m
+# instead of 3.6) = a hard end. So a FIRM extra: the part of the request the moderate extra leaves out (1 - its request
+# weight), up to HANDOVER_EXTRA_MAX, only while the car is measurably short - the filtered shortfall (aEgo - request,
+# FIRM_TAU) gates it in between FIRM_GATE_BP - so the 0000010d case (over-delivering) gets nothing. Band 8-20 km/h, faded
+# out for requests past -2.2 (the overshoot limiter's territory) and not below 6 km/h, so the end stays on the end table.
+# Expected on 15:04:51-53: delivered about -1.4 instead of -1.2 from 18 to 9 km/h, ~1 m more room at 7 km/h, the end
+# about -0.95 instead of -1.8.
+FIRM_V_BP = [6.0 / 3.6, 8.0 / 3.6, 10.0 / 3.6, 17.0 / 3.6, 20.0 / 3.6]  # m/s
+FIRM_V_W = [0.0, 0.5, 1.0, 1.0, 0.0]
+FIRM_REQ_BP = [-2.5, -2.2]  # m/s^2: gone for an emergency-hard request
+FIRM_REQ_W = [0.0, 1.0]
+FIRM_TAU = 0.7  # s, shortfall filter (ignores the ~0.3 s actuator lag of a changing request)
+FIRM_GATE_BP = [0.08, 0.18]  # m/s^2 of filtered shortfall: none below, full above
 PID_HOLD_V = 9.0 / 3.6  # m/s
 PID_BLEED_NEG = 0.5  # m/s^2 per s: a braking integral fades this fast
 PID_BLEED_POS = 2.0  # m/s^2 per s: a gas integral (left from the launch) fades this fast
@@ -406,17 +424,28 @@ class BrakeHandoverFeedforward:
   def __init__(self, dt: float):
     self.dt = dt
     self.extra = 0.0
+    self.shortfall = 0.0
 
   def reset(self) -> None:
     self.extra = 0.0
+    self.shortfall = 0.0
 
-  def update(self, accel_request: float, v_ego: float, active: bool = True) -> float:
+  def update(self, accel_request: float, v_ego: float, active: bool = True, a_ego: float | None = None) -> float:
     """returns the extra braking (>= 0, m/s^2) to subtract from the command"""
     target = 0.0
+    if a_ego is not None and accel_request < 0.0:
+      alpha = self.dt / (FIRM_TAU + self.dt)
+      self.shortfall += alpha * ((a_ego - accel_request) - self.shortfall)
+    else:
+      self.shortfall = 0.0
     if active and accel_request < HANDOVER_MIN_REQUEST:
-      w = float(np.interp(v_ego, HANDOVER_V_BP, HANDOVER_V_W)) * float(np.interp(accel_request, HANDOVER_REQ_BP, HANDOVER_REQ_W))
+      w_req = float(np.interp(accel_request, HANDOVER_REQ_BP, HANDOVER_REQ_W))
+      w = float(np.interp(v_ego, HANDOVER_V_BP, HANDOVER_V_W)) * w_req
       target = w * min(HANDOVER_EXTRA_MAX, HANDOVER_EXTRA_FRAC * -accel_request)
-      target += float(np.interp(v_ego, LOW_EXTRA_V_BP, LOW_EXTRA)) * float(np.interp(accel_request, HANDOVER_REQ_BP, HANDOVER_REQ_W))
+      target += float(np.interp(v_ego, LOW_EXTRA_V_BP, LOW_EXTRA)) * w_req
+      w_firm = ((1.0 - w_req) * float(np.interp(v_ego, FIRM_V_BP, FIRM_V_W)) *
+                float(np.interp(accel_request, FIRM_REQ_BP, FIRM_REQ_W)) * float(np.interp(self.shortfall, FIRM_GATE_BP, [0.0, 1.0])))
+      target += w_firm * HANDOVER_EXTRA_MAX
     step = HANDOVER_RATE * self.dt
     self.extra = float(np.clip(target, self.extra - step, self.extra + step))
     return self.extra
@@ -452,7 +481,7 @@ class BrakeCommandCorrections:
                           moderate_allowed=relaxed)
     accel_cmd = self.overshoot.apply(accel_cmd)
     # feed-forward the braking the car does not deliver in the low-speed regen hand-over
-    self.handover.update(accel_request, v_ego, active=not fcw)
+    self.handover.update(accel_request, v_ego, active=not fcw, a_ego=a_ego)
     return self.handover.apply(accel_cmd)
 
   def condition_pid(self, pid, accel_request: float, v_ego: float) -> bool:
