@@ -11,7 +11,7 @@ reboot) so openpilot is back quickly.
 
 The stock updater only runs offroad and installs at the next boot, and the C3X rarely reboots, so the owner has been
 updating by hand over SSH (fetch + reset --hard + restart). This process does the same thing on its own:
-  - every FETCH_PERIOD it fetches the target branch (UpdaterTargetBranch, else the checked-out branch) from origin, and
+  - every FETCH_PERIOD it fetches the checked-out branch (UpdaterTargetBranch only on a detached HEAD) from origin, and
     right away (then every DRIVE_FETCH_PERIOD) once the car is in D with MAIN ACC off - owner: "after MAIN ACC goes
     off, update within 30 s, not after 5 minutes";
   - when the fetched commit differs from HEAD, the working tree is clean, and the car has been in D with MAIN ACC off and
@@ -87,7 +87,10 @@ class DriveGearUpdater:
     self.reason = ""
 
   def branch(self) -> str:
-    return self.params.get("UpdaterTargetBranch") or git("rev-parse", "--abbrev-ref", "HEAD")
+    # the branch the device is running, not UpdaterTargetBranch: owner 2026-10-11 switched tnpb3 -> tnpb2 by hand with the
+    # param still naming tnpb3, and following the param would have installed tnpb3 again on the next drive
+    head = git("rev-parse", "--abbrev-ref", "HEAD")
+    return head if head and head != "HEAD" else (self.params.get("UpdaterTargetBranch") or head)
 
   def fetch(self) -> None:
     try:
