@@ -136,6 +136,13 @@ class StoppingController:
   END_CURVE_A = [END_LO, (END_LO + -0.56) / 2, -0.56, -0.60, -0.65, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
+  # Without a lead (experimental mode stopping for a light / sign) the line is also a CEILING below END_V_HI. Owner
+  # 2026-10-12 (route 0000013a 00:07:34, experimental, red light, "not smooth enough"): the e2e plan held -1.05 down to
+  # 4 km/h and let go to -0.35 within ~1 s; the car over-delivered at 4-1 km/h (-1.19 / -0.92 for -1.10 / -0.59 sent)
+  # and stopped at -0.6..-0.7, a nod. Following the line instead from 5 km/h costs ~0.45 m of stopping distance (owner:
+  # accepted). The request is eased down to the line at END_CAP_RATE so the hand-over itself is not felt. With a lead
+  # the plan still wins whenever it is firmer.
+  END_CAP_RATE = 1.0  # m/s^3
 
   # Leaving the standstill hold (driver 2026-10-04, route 000000fa 14:43:32: "the brake release at launch is a jerk, as
   # if let go suddenly; make it linear and slow"). There the request went from the -2.0 hold (3960 N) to +0.7 in 0.5 s
@@ -216,8 +223,12 @@ class StoppingController:
       return float(np.interp(max(v_ego, 0.0), self.END_CURVE_V, self.END_CURVE_A))
     return float(np.interp(v_ego, [self.END_V_HI, self.BLEND_V], [self.END_HI, self.a_entry]))
 
-  def _end_request(self, a_target, prev_accel, v_ego):
-    target = min(a_target, self._blend(v_ego))  # the firmer of the plan and the line
+  def _end_request(self, a_target, prev_accel, v_ego, has_lead=True):
+    line = self._blend(v_ego)
+    target = min(a_target, line)  # the firmer of the plan and the line
+    if not has_lead and v_ego < self.END_V_HI and target < line:
+      # no lead: the line is also the ceiling here, reached gently
+      return float(min(line, prev_accel + self.END_CAP_RATE * DT_CTRL))
     step = self.END_RATE * DT_CTRL
     return float(np.clip(target, prev_accel - step, prev_accel + step))
 
@@ -291,7 +302,7 @@ class StoppingController:
       if cf_stop:
         return state, float(np.clip(self._cf_request(a_target, prev_accel), accel_limits[0], accel_limits[1]))
       if self.end_active:
-        return state, float(np.clip(self._end_request(a_target, prev_accel, CS.vEgo), accel_limits[0], accel_limits[1]))
+        return state, float(np.clip(self._end_request(a_target, prev_accel, CS.vEgo, has_lead), accel_limits[0], accel_limits[1]))
       # coming off the hold: linear, slow through the hand-over band (see RELEASE_*)
       if prev_state == LongCtrlState.stopping and state == LongCtrlState.pid and prev_accel < self.RELEASE_BAND_HI:
         self.releasing = True
@@ -313,7 +324,7 @@ class StoppingController:
         output_accel = self._cf_request(a_target, prev_accel)
       elif self.end_active:
         # still rolling inside the end window: the line (or the plan where it is firmer), never the eased-off curve
-        output_accel = self._end_request(a_target, prev_accel, CS.vEgo)
+        output_accel = self._end_request(a_target, prev_accel, CS.vEgo, has_lead)
 
       hold_delay = self.STANDSTILL_HOLD_DELAY_LEAD if has_lead else self.STANDSTILL_HOLD_DELAY_NO_LEAD
       if CS.standstill and not has_lead and self.engaged_t < self.ENGAGE_STANDSTILL_GRACE:
