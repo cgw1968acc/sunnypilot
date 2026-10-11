@@ -1,7 +1,7 @@
 import numpy as np
 
 from opendbc.car import rate_limit, DT_CTRL
-from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, ONSET_J_DOWN, HARD_BRAKE_ACCEL
+from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, ONSET_J_DOWN, HARD_BRAKE_ACCEL, GAS_RELEASE_J
 
 DT = DT_CTRL * 3
 STOCK_J = 4.0
@@ -34,14 +34,23 @@ class TestBrakeOnset:
     assert np.isclose(at(out, 1.5), -1.5, atol=1e-6)  # settled once the ramp reaches the stock limit
 
   def test_jerk_follows_the_schedule_and_never_exceeds_stock(self):
-    out = run([-1.9] * 60, a0=1.0)  # large step, still above the hard-brake bypass
-    jerks = np.diff(np.concatenate([[1.0], out])) / DT
+    out = run([-1.9] * 60, a0=0.0)  # large step from coasting, still above the hard-brake bypass
+    jerks = np.diff(np.concatenate([[0.0], out])) / DT
     assert jerks.min() >= -STOCK_J - 1e-6
     assert jerks[0] >= -ONSET_J_DOWN[0] - 1e-6
     assert jerks[int(0.09 / DT)] >= -ONSET_J_DOWN[1] - 1e-6
     # the blend is one straight ramp: jerk keeps growing monotonically until the stock limit
     ramp = -jerks[int(0.1 / DT):int(0.6 / DT)]
     assert np.all(np.diff(ramp) >= -1e-6)
+
+  def test_gas_is_released_at_gas_release_j_then_the_soft_onset_starts_from_zero(self):
+    # route 0000013a 00:01:44: accelerating at +0.85 when the plan turned to -1.0
+    out = run([-1.0] * 80, a0=0.85)
+    jerks = np.diff(np.concatenate([[0.85], out])) / DT
+    k0 = int(np.argmax(out <= 0.0))
+    assert np.allclose(jerks[:k0 - 1], -GAS_RELEASE_J, atol=1e-6)  # the gas goes at GAS_RELEASE_J ...
+    assert k0 * DT < 0.85 / GAS_RELEASE_J + 2 * DT                  # ... reaching zero in ~0.43 s
+    assert np.all(jerks[k0 + 1:k0 + 5] >= -ONSET_J_DOWN[0] - 1e-6)  # then the brake starts softly from zero
 
   def test_lead_switch_during_a_settled_brake_gets_the_same_soft_onset(self):
     reqs = [-0.6] * 70 + [-1.8] * 60  # long enough for the schedule to wind fully back before the switch
