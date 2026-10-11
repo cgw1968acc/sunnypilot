@@ -70,3 +70,22 @@ def test_flag_path_is_under_data():
   import inspect
   assert M.ENABLE_FLAG == "/data/tn_autoupdate_enabled"
   assert "os.path.isfile(ENABLE_FLAG)" in inspect.getsource(M)
+
+
+def test_main_off_in_d_fetches_at_once_and_installs_within_30_s():
+  class Fetching(Probe):
+    def __init__(self, params):
+      super().__init__(params, pending=False)
+      self.fetches = 0
+    def fetch(self):
+      self.fetches += 1
+      self._pending = True  # the remote has a new commit
+  u = Fetching(FakeParams())
+  u.next_fetch = float("inf")  # the 5 min timer is far away
+  for _ in range(5):
+    u.step(1.0, False)
+  assert u.fetches == 0
+  t = 0
+  while not u.installed and t < 30:
+    u.step(1.0, True); t += 1
+  assert u.fetches == 1 and u.installed == 1 and t <= M.HOLD_TIME + 1
