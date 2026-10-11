@@ -198,12 +198,18 @@ class TestCoastLikeOnset:
     _, steps = self._run(-1.7, self.V, a_ego_fn=lambda k, a: a - 0.5 if k >= 3 else a, n=20)
     assert np.all(steps[4:15] == 0.0)
 
-  def test_not_below_45_or_above_75_kph(self):
-    for v in (30.0 / 3.6, 100.0 / 3.6):
+  def test_not_below_25_or_above_75_kph(self):
+    for v in (20.0 / 3.6, 100.0 / 3.6):
       _, steps = self._run(-1.7, v, a_ego_fn=lambda k, a: a - 0.5, n=20)
       assert np.all(steps[1:] < 0.0)
 
-  def test_below_40_kph_schedule_unchanged(self):
-    t = BrakeOnsetShaper.schedule_t(30.0 / 3.6)
-    j = BrakeOnsetShaper.schedule_j(30.0 / 3.6)
+  def test_below_20_kph_schedule_unchanged(self):
+    t = BrakeOnsetShaper.schedule_t(15.0 / 3.6)
+    j = BrakeOnsetShaper.schedule_j(15.0 / 3.6)
     assert t == [0.0, 0.3, 0.9] and j == [0.3, 0.3, 2.0]
+
+  def test_band_reaches_down_to_25_kph(self):
+    assert BrakeOnsetShaper.schedule_t(30.0 / 3.6) == [0.0, 0.7, 1.4]
+    assert BrakeOnsetShaper.schedule_j(30.0 / 3.6) == [0.6, 0.6, 1.5]
+    out, _ = self._run(-1.7, 34.0 / 3.6)  # route 0000012c 11:35:33
+    assert abs(at(out, 0.66) - (-0.3 - 0.6 * 0.66)) < 0.03
