@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from opendbc.sunnypilot.car.toyota.brake_onset import (BrakeHandoverFeedforward, HANDOVER_EXTRA_MAX,
                                                        HANDOVER_EXTRA_FRAC, HANDOVER_RATE, PID_BLEED_NEG, PID_BLEED_POS,
-                                                       LOW_EXTRA)
+                                                       LOW_EXTRA, FIRM_TAU)
 
 DT = 0.03
 class TestHandoverFeedforward(unittest.TestCase):
@@ -39,6 +39,35 @@ class TestHandoverFeedforward(unittest.TestCase):
   def test_fades_out_for_a_firm_request(self):
     self.assertEqual(self.run_steady(-1.5, 12.0).extra, 0.0)   # 0000010d: at -1.46 the car delivered -1.72
     self.assertAlmostEqual(self.run_steady(-1.25, 12.0).extra, 0.5 * HANDOVER_EXTRA_MAX, places=6)
+
+  def run_firm(self, req, v_kph, a_ego, n=200):
+    c = BrakeHandoverFeedforward(DT)
+    for _ in range(n):
+      c.update(req, v_kph / 3.6, a_ego=a_ego)
+    return c
+
+  def test_firm_request_short_gets_the_extra(self):
+    # route 00000133 15:04:52: asked -1.55 at 14 km/h, the car gave -1.25
+    self.assertAlmostEqual(self.run_firm(-1.55, 14.0, -1.25).extra, HANDOVER_EXTRA_MAX, places=6)
+    # half-firm request: moderate part + firm part add up to the full extra
+    self.assertAlmostEqual(self.run_firm(-1.25, 12.0, -1.0).extra, HANDOVER_EXTRA_MAX, places=6)
+
+  def test_firm_request_on_target_or_over_gets_nothing(self):
+    self.assertEqual(self.run_firm(-1.5, 12.0, -1.72).extra, 0.0)  # 0000010d: over-delivered
+    self.assertEqual(self.run_firm(-1.5, 12.0, -1.43).extra, 0.0)  # inside the gate's dead zone
+
+  def test_firm_extra_band(self):
+    self.assertEqual(self.run_firm(-1.6, 5.0, -1.2).extra, 0.0)    # the end of the stop stays on the end table
+    self.assertEqual(self.run_firm(-1.6, 22.0, -1.2).extra, 0.0)
+    self.assertEqual(self.run_firm(-2.6, 12.0, -2.0).extra, 0.0)   # emergency-hard: left to the planner
+    self.assertAlmostEqual(self.run_firm(-1.6, 18.5, -1.2).extra, 0.5 * HANDOVER_EXTRA_MAX, places=6)
+
+  def test_firm_gate_ignores_a_short_lag(self):
+    # a request that just stepped firmer: the ~0.3 s actuator lag barely opens the gate
+    c = BrakeHandoverFeedforward(DT)
+    for _ in range(int(0.3 / DT)):
+      c.update(-1.6, 12 / 3.6, a_ego=-1.3)
+    self.assertLess(c.extra, 0.06)
 
   def test_gradual(self):
     c = BrakeHandoverFeedforward(DT)
