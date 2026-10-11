@@ -172,8 +172,8 @@ class TestResumeSoftStart:
 
 
 class TestCoastLikeOnset:
-  """owner 2026-10-11, option D (route 00000127 10:18:58, 65 km/h): the brake comes in like the coast, 0.6 m/s^3 for
-  0.5 s, then builds to 2.0 m/s^3 by 1.0 s - on the command and on what the car delivers"""
+  """owner 2026-10-11, option D then E (route 00000127 10:18:58, 65 km/h): the brake comes in like the coast, 0.6 m/s^3
+  for 0.7 s, then builds to 1.5 m/s^3 by 1.4 s - on the command and on what the car delivers"""
   V = 60.0 / 3.6
 
   def _run(self, req, v, a_ego_fn=None, n=60):
@@ -187,11 +187,11 @@ class TestCoastLikeOnset:
       out.append(a)
     return np.array(out), np.array(steps)
 
-  def test_command_builds_at_0_6_then_reaches_1_7_in_about_1_2_s(self):
+  def test_command_builds_at_0_6_then_reaches_1_7_in_about_1_6_s(self):
     out, _ = self._run(-1.7, self.V)
-    assert abs(at(out, 0.48) - (-0.3 - 0.6 * 0.48)) < 0.03
+    assert abs(at(out, 0.66) - (-0.3 - 0.6 * 0.66)) < 0.03
     t_reach = (np.argmax(out <= -1.7 + 1e-6) + 1) * DT
-    assert 1.1 <= t_reach <= 1.45
+    assert 1.45 <= t_reach <= 1.85
 
   def test_holds_while_the_car_is_ahead_of_the_profile(self):
     # the car already decelerates 0.5 m/s^2 more than commanded (friction biting): the command waits

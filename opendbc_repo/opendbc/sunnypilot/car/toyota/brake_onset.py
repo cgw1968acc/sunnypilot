@@ -27,19 +27,21 @@ ONSET_T_BP = [0.0, 0.15, 0.6]  # s
 # -1.77 request. From 45 to 75 km/h the onset is now 0.6 m/s^3 (a coast-like build) for 0.5 s, then up to 2.0 m/s^3 by
 # 1.0 s (-0.3 -> -1.7 in ~1.2 s), on the command (below) and on what the car delivers (COAST_LIKE_*). Below 40 km/h
 # and from 80 km/h it is as before (60 km/h was 0.3 m/s^3 for 0.3 s, 2.0 by 0.9 s).
+# Owner, same day after driving D: "change D to E, see if it is smoother" -> E: 0.6 m/s^3 for 0.7 s, then up to 1.5 m/s^3
+# by 1.4 s (-0.3 -> -1.7 in ~1.6 s, about +2.8 m at 65 km/h; the planner start is unchanged).
 ONSET_V_BP = [40.0 / 3.6, 45.0 / 3.6, 75.0 / 3.6, 80.0 / 3.6]  # m/s
-ONSET_T1_V = [0.3, 0.5, 0.5, 0.1]
-ONSET_T3_V = [0.9, 1.0, 1.0, 0.4]
+ONSET_T1_V = [0.3, 0.7, 0.7, 0.1]
+ONSET_T3_V = [0.9, 1.4, 1.4, 0.4]
 ONSET_J1_V = [0.3, 0.6, 0.6, 1.0]  # m/s^3 during the first phase
-ONSET_J3_V = [2.0, 2.0, 2.0, 4.0]  # m/s^3 the ramp ends at (the shaper never exceeds the stock limit)
-# Delivered side of option D: in the first COAST_LIKE_T_MAX of a brake onset the command holds still whenever the car is
-# already decelerating more than the D profile allows from where the brake started (the PCM's late catch-up / the
-# friction biting), so the delivered build stays near 0.6 -> 2.0 m/s^3 instead of jumping.
+ONSET_J3_V = [2.0, 1.5, 1.5, 4.0]  # m/s^3 the ramp ends at (the shaper never exceeds the stock limit)
+# Delivered side (option D, now E): in the first COAST_LIKE_T_MAX of a brake onset the command holds still whenever the
+# car is already decelerating more than the profile allows from where the brake started (the PCM's late catch-up / the
+# friction biting), so the delivered build stays near 0.6 -> 1.5 m/s^3 instead of jumping.
 COAST_LIKE_V = (45.0 / 3.6, 75.0 / 3.6)  # m/s
-COAST_LIKE_T_BP = [0.0, 0.5, 1.0]  # s since the onset started
-COAST_LIKE_J_V = [0.6, 0.6, 2.0]  # m/s^3 allowed delivered build
+COAST_LIKE_T_BP = [0.0, 0.7, 1.4]  # s since the onset started (D was 0 / 0.5 / 1.0)
+COAST_LIKE_J_V = [0.6, 0.6, 1.5]  # m/s^3 allowed delivered build (D: 0.6 / 0.6 / 2.0)
 COAST_LIKE_MARGIN = 0.05  # m/s^2
-COAST_LIKE_T_MAX = 1.5  # s
+COAST_LIKE_T_MAX = 2.0  # s (D: 1.5)
 ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3 (reference shape; the first two entries follow ONSET_J1_V)
 # Engaging ACC (SET-) while creeping up to a lead (driver 2026-10-04: "the car used to brake hard the moment I press
 # SET-; the first ~0.2 s must be a light touch, then blend into the decel the speed needs"). Route 000000ee 11:48:07:
