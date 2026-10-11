@@ -34,6 +34,19 @@ CREEP_V_MAX = 3.0 / 3.6  # m/s
 CREEP_RISE = 0.2 / 3.6  # m/s
 CREEP_ACCEL = -0.7  # m/s^2 (~1300 N+; 21:58 still crept at 1000-1300 N)
 CREEP_JERK = 3.0  # m/s^3: -0.30 -> -0.70 in ~0.13 s
+# 3) gap ease (owner 2026-10-11, route 00000134 bookmark 15:32:18: "it stopped too early" - 7.4 m behind instead of 3.6):
+#    the plan asked -0.97 at 12 km/h, 11.5 m behind a lead stopping from 4 km/h, where -0.69 stops at GAP_TARGET, and the
+#    car delivered -1.39; nothing let go because the governor only ever braked firmer. Now, when the request would stop the
+#    car more than EASE_MARGIN short of GAP_TARGET, it eases toward the decel that stops it there - computed with the lead
+#    stopping at EASE_LEAD_DECEL (hard, so the room is never overestimated) - by at most EASE_MAX, never lighter than
+#    EASE_MIN_ACCEL (the end table's 0 km/h value), changing at EASE_JERK both ways. Closed loop on v and dRel, so a car
+#    that over-delivers gets eased further. Same window as the gap floor (braking, below GAP_V_MAX, lead below
+#    GAP_LEAD_V_MAX), never while the floor or the creep stop is active.
+EASE_MARGIN = 1.0  # m
+EASE_LEAD_DECEL = 4.0  # m/s^2
+EASE_MAX = 0.4  # m/s^2
+EASE_MIN_ACCEL = -0.30  # m/s^2
+EASE_JERK = 0.5  # m/s^3
 
 
 class StopGapGovernor:
@@ -42,9 +55,11 @@ class StopGapGovernor:
     self.active = False
     self.v_min = None
     self.creep_stop = False
+    self.ease = 0.0  # >= 0: how much lighter than the request (gap ease)
 
   def reset(self):
     self.floor, self.active, self.v_min, self.creep_stop = 0.0, False, None, False
+    self.ease = 0.0
 
   def update(self, out, v_ego, standstill, a_target, braking, lead_d=None, lead_v=None):
     """out: the stopping controller's request; braking: the car is braking to a stop (end window / stopping state /
@@ -61,6 +76,7 @@ class StopGapGovernor:
     elif v_ego >= CREEP_V_MAX:
       self.v_min, self.creep_stop = None, False
     if self.creep_stop:
+      self.ease = 0.0
       self.floor = max(CREEP_ACCEL, min(self.floor if self.active else out, out) - CREEP_JERK * DT_CTRL)
       self.active = True
       return min(out, self.floor)
@@ -80,4 +96,19 @@ class StopGapGovernor:
       self.floor += GAP_JERK * DT_CTRL  # lead gone / out of range: let go at the same rate
     if self.active and self.floor >= out:
       self.active, self.floor = False, 0.0
-    return min(out, self.floor) if self.active else out
+    if self.active:
+      self.ease = 0.0
+      return min(out, self.floor)
+
+    # 3) gap ease
+    ease_target = 0.0
+    in_window = braking and lead_d is not None and v_ego < GAP_V_MAX and lead_v is not None and lead_v < GAP_LEAD_V_MAX
+    if in_window and out < 0.0:
+      s = lead_d - GAP_TARGET + max(lead_v, 0.0) ** 2 / (2 * EASE_LEAD_DECEL)
+      stop_dist = v_ego ** 2 / (2 * -out)  # where the request alone would stop the car
+      if s > 0.0 and (self.ease > 0.0 or s - stop_dist > EASE_MARGIN):
+        need = -v_ego ** 2 / (2 * s)
+        ease_target = float(np.clip(min(need, EASE_MIN_ACCEL) - out, 0.0, EASE_MAX))
+    step = EASE_JERK * DT_CTRL
+    self.ease = float(np.clip(ease_target, self.ease - step, self.ease + step))
+    return out + self.ease
