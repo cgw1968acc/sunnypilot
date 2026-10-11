@@ -23,6 +23,9 @@ class FakeParams:
     pass
 
 
+M.enabled = lambda: True  # the owner's device; test_off_without_the_flag checks the default
+
+
 class Probe(M.DriveGearUpdater):
   def __init__(self, params, pending=True):
     super().__init__(params)
@@ -51,3 +54,19 @@ def test_nothing_without_a_new_commit_or_with_updates_disabled():
   assert not any(u.step(1.0, True) for _ in range(10))
   u = Probe(FakeParams(disable=True))
   assert not any(u.step(1.0, True) for _ in range(10))
+
+
+def test_off_without_the_flag(monkeypatch=None):
+  saved = M.enabled
+  try:
+    M.enabled = lambda: False  # any other user's device: no flag file
+    u = Probe(FakeParams())
+    assert not any(u.step(1.0, True) for _ in range(10)) and u.installed == 0
+  finally:
+    M.enabled = saved
+
+
+def test_flag_path_is_under_data():
+  import inspect
+  assert M.ENABLE_FLAG == "/data/tn_autoupdate_enabled"
+  assert "os.path.isfile(ENABLE_FLAG)" in inspect.getsource(M)

@@ -17,7 +17,13 @@ updating by hand over SSH (fetch + reset --hard + restart). This process does th
     staged (the launch script would otherwise swap it in), and restarts the comma service.
 While openpilot restarts its steering / ACC messages stop and the car may show a system warning until the next
 ignition cycle. DisableUpdates=1 turns it off.
+
+OFF unless ENABLE_FLAG exists (owner: "I do not recommend this to other users - anyone who installs this branch gets it
+off; only on my own device, switched on once by the AI"). A file under /data, not a Params key: the prebuilt deletes
+unregistered keys at boot and registering one needs a rebuild. Create it once on the owner's device over SSH
+(`touch /data/tn_autoupdate_enabled`); remove it to turn the feature off. Checked every cycle, no restart needed.
 """
+import os
 import subprocess
 import shutil
 import time
@@ -34,6 +40,11 @@ FETCH_TIMEOUT = 120.  # s
 HOLD_TIME = 3.0  # s the drive conditions must hold before the restart
 STAGING_FINALIZED = "/data/safe_staging/finalized"
 RESTART_CMD = ["sudo", "systemctl", "restart", "comma"]
+ENABLE_FLAG = "/data/tn_autoupdate_enabled"
+
+
+def enabled() -> bool:
+  return os.path.isfile(ENABLE_FLAG)
 
 
 def drive_gear_main_off(gear, cruise_available: bool, engaged: bool) -> bool:
@@ -85,7 +96,7 @@ class DriveGearUpdater:
   def step(self, dt: float, condition: bool) -> bool:
     """returns True when it started an install"""
     now = time.monotonic()
-    if self.params.get_bool("DisableUpdates"):
+    if not enabled() or self.params.get_bool("DisableUpdates"):
       self.hold_t = 0.0
       return False
     if now >= self.next_fetch:
