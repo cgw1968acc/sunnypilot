@@ -45,9 +45,9 @@ class TestEndOfStop:
     out = run(sc, PID, cs(5.0), -0.20, out, 0.4)
     assert abs(out - END_HI) < 1e-6
     out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
-    assert abs(out - (-0.48 + -0.60) / 2) < 1e-6
-    assert abs(blend(sc, 4.0) - (-0.65)) < 1e-6 and abs(blend(sc, 1.0) - (-0.30)) < 1e-6
-    assert abs(blend(sc, 0.5) - (-0.30)) < 1e-6   # 1-0 km/h unchanged
+    assert abs(out - (-0.56 + -0.60) / 2) < 1e-6
+    assert abs(blend(sc, 4.0) - (-0.65)) < 1e-6 and abs(blend(sc, 1.0) - (-0.43)) < 1e-6
+    assert abs(blend(sc, 0.5) - (-0.365)) < 1e-6   # 1-0 km/h: straight line down to END_LO
     out = run(sc, PID, cs(0.0), -0.20, out, 0.4)
     assert abs(out - END_LO) < 1e-6
 

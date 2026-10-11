@@ -129,7 +129,11 @@ class StoppingController:
   # delivered -0.44 / -0.55 / -0.49 / -0.45 at 5-4 / 4-3 / 3-2 / 2-1 km/h (BRAKE 0xA6 870-1010 N) against ~-0.7 / -0.7 /
   # -0.6 before. Driver chose the table 5 km/h -0.65, 4 -0.65, 3 -0.60, 2 -0.48, 1-0 -0.30 unchanged (expected delivered
   # ~-0.61 / -0.55 / -0.48 at 4-3 / 3-2 / 2-1 km/h). Was -0.60/-0.58/-0.53/-0.43/-0.30/-0.30.
-  END_CURVE_A = [END_LO, END_LO, -0.48, -0.60, -0.65, END_HI]  # m/s^2
+  # Driver 2026-10-10 night (routes 0000011e/0000011f, settled after three tries the same night, "the new end is
+  # better"): 2 km/h -0.56, then a straight line to -0.30 at 0 km/h (1 km/h -0.43). Back on 2026-10-11 without the
+  # stop-gap governor it came with: route 00000139 23:40-23:44 at the old 1-0 km/h -0.30 the hybrid's creep torque
+  # left only -0.13..-0.17 of decel, the car crept at 0.6-1 km/h and then stopped with a jolt (owner: "a clear jolt at 0").
+  END_CURVE_A = [END_LO, (END_LO + -0.56) / 2, -0.56, -0.60, -0.65, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
