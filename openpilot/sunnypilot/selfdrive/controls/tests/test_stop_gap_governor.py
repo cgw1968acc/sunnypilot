@@ -68,3 +68,24 @@ class TestStopGapGovernor:
     g = StopGapGovernor()
     run(g, 1.0, -0.9, 7, d=5.0)
     assert run(g, 0.01, 0.3, 7, d=5.0, a_target=0.3) == 0.3
+
+
+def test_stop_gap_lead_reads_a_real_radar_state():
+  # 2026-10-11: stop_gap_lead read leadOne.status, which RadarState.LeadData does not have (it is `present`), so
+  # controlsd crashed on the first engaged frame (LKAS fault). Use a real capnp message, not a stand-in.
+  from openpilot.cereal import log
+  from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+
+  class Ext:
+    pass
+
+  rs = log.RadarState.new_message()
+  ext = Ext()
+  ext.sm = type('SM', (), {'__getitem__': lambda self, k: rs.as_reader(), 'valid': {'radarState': True}})()
+  assert ControlsExt.stop_gap_lead(ext) == {}
+  rs.leadOne.present = True
+  rs.leadOne.dRel = 8.0
+  rs.leadOne.vLead = 1.0
+  assert ControlsExt.stop_gap_lead(ext) == {'lead_d': 8.0, 'lead_v': 1.0}
+  ext.sm.valid['radarState'] = False
+  assert ControlsExt.stop_gap_lead(ext) == {}

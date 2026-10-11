@@ -64,7 +64,7 @@ class ControlsExt(ModelStateBase):
   def stop_gap_lead(self) -> dict:
     """lead distance / speed for the stop-gap governor (StoppingController), from radarState"""
     lead = self.sm['radarState'].leadOne
-    if not self.sm.valid['radarState'] or not lead.status:
+    if not self.sm.valid['radarState'] or not lead.present:
       return {}
     return {'lead_d': float(lead.dRel), 'lead_v': float(lead.vLead)}
 
