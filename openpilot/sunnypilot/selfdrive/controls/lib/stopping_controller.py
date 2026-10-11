@@ -118,7 +118,7 @@ class StoppingController:
   # (-0.50/-0.47/-0.40/-0.29/-0.25/-0.24) was "not better" and reverted. Then the driver gave his own points, close to
   # the parabola but a touch lighter in the middle: 4 km/h -0.40, 3 -0.33, 2 -0.27, 1 -0.25, 0 -0.25. Held as a table,
   # linearly interpolated at the actual speed every 10 ms (continuous curve).
-  END_CURVE_V = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6]  # m/s
+  END_CURVE_V = [0.0, 0.5 / 3.6, 1.0 / 3.6, 1.5 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6]  # m/s
   # Driver 2026-10-06 (route 00000100, seven manual stops 19:45-19:59, averages 5->2 km/h 0.83, 2->0.3 km/h 0.45 m/s^2;
   # the lightest steady one, 19:56:19, 0.56 / 0.37): "the manual stops are still a touch heavy; give 5-2 km/h a little
   # more, but already be light at 1 km/h, or reaching -0.25 only at 0 km/h may still nod; keep 1-0 as it was". So a
@@ -142,7 +142,10 @@ class StoppingController:
   # Driver 2026-10-11 (on tnpb3): "2-1 km/h may need to stay the same, then down to -0.30 at 0 km/h" -> 1 km/h
   # -0.43 -> -0.56 (= 2 km/h), so the line holds -0.56 to 1 km/h and only the last km/h tapers to -0.30.
   # Was -0.30/-0.43/-0.56 at 0/1/2 km/h.
-  END_CURVE_A = [END_LO, -0.56, -0.56, -0.60, -0.65, END_HI]  # m/s^2
+  # Driver, same day, later: "1 km/h should come down a little, but not to the interpolated value - a parabola" ->
+  # 2-0 km/h on a parabola with its vertex at 2 km/h (flat there, steeper toward 0): a = END_LO - 0.26 * (1 - (1 - v/2)^2),
+  # v in km/h -> 1.5 / 1 / 0.5 km/h -0.544 / -0.495 / -0.414 (straight line was -0.495 / -0.43 / -0.365).
+  END_CURVE_A = [END_LO, -0.41375, -0.495, -0.54375, -0.56, -0.60, -0.65, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
