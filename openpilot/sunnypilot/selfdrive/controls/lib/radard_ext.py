@@ -7,6 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 import numpy as np
 
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_dropout_hold import LeadDropoutHold
+from openpilot.sunnypilot.selfdrive.controls.lib.sticky_radar_lead import StickyRadarLead
 
 STATIONARY_TRACK_V = 1.0   # m/s, radar point counted as stationary
 VISION_MOVING_V = 4.0      # m/s, camera lead counted as clearly moving
@@ -91,9 +92,12 @@ class RadardExt:
   """tnpb2 lead post-processing."""
   def __init__(self, dt: float):
     self.lead_dropout_hold = LeadDropoutHold(dt)
+    self.sticky = StickyRadarLead(dt)
     self.cut_in = RadarCutIn()
 
   def lead_one(self, lead: dict, v_ego: float, tracks: dict | None = None, path=None) -> dict:
     if path is not None:
-      lead = self.cut_in.update(lead, v_ego, tracks, np.array(path.x), np.array(path.y))
+      path_x, path_y = np.array(path.x), np.array(path.y)
+      lead = self.sticky.update(lead, v_ego, tracks, path_x, path_y)
+      lead = self.cut_in.update(lead, v_ego, tracks, path_x, path_y)
     return self.lead_dropout_hold.update(lead, v_ego)
