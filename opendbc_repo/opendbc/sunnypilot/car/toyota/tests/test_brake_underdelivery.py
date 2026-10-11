@@ -62,6 +62,21 @@ class TestHandoverFeedforward(unittest.TestCase):
     self.assertEqual(self.run_firm(-2.6, 12.0, -2.0).extra, 0.0)   # emergency-hard: left to the planner
     self.assertAlmostEqual(self.run_firm(-1.6, 18.5, -1.2).extra, 0.5 * HANDOVER_EXTRA_MAX, places=6)
 
+  def test_over_delivering_car_gets_no_extra(self):
+    # route 00000134 15:32:12: asked -0.97 at 12 km/h, the car gave -1.35; 15:32:14 asked -0.72 at 6 km/h, gave -1.03
+    self.assertEqual(self.run_firm(-0.97, 12.0, -1.35).extra, 0.0)
+    self.assertEqual(self.run_firm(-0.72, 6.0, -1.03).extra, 0.0)
+
+  def test_extra_holds_once_the_car_responds(self):
+    # the car is 0.25 short on its own and delivers the extra 1:1: the extra must stay, not pulse
+    c = BrakeHandoverFeedforward(DT)
+    extras = []
+    for _ in range(300):
+      c.update(-0.84, 12 / 3.6, a_ego=-0.84 + 0.25 - c.extra)
+      extras.append(c.extra)
+    self.assertAlmostEqual(extras[-1], HANDOVER_EXTRA_MAX, places=6)
+    self.assertTrue(all(b >= a - 1e-9 for a, b in zip(extras[100:], extras[101:])))
+
   def test_firm_gate_ignores_a_short_lag(self):
     # a request that just stepped firmer: the ~0.3 s actuator lag barely opens the gate
     c = BrakeHandoverFeedforward(DT)

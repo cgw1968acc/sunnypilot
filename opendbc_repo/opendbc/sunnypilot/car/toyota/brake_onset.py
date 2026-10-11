@@ -416,6 +416,13 @@ FIRM_REQ_BP = [-2.5, -2.2]  # m/s^2: gone for an emergency-hard request
 FIRM_REQ_W = [0.0, 1.0]
 FIRM_TAU = 0.7  # s, shortfall filter (ignores the ~0.3 s actuator lag of a changing request)
 FIRM_GATE_BP = [0.08, 0.18]  # m/s^2 of filtered shortfall: none below, full above
+# Owner 2026-10-11 (route 00000134 15:32:11-15, bookmark 15:32:18: "after the hard brake it stopped too early" - 7.4 m
+# behind the lead instead of 3.6): from 13 to 3 km/h the car delivered MORE than asked (-0.97 asked / -1.39 delivered,
+# -0.72 / -1.03) and the fixed moderate + low-speed extras still added 0.2-0.26 on top (mean 0.14 over the stop). So the
+# gate now covers EVERY extra, not only the firm one, and the shortfall it reads is the car's own: aEgo_future - request
+# + the extra already added (the extra is assumed delivered 1:1), so adding the extra does not close the gate again
+# (no pulsing as with the 2026-10-07 feedback try) and an over-delivering car gets nothing. Open-loop replays (qlog):
+# 134 15:32 extra 0.20-0.26 -> 0.00; 133 15:04:51-53 and 134 15:29:05-07 keep 0.20 and start ~0.3 s earlier.
 PID_HOLD_V = 9.0 / 3.6  # m/s
 PID_BLEED_NEG = 0.5  # m/s^2 per s: a braking integral fades this fast
 PID_BLEED_POS = 2.0  # m/s^2 per s: a gas integral (left from the launch) fades this fast
@@ -431,11 +438,12 @@ class BrakeHandoverFeedforward:
     self.shortfall = 0.0
 
   def update(self, accel_request: float, v_ego: float, active: bool = True, a_ego: float | None = None) -> float:
-    """returns the extra braking (>= 0, m/s^2) to subtract from the command"""
+    """returns the extra braking (>= 0, m/s^2) to subtract from the command; a_ego: measured (the lag-compensated
+    a_ego_future), None = no measurement, extras ungated"""
     target = 0.0
     if a_ego is not None and accel_request < 0.0:
       alpha = self.dt / (FIRM_TAU + self.dt)
-      self.shortfall += alpha * ((a_ego - accel_request) - self.shortfall)
+      self.shortfall += alpha * ((a_ego - accel_request + self.extra) - self.shortfall)
     else:
       self.shortfall = 0.0
     if active and accel_request < HANDOVER_MIN_REQUEST:
@@ -444,8 +452,10 @@ class BrakeHandoverFeedforward:
       target = w * min(HANDOVER_EXTRA_MAX, HANDOVER_EXTRA_FRAC * -accel_request)
       target += float(np.interp(v_ego, LOW_EXTRA_V_BP, LOW_EXTRA)) * w_req
       w_firm = ((1.0 - w_req) * float(np.interp(v_ego, FIRM_V_BP, FIRM_V_W)) *
-                float(np.interp(accel_request, FIRM_REQ_BP, FIRM_REQ_W)) * float(np.interp(self.shortfall, FIRM_GATE_BP, [0.0, 1.0])))
-      target += w_firm * HANDOVER_EXTRA_MAX
+                float(np.interp(accel_request, FIRM_REQ_BP, FIRM_REQ_W)))
+      if a_ego is not None:  # the firm extra exists only with a measurement
+        target += w_firm * HANDOVER_EXTRA_MAX
+        target *= float(np.interp(self.shortfall, FIRM_GATE_BP, [0.0, 1.0]))
     step = HANDOVER_RATE * self.dt
     self.extra = float(np.clip(target, self.extra - step, self.extra + step))
     return self.extra
@@ -481,7 +491,7 @@ class BrakeCommandCorrections:
                           moderate_allowed=relaxed)
     accel_cmd = self.overshoot.apply(accel_cmd)
     # feed-forward the braking the car does not deliver in the low-speed regen hand-over
-    self.handover.update(accel_request, v_ego, active=not fcw, a_ego=a_ego)
+    self.handover.update(accel_request, v_ego, active=not fcw, a_ego=a_ego_future if a_ego is not None else None)
     return self.handover.apply(accel_cmd)
 
   def condition_pid(self, pid, accel_request: float, v_ego: float) -> bool:
