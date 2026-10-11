@@ -40,7 +40,13 @@ from openpilot.cereal import log
 # line by 40 km/h (+0.38 m at 25, +0.25 at 30) and to nothing at 15 km/h, so the final stop gap is untouched. Rough
 # estimate from the braking distance left at 20 km/h (~12 m): about 4% lighter (-1.76 -> ~-1.69).
 DESIRED_DIST_TRIM_BP = [15.0 / 3.6, 20.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
-DESIRED_DIST_TRIM_V = [1.0, -0.7, -5.0, -5.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+# Owner 2026-10-11 (on the road, 58cef61): "close following at 50 km/h is still too far - can it be shorter without a
+# harder brake?" -> the 50 km/h point -5 -> -3 m (steady gap 2 m shorter, 40 km/h unchanged, fading back by 70 km/h),
+# and the same 2 m moved into the onset reserve below (ONSET_GAP_SHIFT_V): it cancels at equal speeds like the light-onset
+# margin, but counts in full once the lead slows below 40 km/h or stops, so the plan starts braking from the same
+# stopped-equivalence distance as before (earlier and longer instead of firmer; the physical room is still 2 m less).
+DESIRED_DIST_TRIM_V = [1.0, -0.7, -5.0, -3.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+ONSET_GAP_SHIFT_V = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0]  # m: what the 2026-10-11 change took off the steady gap, on DESIRED_DIST_TRIM_BP
 # Driver 2026-10-04 night: "bring the soft brake at 40-45 km/h a little earlier, i.e. slightly more distance to the
 # lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
 # at 50, fading to 0 at 80 as before. Margin before the -1 m trim: +7.8 m at 35 km/h, +12.2 at 40, +13.8 at 45,
@@ -65,7 +71,7 @@ RELAXED_JERK_FACTOR = 3.0
 
 def get_light_onset_margin(v):
   v = np.maximum(v, 0.0)
-  return v * np.interp(v, LIGHT_ONSET_BP, LIGHT_ONSET_T_V)
+  return v * np.interp(v, LIGHT_ONSET_BP, LIGHT_ONSET_T_V) + np.interp(v, DESIRED_DIST_TRIM_BP, ONSET_GAP_SHIFT_V)
 
 
 def get_desired_dist_trim(v_ego):
