@@ -20,11 +20,11 @@ def cs(v_kph, standstill=False):
   return SimpleNamespace(vEgo=v_kph / 3.6, standstill=standstill)
 
 
-def run(sc, state, car, a_target, prev, secs, stock=None):
+def run(sc, state, car, a_target, prev, secs, stock=None, has_lead=True):
   """step the controller for secs with a fixed plan; returns the last output"""
   out = prev
-  for _ in range(int(secs / DT_CTRL)):
-    _, out = sc.update(state, state, car, a_target, out, a_target if stock is None else stock, LIMITS, has_lead=True)
+  for _ in range(max(1, int(round(secs / DT_CTRL)))):
+    _, out = sc.update(state, state, car, a_target, out, a_target if stock is None else stock, LIMITS, has_lead=has_lead)
   return out
 
 
@@ -307,3 +307,26 @@ class TestConfirmedStopEarlyHold:
   def test_no_pose_keeps_the_1s_delay(self):
     sc = StoppingController(-2.0)
     assert not sc.stop_confirm.update(True, 0.0, None)
+
+
+class TestEndCapWithoutLead:
+  # route 0000013a 00:07:34: experimental mode, red light, the e2e plan held -1.05 to 4 km/h
+  def test_no_lead_below_5kph_follows_the_line_not_a_firmer_plan(self):
+    sc = StoppingController(-2.0)
+    out = run(sc, PID, cs(9.0), -1.05, -1.05, 0.3, has_lead=False)
+    out = run(sc, PID, cs(4.0), -1.05, out, 1.0, has_lead=False)
+    assert abs(out - blend(sc, 4.0)) < 1e-6  # eased up to the line, never firmer than it
+    out = run(sc, PID, cs(1.0), -0.9, out, 1.0, has_lead=False)
+    assert abs(out - blend(sc, 1.0)) < 1e-6
+
+  def test_the_ease_to_the_line_is_gentle(self):
+    sc = StoppingController(-2.0)
+    out = run(sc, PID, cs(9.0), -1.05, -1.05, 0.3, has_lead=False)
+    nxt = run(sc, PID, cs(4.5), -1.05, out, DT_CTRL, has_lead=False)
+    assert nxt - out <= StoppingController.END_CAP_RATE * DT_CTRL + 1e-9
+
+  def test_with_a_lead_a_firmer_plan_still_wins(self):
+    sc = StoppingController(-2.0)
+    out = run(sc, PID, cs(9.0), -1.05, -1.05, 0.3, has_lead=True)
+    out = run(sc, PID, cs(4.0), -1.05, out, 1.0, has_lead=True)
+    assert abs(out - (-1.05)) < 1e-6
