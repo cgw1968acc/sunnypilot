@@ -208,6 +208,15 @@ class TestFlatHold:
     assert stand(StoppingController(-2.0), 4.0, pitch=SLOPE) <= -2.0 + 1e-6
     assert stand(StoppingController(-2.0), 4.0, pitch=None) <= -2.0 + 1e-6
 
+  def test_flat_hold_builds_at_half_the_slope_rate(self):
+    # owner 2026-10-11: build the hold more slowly after the stop, on the flat only. 1.0 s hold delay, then the ramp.
+    flat = stand(StoppingController(-2.0), 2.0, pitch=FLAT)
+    slope = stand(StoppingController(-2.0), 2.0, pitch=SLOPE)
+    assert abs(flat - (END_LO - StoppingController.FLAT_HOLD_RATE * 1.0)) < 0.02         # -0.80 after 1 s of ramp
+    assert abs(slope - (END_LO - StoppingController.STANDSTILL_HOLD_RATE * 1.0)) < 0.02   # -1.30, unchanged
+    assert stand(StoppingController(-2.0), 2.7, pitch=FLAT) > StoppingController.FLAT_HOLD_ACCEL + 0.01  # not there yet
+    assert abs(stand(StoppingController(-2.0), 2.9, pitch=FLAT) - StoppingController.FLAT_HOLD_ACCEL) < 1e-9  # 1.8 s
+
   def test_a_creep_on_the_flat_hold_goes_deeper(self):
     sc = StoppingController(-2.0)
     out = stand(sc, 4.0, pitch=FLAT)
