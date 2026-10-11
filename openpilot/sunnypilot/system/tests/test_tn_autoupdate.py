@@ -5,9 +5,12 @@ import openpilot.sunnypilot.system.tn_autoupdate as M
 D, P = car.CarState.GearShifter.drive, car.CarState.GearShifter.park
 
 
-def test_condition_is_d_with_main_off_and_not_engaged():
+def test_condition_is_p_or_d_with_main_off_and_not_engaged():
   assert M.drive_gear_main_off(D, False, False)
-  assert not M.drive_gear_main_off(P, False, False)
+  assert M.drive_gear_main_off(P, False, False)  # owner 2026-10-11: P too
+  assert not M.drive_gear_main_off(car.CarState.GearShifter.reverse, False, False)
+  assert not M.drive_gear_main_off(car.CarState.GearShifter.neutral, False, False)
+  assert M.why_not_now(D, True, False) == "MAIN ACC on" and M.why_not_now(D, False, True) == "engaged"
   assert not M.drive_gear_main_off(D, True, False)
   assert not M.drive_gear_main_off(D, False, True)
 
@@ -31,8 +34,8 @@ class Probe(M.DriveGearUpdater):
     super().__init__(params)
     self.next_fetch = float("inf")
     self._pending, self.installed = pending, 0
-  def pending(self):
-    return self._pending
+  def why_not_pending(self):
+    return "" if self._pending else "up to date"
   def install(self):
     self.installed += 1
 
@@ -89,3 +92,11 @@ def test_main_off_in_d_fetches_at_once_and_installs_within_30_s():
   while not u.installed and t < 30:
     u.step(1.0, True); t += 1
   assert u.fetches == 1 and u.installed == 1 and t <= M.HOLD_TIME + 1
+
+
+def test_reason_changes_are_logged_once_each():
+  logged = []
+  u = Probe(FakeParams(), pending=False)
+  u.log_reason = lambda r, _l=logged, _u=u: (_l.append(r) if r != _u.reason else None, setattr(_u, 'reason', r))
+  u.step(1.0, False, "gear park"); u.step(1.0, False, "gear park"); u.step(1.0, True); u.step(1.0, True)
+  assert logged == ["gear park", "up to date"]
