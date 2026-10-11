@@ -169,3 +169,41 @@ class TestResumeSoftStart:
 
   def test_a_positive_a_ego_starts_from_zero(self):
     assert abs(self._run(a_ego=0.3)[0] - 0.6 * DT) < 1e-9
+
+
+class TestCoastLikeOnset:
+  """owner 2026-10-11, option D (route 00000127 10:18:58, 65 km/h): the brake comes in like the coast, 0.6 m/s^3 for
+  0.5 s, then builds to 2.0 m/s^3 by 1.0 s - on the command and on what the car delivers"""
+  V = 60.0 / 3.6
+
+  def _run(self, req, v, a_ego_fn=None, n=60):
+    shaper = BrakeOnsetShaper(DT, STOCK_J)
+    a, out, steps = -0.3, [], []
+    for k in range(n):
+      a_ego = a_ego_fn(k, a) if a_ego_fn else a
+      step = shaper.down_step(req, a, v_ego=v, a_ego=a_ego)
+      steps.append(step)
+      a = rate_limit(req, a, step, UP_STEP)
+      out.append(a)
+    return np.array(out), np.array(steps)
+
+  def test_command_builds_at_0_6_then_reaches_1_7_in_about_1_2_s(self):
+    out, _ = self._run(-1.7, self.V)
+    assert abs(at(out, 0.48) - (-0.3 - 0.6 * 0.48)) < 0.03
+    t_reach = (np.argmax(out <= -1.7 + 1e-6) + 1) * DT
+    assert 1.1 <= t_reach <= 1.45
+
+  def test_holds_while_the_car_is_ahead_of_the_profile(self):
+    # the car already decelerates 0.5 m/s^2 more than commanded (friction biting): the command waits
+    _, steps = self._run(-1.7, self.V, a_ego_fn=lambda k, a: a - 0.5 if k >= 3 else a, n=20)
+    assert np.all(steps[4:15] == 0.0)
+
+  def test_not_below_45_or_above_75_kph(self):
+    for v in (30.0 / 3.6, 100.0 / 3.6):
+      _, steps = self._run(-1.7, v, a_ego_fn=lambda k, a: a - 0.5, n=20)
+      assert np.all(steps[1:] < 0.0)
+
+  def test_below_40_kph_schedule_unchanged(self):
+    t = BrakeOnsetShaper.schedule_t(30.0 / 3.6)
+    j = BrakeOnsetShaper.schedule_j(30.0 / 3.6)
+    assert t == [0.0, 0.3, 0.9] and j == [0.3, 0.3, 2.0]
