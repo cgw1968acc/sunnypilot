@@ -25,6 +25,7 @@ off; only on my own device, switched on once by the AI"). A file under /data, no
 unregistered keys at boot and registering one needs a rebuild. Create it once on the owner's device over SSH
 (`touch /data/tn_autoupdate_enabled`); remove it to turn the feature off. Checked every cycle, no restart needed.
 """
+import datetime
 import os
 import subprocess
 import shutil
@@ -113,8 +114,25 @@ class DriveGearUpdater:
     return False
 
 
+def current_description() -> str:
+  """same text as the stock updater's UpdaterCurrentDescription: version / branch / commit / date"""
+  with open(os.path.join(BASEDIR, "openpilot", "sunnypilot", "common", "version.h")) as f:
+    version = f.read().split('"')[1]
+  branch = git("rev-parse", "--abbrev-ref", "HEAD")
+  commit = git("rev-parse", "--short=7", "HEAD")
+  date = datetime.datetime.fromtimestamp(int(git("show", "-s", "--format=%ct", "HEAD"))).strftime("%b %d")
+  return f"{version} / {branch} / {commit} / {date}"
+
+
 def main():
   params = Params()
+  # Settings -> Software "Current Version" shows UpdaterCurrentDescription, which the stock updater refreshes only offroad;
+  # after an install in D it would still name the old commit. Refresh it at every start (owner 2026-10-11: "the
+  # software tab does not show which commit is running").
+  try:
+    params.put("UpdaterCurrentDescription", current_description())
+  except Exception as e:
+    cloudlog.warning(f"tn_autoupdate: description failed: {e}")
   sm = messaging.SubMaster(['carState', 'selfdriveState'])
   updater = DriveGearUpdater(params)
   while True:
