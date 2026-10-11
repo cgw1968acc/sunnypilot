@@ -139,7 +139,10 @@ class StoppingController:
   # Driver, later the same night (after the stop-gap governor 97ec2dc1df, which now stops a creep-in): "2 km/h still
   # needs -0.56, then down to -0.30 at 0 km/h, interpolated in between" -> 1 km/h -0.43 (the straight line), 0 km/h
   # -0.30. Was -0.35/-0.35/-0.56 at 0/1/2 km/h.
-  END_CURVE_A = [END_LO, (END_LO + -0.56) / 2, -0.56, -0.60, -0.65, END_HI]  # m/s^2
+  # Driver 2026-10-11 (on tnpb3): "2-1 km/h may need to stay the same, then down to -0.30 at 0 km/h" -> 1 km/h
+  # -0.43 -> -0.56 (= 2 km/h), so the line holds -0.56 to 1 km/h and only the last km/h tapers to -0.30.
+  # Was -0.30/-0.43/-0.56 at 0/1/2 km/h.
+  END_CURVE_A = [END_LO, -0.56, -0.56, -0.60, -0.65, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
 
