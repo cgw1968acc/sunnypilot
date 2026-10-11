@@ -169,7 +169,6 @@ class LongitudinalPlannerSP:
   def update(self, sm: messaging.SubMaster) -> None:
     self.lead_one = sm['radarState'].leadOne
     self.accel_controller.update()
-    self.lead_one = sm['radarState'].leadOne
     self.events_sp.clear()
     self.e2e_alerts_helper.update(sm, self.events_sp)
 

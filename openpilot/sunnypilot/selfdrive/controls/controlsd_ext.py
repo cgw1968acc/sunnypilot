@@ -101,7 +101,8 @@ class ControlsExt(ModelStateBase):
     state, accel = self.stopping_controller.update(
       prev_state, stock_state, CS, long_plan.aTarget, prev_accel, stock_accel, accel_limits, long_plan.hasLead,
       pitch=self.calibrated_pose.orientation.pitch if self.calibrated_pose is not None else None,
-      a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None)
+      a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None,
+      **self.stop_gap_lead())
     if state != stock_state:
       self.LoC.reset()
     self.LoC.long_control_state = state

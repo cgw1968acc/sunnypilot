@@ -85,6 +85,8 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     self.accel = 0
     self.prev_accel = 0
+    # sunnypilot: ToyotaBrakeOnset gates the whole brake_onset module (onset + engage onset + command corrections)
+    self.brake_onset_enabled = bool(CP_SP.flags & ToyotaFlagsSP.SP_BRAKE_ONSET.value)
     self.brake_onset = BrakeOnsetShaper(DT_CTRL * 3, -ACCEL_WINDDOWN_LIMIT / (DT_CTRL * 3))
     self.engage_onset = EngageOnsetShaper(DT_CTRL * 3, ACCEL_WINDUP_LIMIT / (DT_CTRL * 3))
     self.brake_corrections = BrakeCommandCorrections(DT_CTRL * 3)  # sunnypilot: see brake_onset.py
@@ -241,16 +243,19 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
         # internal PCM gas command can get stuck unwinding from negative accel so we apply a generous rate limit
         pcm_accel_cmd = actuators.accel
-        self.engage_onset.cruise_state(CS.out.cruiseState.enabled)  # sunnypilot hook
-        if CC.longActive:
+        if self.brake_onset_enabled:
+          self.engage_onset.cruise_state(CS.out.cruiseState.enabled)  # sunnypilot hook
+        if CC.longActive and self.brake_onset_enabled:
           self.prev_accel = self.engage_onset.start_accel(self.prev_accel, CS.out.aEgo, CS.out.vEgo)  # sunnypilot hook
           # a hard request bypasses the soft brake onset, except in the first 0.6 s after engaging (FCW always does)
           urgent = self.brake_onset.is_urgent(pcm_accel_cmd, False) and not self.engage_onset.in_engage_window
           winddown_step = self.brake_onset.down_step(pcm_accel_cmd, self.prev_accel, bypass=fcw_alert, v_ego=CS.out.vEgo,
                                                      urgent=urgent, t_engaged=self.engage_onset.t_since_engage,
-                                                     a_ego=CS.out.aEgo, brake_force=CS.brake_force)  # sunnypilot hook
+                                                     a_ego=CS.out.aEgo, brake_force=CS.brake_force)
           windup_step = self.engage_onset.up_step(True)
           pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, winddown_step, windup_step)
+        elif CC.longActive:
+          pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, ACCEL_WINDDOWN_LIMIT, ACCEL_WINDUP_LIMIT)  # sunnypilot: stock path
         else:
           self.brake_onset.reset()
           self.engage_onset.reset()
@@ -289,14 +294,16 @@ class CarController(CarControllerBase, GasInterceptorCarController):
                                                -MAX_PITCH_COMPENSATION, MAX_PITCH_COMPENSATION))
             pcm_accel_cmd += pitch_compensation
 
-          freeze_i = self.brake_corrections.condition_pid(self.long_pid, self.prev_accel, CS.out.vEgo)  # sunnypilot hook
+          # sunnypilot: bleed and freeze the PID integrator at the end of the stop
+          freeze_i = self.brake_onset_enabled and self.brake_corrections.condition_pid(self.long_pid, self.prev_accel, CS.out.vEgo)
           pcm_accel_cmd = self.long_pid.update(error_future,
                                                speed=CS.out.vEgo,
                                                feedforward=pcm_accel_cmd,
                                                freeze_integrator=actuators.longControlState != LongCtrlState.pid or freeze_i)
-          pcm_accel_cmd = self.brake_corrections.apply(pcm_accel_cmd, self.prev_accel, a_ego_future, CS.out.vEgo, stopping,
-                                                       fcw_alert, a_ego=a_ego_blended,
-                                                       relaxed=hud_control.leadDistanceBars == 3)  # sunnypilot hook
+          if self.brake_onset_enabled:
+            pcm_accel_cmd = self.brake_corrections.apply(pcm_accel_cmd, self.prev_accel, a_ego_future, CS.out.vEgo, stopping,
+                                                        fcw_alert, a_ego=a_ego_blended,
+                                                        relaxed=hud_control.leadDistanceBars == 3)  # sunnypilot hook
         else:
           self.long_pid.reset()
           self.brake_corrections.reset()  # sunnypilot hook
