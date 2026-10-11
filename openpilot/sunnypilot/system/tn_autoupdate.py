@@ -11,7 +11,9 @@ reboot) so openpilot is back quickly.
 
 The stock updater only runs offroad and installs at the next boot, and the C3X rarely reboots, so the owner has been
 updating by hand over SSH (fetch + reset --hard + restart). This process does the same thing on its own:
-  - every FETCH_PERIOD it fetches the target branch (UpdaterTargetBranch, else the checked-out branch) from origin;
+  - every FETCH_PERIOD it fetches the target branch (UpdaterTargetBranch, else the checked-out branch) from origin, and
+    right away (then every DRIVE_FETCH_PERIOD) once the car is in D with MAIN ACC off - owner: "after MAIN ACC goes
+    off, update within 30 s, not after 5 minutes";
   - when the fetched commit differs from HEAD, the working tree is clean, and the car has been in D with MAIN ACC off and
     openpilot not engaged for HOLD_TIME, it resets the checkout to that commit, drops any update the stock updater has
     staged (the launch script would otherwise swap it in), and restarts the comma service.
@@ -36,6 +38,7 @@ from openpilot.common.swaglog import cloudlog
 
 FETCH_PERIOD = 300.  # s
 FIRST_FETCH_DELAY = 30.  # s after start
+DRIVE_FETCH_PERIOD = 20.  # s between fetches while in D with MAIN ACC off (the first one is immediate)
 FETCH_TIMEOUT = 120.  # s
 HOLD_TIME = 3.0  # s the drive conditions must hold before the restart
 STAGING_FINALIZED = "/data/safe_staging/finalized"
@@ -61,6 +64,7 @@ class DriveGearUpdater:
     self.params = params
     self.remote_sha: str | None = None
     self.next_fetch = time.monotonic() + FIRST_FETCH_DELAY
+    self.last_fetch = -1e9
     self.hold_t = 0.0
 
   def branch(self) -> str:
@@ -99,8 +103,8 @@ class DriveGearUpdater:
     if not enabled() or self.params.get_bool("DisableUpdates"):
       self.hold_t = 0.0
       return False
-    if now >= self.next_fetch:
-      self.next_fetch = now + FETCH_PERIOD
+    if now >= self.next_fetch or (condition and now - self.last_fetch >= DRIVE_FETCH_PERIOD):
+      self.next_fetch, self.last_fetch = now + FETCH_PERIOD, now
       self.fetch()
     self.hold_t = self.hold_t + dt if condition else 0.0
     if self.hold_t >= HOLD_TIME and self.pending():
