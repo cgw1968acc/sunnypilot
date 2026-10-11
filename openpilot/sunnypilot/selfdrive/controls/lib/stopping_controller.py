@@ -174,6 +174,11 @@ class StoppingController:
   # auto brake hold uses on the flat); on a slope (|pitch - FLAT_PITCH_DEG| >= SLOPE_PITCH_DEG, as in auto_brake_hold)
   # or without a pitch, or while the car creeps, the stock stopAccel applies.
   FLAT_HOLD_ACCEL = -1.2  # m/s^2
+  # Owner 2026-10-11: "can the parking brake after the stop build up more slowly? - the flat only". On the flat the
+  # ramp to FLAT_HOLD_ACCEL runs at FLAT_HOLD_RATE: -0.30 -> -1.2 in 1.8 s (was 0.9 s at STANDSTILL_HOLD_RATE). On a
+  # slope (stopAccel, -2.0) it stays at STANDSTILL_HOLD_RATE so the car is held within 1.7 s; a creep meanwhile still
+  # goes through the creep / re-roll paths, which do not use this rate.
+  FLAT_HOLD_RATE = 0.5  # m/s^2/s
   FLAT_PITCH_DEG = 1.0  # deg, what this car reports standing on the flat
   SLOPE_PITCH_DEG = 2.0  # deg away from flat that counts as a slope
   # H - creep-follow stop. Owner 2026-10-07: "at a standstill the lead moves a little, we
@@ -346,7 +351,7 @@ class StoppingController:
       elif self.cf_stopped and CS.standstill:
         rate = self.CF_HOLD_RATE  # H: then the rest of the hold, slowly
       elif self.standstill_t >= hold_delay or stop_confirmed:
-        rate = self.STANDSTILL_HOLD_RATE
+        rate = self.FLAT_HOLD_RATE if hold_floor > self.stop_accel else self.STANDSTILL_HOLD_RATE
       elif creeping and output_accel > self.REROLL_ACCEL:
         output_accel = max(self.REROLL_ACCEL, output_accel - self.REROLL_JERK * DT_CTRL)  # B: moving again - hold now
         rate = 0.0
