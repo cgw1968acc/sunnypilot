@@ -20,6 +20,7 @@ from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import BlinkerPauseLateral
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
+from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_split import LatControlTorqueSplit, SPLIT_ENABLED
 
 
 # cap how fast the commanded curvature builds at the start of a lane change so the switch eases in instead of
@@ -71,6 +72,9 @@ class ControlsExt(ModelStateBase):
 
     if torque_versions == 0.0:  # v0
       return LatControlTorqueV0(self.CP, self.CP_SP, CI, dt)
+    elif SPLIT_ENABLED and self.CP.lateralTuning.which() == 'torque':
+      # tnpb2: v1 below 55 km/h, v0 above 65 km/h, cross-faded in between (latcontrol_torque_split.py)
+      return LatControlTorqueSplit(lac, LatControlTorqueV0(self.CP, self.CP_SP, CI, dt), self.CP, self.CP_SP, CI, dt)
     else:
       return lac
 
