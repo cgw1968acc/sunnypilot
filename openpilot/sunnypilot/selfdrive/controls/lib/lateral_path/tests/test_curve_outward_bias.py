@@ -25,7 +25,7 @@ class TestCurveOutwardBias(unittest.TestCase):
     # 2026-10-06: no bias at 30 km/h, ramping to the small outward bias (0.03 since 2026-10-13) at 40 km/h
     for k in (0.006, 0.02, -0.02):
       self.assertAlmostEqual(apply_curve_outward_bias(k, V40), k * (1.0 - 0.03), places=9)
-      self.assertAlmostEqual(apply_curve_outward_bias(k, 35 * CV.KPH_TO_MS), k * (1.0 - 0.01), places=9)
+      self.assertAlmostEqual(apply_curve_outward_bias(k, 35 * CV.KPH_TO_MS), k * (1.0 - 0.015), places=9)
 
   def test_low_speed_curves_untouched(self):
     # 30 km/h and below: exactly the model curvature (the -0.05 inward bias was removed 2026-10-06)
