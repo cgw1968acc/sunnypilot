@@ -20,7 +20,7 @@ from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 # does not drive the car sees its error never close, so on its own its integrator winds up (open-loop replay of route
 # 0000013d: the idle v0 reached 0.6-0.9 torque at 85-94 km/h against a logged -0.1) and would kick the wheel when it
 # takes over. With the shared integrator the one taking over starts from the integral that actually steered the car.
-SPLIT_ENABLED = True  # False = plain v1 as before
+SPLIT_ENABLED = False  # False = plain v1 as before (owner 2026-10-13: back to plain v1, see the commit)
 # Lane centering on the v0 side (owner 2026-10-13: "on the highway I want it to centre a bit quicker, without turning
 # into side-to-side swaying; keep the FRAC correction too"). The tnpb2 path corrections live in v1 (correct_desired_curvature),
 # so above 65 km/h, where v0 drives alone, the car had no centering at all and only the model's path held it in the lane;
