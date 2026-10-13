@@ -24,27 +24,36 @@ from openpilot.common.realtime import DT_CTRL
 # 15:04 (-2.24, 15.3 km/h, 2.1 s). So it latches only when the lead brakes at <= TRIGGER_A AND we close at >= CLOSE_MIN
 # with a time to collision <= TTC_MAX, and the factor follows the hardest lead decel of the event (GAIN_A/GAIN_V, 1.10 at
 # -2.0 up to 1.30 at -4.0).
-# Smoothness (C3X rlog of 157 at 100 Hz, open loop with the real requests, delivered modelled as a 0.35 s lag): a factor
+# Second version (cab3875796) - smoothness (C3X rlog of 157 at 100 Hz, open loop with the real requests, delivered modelled as a 0.35 s lag): a factor
 # that is already full at 30 km/h made the request heavier again after the peak (-3.49 at 30 -> -4.17 at 27 km/h, a second
 # bite); full from 20 km/h down and fading in from 30 keeps the stop easing monotonically: 30/24/18/12/6/3/2 km/h
 # -3.49/-3.50/-3.19/-2.22/-1.41/-0.78/-0.56 (was -3.49/-3.09/-2.53/-1.77/-1.12/-0.69/-0.56), decel-vs-speed line R^2 0.980
 # (0.969), delivered jerk p95 1.08 (1.04) m/s^3, no re-bite; estimated stop ~3.3 m behind the lead (0.8 m). The factor
 # fades out from 4 to 2 km/h and ramps at GAIN_RATE; the 2-0 km/h end and the Toyota brake-onset shaping are unchanged.
+# Owner, same night, after seeing the delivery data: "no more than that; compensation must not be too much, past analyses
+# always overshot and made a mess. When the lead brakes hard add 1.2x for now, and only to the mid build-up towards the
+# braking peak - not to the first light touch, and not to the 2-0 km/h end." So the factor is a flat GAIN, it waits until
+# the braking has left its light first phase (request firmer than ONSET_REQ for at least ONSET_T since it started), then
+# ramps in at GAIN_RATE and is held through the peak and the easing that follows (dropping it right after the peak would
+# be a release step), fading out from 4 to 2 km/h.
 TRIGGER_A = -2.0      # m/s^2: lead accel (filtered) that can start it
 TTC_MAX = 3.5         # s: ... only while the time to collision is this short ...
 CLOSE_MIN = 10.0 / 3.6  # m/s: ... and we close in at least this fast
 RELEASE_A = 0.3       # m/s^2: the lead accelerating faster than this while not slower than us releases it
-GAIN_A = [-4.0, -3.5, -3.0, -2.5, -2.0]  # m/s^2: hardest lead decel of the event
-GAIN_V = [1.30, 1.25, 1.20, 1.15, 1.10]
+GAIN = 1.2
 GAIN_RATE = 0.5       # 1/s
-BOOST_BP = [2.0 / 3.6, 4.0 / 3.6, 20.0 / 3.6, 30.0 / 3.6]  # m/s
-BOOST_W = [0.0, 1.0, 1.0, 0.0]
+ONSET_REQ = -1.0      # m/s^2: the light first phase is over once the request is firmer than this ...
+ONSET_T = 0.5         # s: ... and braking (request < BRAKING_REQ) has lasted this long
+BRAKING_REQ = -0.3    # m/s^2
+END_BP = [2.0 / 3.6, 4.0 / 3.6]  # m/s: faded out from 4 to 2 km/h
+END_W = [0.0, 1.0]
 
 
 class LeadBrakeBoost:
   def __init__(self):
     self.latched = False
-    self.lead_a_min = 0.0
+    self.braking_t = 0.0
+    self.mid = False
     self.gain = 1.0
 
   def update(self, accel: float, v_ego: float, standstill: bool, lead, long_active: bool, accel_min: float) -> float:
@@ -57,16 +66,16 @@ class LeadBrakeBoost:
       self.latched = True
     elif lead.aLeadK > RELEASE_A and lead.vLead >= v_ego:
       self.latched = False
-    if self.latched:
-      self.lead_a_min = min(self.lead_a_min, lead.aLeadK)
-    else:
-      self.lead_a_min = 0.0
 
-    if self.latched:
-      gain = float(np.interp(self.lead_a_min, GAIN_A, GAIN_V))
-      target = 1.0 + (gain - 1.0) * float(np.interp(v_ego, BOOST_BP, BOOST_W))
-    else:
-      target = 1.0
+    # braking phase: the boost waits until the light first phase is over, then stays for the rest of this brake
+    if accel < BRAKING_REQ:
+      self.braking_t += DT_CTRL
+      if self.braking_t >= ONSET_T and accel <= ONSET_REQ:
+        self.mid = True
+    elif accel >= 0.0:
+      self.braking_t, self.mid = 0.0, False
+
+    target = 1.0 + (GAIN - 1.0) * float(np.interp(v_ego, END_BP, END_W)) if (self.latched and self.mid) else 1.0
     step = GAIN_RATE * DT_CTRL
     self.gain = float(np.clip(target, self.gain - step, self.gain + step))
     if accel < 0.0 and self.gain > 1.0:
