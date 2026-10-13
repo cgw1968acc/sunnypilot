@@ -20,7 +20,7 @@ from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 # does not drive the car sees its error never close, so on its own its integrator winds up (open-loop replay of route
 # 0000013d: the idle v0 reached 0.6-0.9 torque at 85-94 km/h against a logged -0.1) and would kick the wheel when it
 # takes over. With the shared integrator the one taking over starts from the integral that actually steered the car.
-SPLIT_ENABLED = True  # False = plain v1 as before
+SPLIT_ENABLED = False  # False = plain v1 as before (owner 2026-10-14: off on the Cross too, see the commit)
 SPLIT_V_BP = [55.0 / 3.6, 65.0 / 3.6]  # m/s
 SPLIT_V0_W = [0.0, 1.0]
 
