@@ -52,6 +52,7 @@ class LatControlTorque(LatControl):
 
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
     self.curvature_jerk_limiter = DesiredCurvatureJerkLimiter(dt)
+    self.centering_curvature = 0.0  # tnpb2: lane-centering curvature handed over by LatControlTorqueSplit (else 0)
 
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -71,6 +72,7 @@ class LatControlTorque(LatControl):
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
+    desired_curvature += self.centering_curvature
     lane_changing = self.extension.model_v2 is not None and self.extension.model_v2.meta.laneChangeState != 0
     desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
     if not active:

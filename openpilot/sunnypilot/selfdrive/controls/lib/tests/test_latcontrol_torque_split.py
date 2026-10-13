@@ -108,3 +108,21 @@ def test_integrator_is_shared_so_the_idle_controller_does_not_wind_up():
   v1.pid.i, v0.pid.i = 0.2, 0.4
   step(lac, 60)
   assert abs(v1.pid.i - 0.3) < 1e-9 and v0.pid.i == v1.pid.i
+
+
+def test_v0_gets_v1_lane_centering():
+  lac, v1, v0 = make()
+  v0.centering_curvature = 0.0
+  pc = SimpleNamespace(lane_centering=SimpleNamespace(correction=2e-4), low_centering=SimpleNamespace(correction=-5e-5))
+  v1.extension.path_corrections = pc
+  step(lac, 100)
+  assert abs(v0.centering_curvature - 1.5e-4) < 1e-12
+  pc.low_centering = None
+  step(lac, 100)
+  assert abs(v0.centering_curvature - 2e-4) < 1e-12
+
+
+def test_v0_centering_without_path_corrections_is_zero():
+  lac, v1, v0 = make()
+  step(lac, 100)
+  assert v0.centering_curvature == 0.0
