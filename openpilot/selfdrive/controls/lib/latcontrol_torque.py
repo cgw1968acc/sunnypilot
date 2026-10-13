@@ -10,6 +10,7 @@ from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
 
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext import LatControlTorqueExt
+from openpilot.sunnypilot.selfdrive.controls.lib.highway_friction import HighwayFrictionScale
 
 # At higher speeds (25+mph) we can assume:
 # Lateral acceleration achieved by a specific car correlates to
@@ -310,6 +311,7 @@ class LatControlTorque(LatControl):
     self.lane_centering = LaneCentering(dt)
     self.lane_trim = LaneTrimLowSpeed(dt, self.lane_centering)
     self.curvature_jerk_limiter = DesiredCurvatureJerkLimiter(dt)
+    self.highway_friction = HighwayFrictionScale()  # sunnypilot: see highway_friction.py
 
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -325,6 +327,7 @@ class LatControlTorque(LatControl):
     # Override torque params from extension
     if self.extension.update_override_torque_params(self.torque_params):
       self.update_limits()
+    self.highway_friction.apply(self.torque_params, CS.vEgo)  # sunnypilot hook
 
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
