@@ -19,7 +19,7 @@ CURVE_OUTWARD_V_BP = [v * CV.KPH_TO_MS for v in (30., 40., 50., 60., 70., 90., 1
 # Negative = INWARD bias (command more curvature than the model): Altis driver 2026-09-27, 30-40 km/h curves want more
 # steering; -0.05 at 30 km/h, then the outward schedule from 40 km/h. The hand-over from inward to outward is by
 # interpolation between 30 and 40 km/h (zero at ~37 km/h).
-CURVE_OUTWARD_FRAC_V = [0.0, 0.03, 0.063, 0.09, 0.09, 0.155, 0.155, 0.155]  # 2026-09-30: 60 km/h point 0.085 (+0.01 over the
+CURVE_OUTWARD_FRAC_V = [-0.01, 0.03, 0.063, 0.09, 0.09, 0.155, 0.155, 0.155]  # 2026-09-30: 60 km/h point 0.085 (+0.01 over the
 # interpolated 0.075, driver request). 2026-09-29 driver request: 40 km/h 0 -> 0.02,
 # 50 km/h 0.05 -> 0.06, flat at the 90 km/h value 0.155 from 90 upward (100/120 were 0.167).
 # 2026-10-06 driver request: 30 km/h -0.05 -> 0 (no inward bias at or below 30 km/h; ramps to 0.02 at 40).
@@ -27,7 +27,8 @@ CURVE_OUTWARD_FRAC_V = [0.0, 0.03, 0.063, 0.09, 0.09, 0.155, 0.155, 0.155]  # 20
 # 50 km/h 0.06 -> 0.07, 60 km/h 0.085 -> 0.095 (+0.01 = the step of the 09-29/09-30 requests). 70 km/h stays 0.09 as asked,
 # so the table dips slightly between 60 and 70 km/h. Then "40 km/h too": 0.02 -> 0.03.
 # Same night, owner's final values: 40 / 50 / 60 km/h = 0.03 / 0.06 / 0.09 (50 back to 0.06, 60 0.09 = flat to 70 km/h).
-# Then 50 km/h 0.06 -> 0.063 (owner).
+# Then 50 km/h 0.06 -> 0.063 (owner). Then 30 km/h 0 -> -0.01 (owner): a 1% INWARD bias at 30 km/h and, as np.interp
+# holds the end value, at every speed below 30 km/h too; zero crossing at ~32.5 km/h.
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
