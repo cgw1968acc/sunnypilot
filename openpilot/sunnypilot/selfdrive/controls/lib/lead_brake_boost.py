@@ -14,34 +14,59 @@ from openpilot.common.realtime import DT_CTRL
 # (-1.01 / -0.99 / -0.86); at 1.8 km/h it crept on the hybrid's creep torque (-0.28 -> 0) from 1.5 to 1.0 m and the
 # driver had to stop it at 0.8 m: "the hard stop lacked force at the very end, it almost hit the car in front".
 # Owner's rule: "do not change the 2-0 km/h end force; what needs more is 30 to 3 km/h; multiply by 1.2 to try, too heavy
-# is uncomfortable". So once the lead has braked hard (aLeadK <= TRIGGER), every braking request between 3 and 30 km/h is
-# multiplied by GAIN until the car stops or the lead drives off. On 00000157 the car travelled 15.35 m from 30 to 3 km/h;
+# is uncomfortable". First version (94d92b0631): once the lead braked at <= -2 m/s^2, every braking request between 3 and
+# 30 km/h x1.2 until the car stops or the lead drives off. On 00000157 the car travelled 15.35 m from 30 to 3 km/h;
 # 1.2x the decel over the same profile is ~2.6 m shorter -> a stop ~3.4 m behind the lead instead of 0.8 m.
-# No bite (owner top rule): the factor ramps in at GAIN_RATE, it only scales a request that is already braking, and the
-# Toyota brake-onset shaping downstream is unchanged.
-TRIGGER_A = -2.0      # m/s^2: lead accel (filtered) that marks a hard brake
+# Owner, same night, refined it: "x1.2 only when we are closing in fast, worked out at which hard-brake level; the harder
+# the lead brakes, the higher the factor", and "simulate whether the braking stays linear and smooth".
+# 19 lead-brake episodes (aLeadK < -1) on 9 Altis routes: ordinary lead stops at -2.0..-2.5 m/s^2 had TTC 5.5-5.7 s and
+# need nothing; the urgent ones were 157 (-3.61, closing 20.7 km/h, TTC 2.2 s), 157 (-2.38, 11.7 km/h, 3.0 s) and 133
+# 15:04 (-2.24, 15.3 km/h, 2.1 s). So it latches only when the lead brakes at <= TRIGGER_A AND we close at >= CLOSE_MIN
+# with a time to collision <= TTC_MAX, and the factor follows the hardest lead decel of the event (GAIN_A/GAIN_V, 1.10 at
+# -2.0 up to 1.30 at -4.0).
+# Smoothness (C3X rlog of 157 at 100 Hz, open loop with the real requests, delivered modelled as a 0.35 s lag): a factor
+# that is already full at 30 km/h made the request heavier again after the peak (-3.49 at 30 -> -4.17 at 27 km/h, a second
+# bite); full from 20 km/h down and fading in from 30 keeps the stop easing monotonically: 30/24/18/12/6/3/2 km/h
+# -3.49/-3.50/-3.19/-2.22/-1.41/-0.78/-0.56 (was -3.49/-3.09/-2.53/-1.77/-1.12/-0.69/-0.56), decel-vs-speed line R^2 0.980
+# (0.969), delivered jerk p95 1.08 (1.04) m/s^3, no re-bite; estimated stop ~3.3 m behind the lead (0.8 m). The factor
+# fades out from 4 to 2 km/h and ramps at GAIN_RATE; the 2-0 km/h end and the Toyota brake-onset shaping are unchanged.
+TRIGGER_A = -2.0      # m/s^2: lead accel (filtered) that can start it
+TTC_MAX = 3.5         # s: ... only while the time to collision is this short ...
+CLOSE_MIN = 10.0 / 3.6  # m/s: ... and we close in at least this fast
 RELEASE_A = 0.3       # m/s^2: the lead accelerating faster than this while not slower than us releases it
-GAIN = 1.2
-GAIN_RATE = 0.5       # 1/s: 1.0 -> 1.2 in 0.4 s, and back
-BOOST_BP = [2.0 / 3.6, 3.0 / 3.6, 30.0 / 3.6, 33.0 / 3.6]  # m/s
+GAIN_A = [-4.0, -3.5, -3.0, -2.5, -2.0]  # m/s^2: hardest lead decel of the event
+GAIN_V = [1.30, 1.25, 1.20, 1.15, 1.10]
+GAIN_RATE = 0.5       # 1/s
+BOOST_BP = [2.0 / 3.6, 4.0 / 3.6, 20.0 / 3.6, 30.0 / 3.6]  # m/s
 BOOST_W = [0.0, 1.0, 1.0, 0.0]
 
 
 class LeadBrakeBoost:
   def __init__(self):
     self.latched = False
+    self.lead_a_min = 0.0
     self.gain = 1.0
 
   def update(self, accel: float, v_ego: float, standstill: bool, lead, long_active: bool, accel_min: float) -> float:
     present = bool(lead.present)
+    closing = v_ego - lead.vLead
+    ttc = lead.dRel / closing if closing > 0.3 else 99.0
     if not long_active or standstill or not present:
       self.latched = False
-    elif lead.aLeadK <= TRIGGER_A:
+    elif lead.aLeadK <= TRIGGER_A and ttc <= TTC_MAX and closing >= CLOSE_MIN:
       self.latched = True
     elif lead.aLeadK > RELEASE_A and lead.vLead >= v_ego:
       self.latched = False
+    if self.latched:
+      self.lead_a_min = min(self.lead_a_min, lead.aLeadK)
+    else:
+      self.lead_a_min = 0.0
 
-    target = 1.0 + (GAIN - 1.0) * float(np.interp(v_ego, BOOST_BP, BOOST_W)) if self.latched else 1.0
+    if self.latched:
+      gain = float(np.interp(self.lead_a_min, GAIN_A, GAIN_V))
+      target = 1.0 + (gain - 1.0) * float(np.interp(v_ego, BOOST_BP, BOOST_W))
+    else:
+      target = 1.0
     step = GAIN_RATE * DT_CTRL
     self.gain = float(np.clip(target, self.gain - step, self.gain + step))
     if accel < 0.0 and self.gain > 1.0:
