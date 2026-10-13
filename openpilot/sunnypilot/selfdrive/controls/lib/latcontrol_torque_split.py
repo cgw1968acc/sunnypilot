@@ -21,6 +21,16 @@ from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 # 0000013d: the idle v0 reached 0.6-0.9 torque at 85-94 km/h against a logged -0.1) and would kick the wheel when it
 # takes over. With the shared integrator the one taking over starts from the integral that actually steered the car.
 SPLIT_ENABLED = True  # False = plain v1 as before
+# Lane centering on the v0 side (owner 2026-10-13: "on the highway I want it to centre a bit quicker, without turning
+# into side-to-side swaying; keep the FRAC correction too"). The tnpb2 path corrections live in v1 (correct_desired_curvature),
+# so above 65 km/h, where v0 drives alone, the car had no centering at all and only the model's path held it in the lane;
+# the low-speed lane centering (designed up to 70 km/h) also faded with v1 from 55 km/h. v1 still computes them every frame,
+# so hand v0 the same centering curvature (highway LaneCentering, full from 80 km/h, + low-speed lane centering, up to
+# 70 -> 80 km/h), added after v0's own curve outward bias (the FRAC table, same function as v1's). Gains are the road-tuned
+# v1 ones (KP 0.35 / KD 0.9 / KI 0.05, jerk 0.3 m/s^3). Open loop on route 0000013f (v0, > 80 km/h, 266 s): correction
+# p95 0.23 m/s^2, 0.15-0.6 Hz desired lateral accel +7%; route 0000013d (v1 with the same centering) against 13f (v0
+# without): offset > 0.3 m 0.6% vs 1.4% of the time, std 0.091 vs 0.104 m. Turn-exit limiter / trim stay v1 only.
+V0_CENTERING_ENABLED = True  # False = v0 without centering, as in edb5f107dd
 SPLIT_V_BP = [55.0 / 3.6, 65.0 / 3.6]  # m/s
 SPLIT_V0_W = [0.0, 1.0]
 
@@ -58,6 +68,16 @@ class LatControlTorqueSplit(LatControl):
     self.extension = _ExtensionFanOut(lac_v1.extension, lac_v0.extension)
     self.v0_weight = 0.0
 
+  def _centering_curvature(self) -> float:
+    """The lane-centering part of v1's path corrections of this frame (v1.update ran first)."""
+    pc = getattr(self.v1.extension, 'path_corrections', None)
+    if pc is None:
+      return 0.0
+    c = pc.lane_centering.correction
+    if pc.low_centering is not None:
+      c += pc.low_centering.correction
+    return float(c)
+
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
     self.v1.update_torque_parameters(latAccelFactor, latAccelOffset, friction)
     self.v0.update_torque_parameters(latAccelFactor, latAccelOffset, friction)
@@ -70,6 +90,7 @@ class LatControlTorqueSplit(LatControl):
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
     steer_v1, out_v1, log_v1 = self.v1.update(active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose,
                                               curvature_limited, lat_delay)
+    self.v0.centering_curvature = self._centering_curvature() if V0_CENTERING_ENABLED else 0.0
     steer_v0, out_v0, log_v0 = self.v0.update(active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose,
                                               curvature_limited, lat_delay)
     w = get_v0_weight(CS.vEgo)
