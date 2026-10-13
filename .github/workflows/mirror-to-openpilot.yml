@@ -1,0 +1,36 @@
+# Mirror the install branches to cgw1968acc/openpilot, so a reset device can install them with
+# installer.comma.ai/cgw1968acc/<branch> (the installer clones github.com/<user>/openpilot.git).
+# Needs the secret OPENPILOT_DEPLOY_KEY in cgw1968acc/sunnypilot (private half of a deploy key with
+# write access on cgw1968acc/openpilot). The repository check keeps it from running in the mirror itself.
+name: mirror to cgw1968acc/openpilot
+
+on:
+  push:
+    branches: [tnpb2, tncr19, tnc3E-tici]
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    if: github.repository == 'cgw1968acc/sunnypilot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: push the branch to cgw1968acc/openpilot
+        env:
+          DEPLOY_KEY: ${{ secrets.OPENPILOT_DEPLOY_KEY }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+          git clone --bare --single-branch --branch "$BRANCH" "https://github.com/${GITHUB_REPOSITORY}.git" src.git
+          cd src.git
+          # the mirror always equals the sunnypilot branch, also after a rewritten history
+          git push --force git@github.com:cgw1968acc/openpilot.git "refs/heads/${BRANCH}:refs/heads/${BRANCH}"
+          git ls-remote git@github.com:cgw1968acc/openpilot.git "refs/heads/${BRANCH}"
