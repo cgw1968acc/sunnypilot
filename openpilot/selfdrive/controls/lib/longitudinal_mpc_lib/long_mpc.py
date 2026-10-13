@@ -322,7 +322,7 @@ class LongitudinalMpc:
     lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1])
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
-    x_obstacles = self.obstacle_ext.adjust(x_obstacles, lead_xv_0, lead_xv_1, self.x_sol[:, 1], t_follow)  # sunnypilot hook
+    x_obstacles = self.obstacle_ext.adjust(x_obstacles, lead_xv_0, lead_xv_1, self.x_sol[:, 1])  # sunnypilot hook
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
 
     self.yref[:,:] = 0.0

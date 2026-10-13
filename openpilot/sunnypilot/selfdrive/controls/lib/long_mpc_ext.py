@@ -61,25 +61,6 @@ LIGHT_ONSET_T_V = [0.8, 1.1, 1.1, 0.0]  # s of travel reserved for the light fir
 # Standard and aggressive keep the stock factor.
 RELAXED_JERK_FACTOR = 3.0
 
-# Stop gap by personality. Owner 2026-10-13 night (route not yet uploaded): "23:24, following in Relaxed, the brake to a
-# stop was very poor"; "Standard also stops too far back"; "the end of the stop in Relaxed and Standard must end at about
-# the same distance as Aggressive". The MPC's desired distance carries T_FOLLOW * v at every node, so Relaxed (1.75 s) and
-# Standard (1.45 s) keep 0.5 / 0.2 s more gap than Aggressive (1.25 s) all the way down the stop; the car is already
-# crawling further back and the stopping controller only ever eases a stop that ends too CLOSE, so the extra stays.
-# T_FOLLOW itself is not touched (owner rule). Instead, below STOP_MATCH_BP the extra (T_FOLLOW - 1.25) * v is taken off
-# the desired distance per node (same x_obstacle path as the trim above): below 30 km/h every personality wants exactly the
-# Aggressive distance, fading back to its own by 45 km/h. Trade-off: slow following under 30 km/h also sits at the
-# Aggressive gap (Relaxed at 20 km/h: 2.8 m closer, Standard 1.1 m). Highway and cruise gaps are unchanged.
-T_FOLLOW_AGGRESSIVE = 1.25  # s, = stock get_T_FOLLOW(aggressive)
-STOP_MATCH_BP = [30.0 / 3.6, 45.0 / 3.6]  # m/s
-STOP_MATCH_W = [1.0, 0.0]
-
-
-def get_stop_match_trim(v, t_follow: float):
-  """metres taken OFF the desired distance per node so that low speed matches the Aggressive distance"""
-  v = np.maximum(v, 0.0)
-  return max(t_follow - T_FOLLOW_AGGRESSIVE, 0.0) * v * np.interp(v, STOP_MATCH_BP, STOP_MATCH_W)
-
 
 def get_light_onset_margin(v):
   v = np.maximum(v, 0.0)
@@ -111,10 +92,7 @@ class LongMpcObstacleExt:
       pass
     self.night_gap = NightGap(mem_params)  # +5 m from 80 km/h at night, see night_gap.py
 
-  def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan, t_follow: float | None = None):
+  def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan):
     x_obstacles = x_obstacles + np.column_stack([get_light_onset_margin(lead_xv_0[:, 1]), get_light_onset_margin(lead_xv_1[:, 1])])
     self.night_gap.update()
-    trim = get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan)
-    if t_follow is not None:
-      trim = trim + get_stop_match_trim(v_plan, t_follow)
-    return x_obstacles + trim[:, None]
+    return x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan))[:, None]
