@@ -47,6 +47,22 @@ HARD_BRAKE_ACCEL = -3.0
 URGENT_T = 0.1  # s
 URGENT_J = 1.0  # m/s^3
 URGENT_T_RAMP = 0.1  # s
+# Lead-urgent onset (tncr, owner 2026-10-15: "even when the lead brakes hard the first brake must be light, then build
+# linearly as needed" and "compare my perfect manual stops and use them for the automatic hard brake where it fits").
+# The owner's 3-bookmark MANUAL hard stops (11 since 10-01, peak -2.1..-4.2, pedal press = t 0, decel smoothed 0.1 s):
+# -0.06..-0.74 at 0.1 s (a light touch), -1 reached at 0.18-0.36 s, the urgent ones -2 at 0.31-0.60 s; then held or
+# built further. The automatic 3-bookmark hard stops reached -1 only at 0.7-2.0 s and -2 at 1.1-1.8 s: the soft onset
+# below (0.3 m/s^3 for 0.3 s, 2.0 m/s^3 by 0.9 s, friction entry at 0.5 m/s^3) is right for ordinary brakes, but in an
+# urgent lead brake it costs ~1 s, the plan then has to brake harder later and ends closer. So while the lead brakes at
+# <= LEAD_URGENT_A and the request is <= LEAD_URGENT_REQ (the same event as the MPC emergency trim, long_mpc_ext, and
+# stop_gap_hold), the onset follows the manual template: LEAD_URGENT_J over LEAD_URGENT_T_BP - 1.0 m/s^3 for the first
+# 0.1 s (-0.1 at 0.1 s, lighter than the owner's own touch), then a linear rise to 4.0 m/s^3 by 0.4 s (about -0.6 at
+# 0.3 s, -1.4 at 0.5 s, -2.2 at 0.7 s), without the friction-entry hold-back. Latched for this brake (until the request
+# is no longer braking); never inside the engage window (engage_close_stop / the engage schedule own that).
+LEAD_URGENT_A = -1.5      # m/s^2: lead decel (aLeadK)
+LEAD_URGENT_REQ = -2.0    # m/s^2: our request
+LEAD_URGENT_T_BP = [0.0, 0.1, 0.4]  # s
+LEAD_URGENT_J = [1.0, 1.0, 4.0]     # m/s^3
 
 
 # Creep-follow gas release, with the creep-follow stop (see
@@ -95,9 +111,11 @@ class BrakeOnsetShaper:
     self.t_entry = 0.0      # time spent limited by the friction entry in this brake
     self.catchup = False    # after an entry: close the gap gently
     self.friction_in = False
+    self.lead_urgent = False  # tncr: this brake follows the manual urgent template (LEAD_URGENT_*)
 
   def reset(self) -> None:
     self.t_onset = 0.0
+    self.lead_urgent = False
     self.t_entry = 0.0
     self.catchup = False
     self.friction_in = False
@@ -136,12 +154,17 @@ class BrakeOnsetShaper:
 
   def down_step(self, accel_request: float, prev_accel: float, bypass: bool = False, v_ego: float = 30.0,
                 urgent: bool = False, t_engaged: float | None = None, a_ego: float | None = None,
-                brake_force: float = float('nan'), engage_j_down=None) -> float:
+                brake_force: float = float('nan'), engage_j_down=None, lead=None) -> float:
+    if accel_request >= 0.0:
+      self.lead_urgent = False
+    elif lead is not None and lead.status and lead.aLeadK <= LEAD_URGENT_A and accel_request <= LEAD_URGENT_REQ and \
+         not (t_engaged is not None and t_engaged < ENGAGE_BRAKE_T_BP[-1]):
+      self.lead_urgent = True
     if bypass:
       self.t_onset = 0.0
       self.t_entry, self.catchup = 0.0, False
       return -self.stock_down_jerk * self.dt
-    entry = None if urgent else self.friction_entry_step(accel_request, prev_accel, v_ego, a_ego, brake_force)
+    entry = None if (urgent or self.lead_urgent) else self.friction_entry_step(accel_request, prev_accel, v_ego, a_ego, brake_force)
     step = self._down_step(accel_request, prev_accel, v_ego, urgent, t_engaged, engage_j_down)
     return step if entry is None else -min(-step, entry)
 
@@ -155,6 +178,8 @@ class BrakeOnsetShaper:
 
     if urgent:
       t_bp, j_bp = [0.0, URGENT_T, URGENT_T + max(URGENT_T_RAMP, self.dt)], [URGENT_J, URGENT_J, self.stock_down_jerk]
+    elif self.lead_urgent:
+      t_bp, j_bp = LEAD_URGENT_T_BP, LEAD_URGENT_J
     else:
       t_bp, j_bp = self.schedule_t(v_ego), self.schedule_j(v_ego)
     gentlest_step = -ONSET_J_DOWN[0] * self.dt

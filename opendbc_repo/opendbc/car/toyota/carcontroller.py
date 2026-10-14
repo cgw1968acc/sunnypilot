@@ -255,7 +255,8 @@ class CarController(CarControllerBase, GasInterceptorCarController):
           winddown_step = self.brake_onset.down_step(pcm_accel_cmd, self.prev_accel, bypass=fcw_alert, v_ego=CS.out.vEgo,
                                                      urgent=urgent, t_engaged=self.engage_onset.t_since_engage,
                                                      a_ego=CS.out.aEgo, brake_force=CS.brake_force,
-                                                     engage_j_down=self.engage_close.j_down if self.engage_close.active else None)  # sunnypilot hook
+                                                     engage_j_down=self.engage_close.j_down if self.engage_close.active else None,
+                                                     lead=CC_SP.leadOne)  # sunnypilot hook
           windup_step = self.engage_onset.up_step(True)
           pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, winddown_step, windup_step)
         else:

@@ -189,3 +189,38 @@ class TestResumeSoftStart:
 
   def test_a_positive_a_ego_starts_from_zero(self):
     assert abs(self._run(a_ego=0.3)[0] - 0.6 * DT) < 1e-9
+
+
+def _onset_profile(lead, request=-2.5, v_ego=50 / 3.6, t_engaged=None, secs=1.2):
+  from types import SimpleNamespace as NS  # noqa: F401
+  from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper
+  sh, cmd, out = BrakeOnsetShaper(0.01, 4.0), 0.0, []
+  for _ in range(int(secs / 0.01)):
+    cmd = max(request, cmd + sh.down_step(request, cmd, v_ego=v_ego, urgent=sh.is_urgent(request, False), t_engaged=t_engaged,
+                                          a_ego=cmd, lead=lead))
+    out.append(cmd)
+  return out, sh
+
+
+def test_lead_urgent_follows_the_manual_template():
+  # tncr 10-15: lead braking hard + request <= -2.0: light 0.1 s, then a linear build to 4 m/s^3 by 0.4 s
+  from types import SimpleNamespace as NS
+  out, sh = _onset_profile(NS(status=True, aLeadK=-2.3))
+  assert sh.lead_urgent
+  assert -0.12 <= out[9] <= -0.08          # 0.1 s: a light touch (-0.1)
+  assert -0.75 <= out[29] <= -0.45         # 0.3 s
+  assert out[69] <= -1.9                   # -2 by ~0.7 s (the owner's urgent manual stops: 0.3-0.6 s)
+  steps = [b - a for a, b in zip(out, out[1:], strict=False)]
+  assert all(s2 <= s1 + 1e-9 for s1, s2 in zip(steps[:40], steps[1:41], strict=False))  # the build only speeds up (linear jerk ramp)
+  assert min(steps) >= -4.0 * 0.01 - 1e-9  # never past the stock jerk
+
+
+def test_ordinary_lead_keeps_the_soft_onset():
+  from types import SimpleNamespace as NS
+  urgent, _ = _onset_profile(NS(status=True, aLeadK=-2.3))
+  soft, sh = _onset_profile(NS(status=True, aLeadK=-1.0))  # lead not braking hard: the normal (very light) onset
+  assert not sh.lead_urgent and soft[69] > urgent[69] + 0.5
+  none, sh2 = _onset_profile(None)
+  assert not sh2.lead_urgent and abs(none[69] - soft[69]) < 1e-9
+  eng, sh3 = _onset_profile(NS(status=True, aLeadK=-2.3), t_engaged=0.2)  # inside the engage window: never
+  assert not sh3.lead_urgent
