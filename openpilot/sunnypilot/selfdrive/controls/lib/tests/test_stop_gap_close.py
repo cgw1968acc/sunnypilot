@@ -52,12 +52,12 @@ def sim(v, d, plain=-0.6, creep=0.27, tau=0.6, delay=0.2, t_max=30.0):
 def test_passes_through_when_the_stop_is_not_far():
   assert run(StopGapClose(), 200, -0.8, 8 / 3.6, -0.8, lead(5.0)) == -0.8           # 5 - 3.1 = 1.9 m
   assert run(StopGapClose(), 200, -0.5, 8 / 3.6, -0.5, lead(15.0, v=2.0)) == -0.5   # moving lead
-  assert run(StopGapClose(), 200, -0.5, 20 / 3.6, -0.5, lead(30.0)) == -0.5         # above 12 km/h
+  assert run(StopGapClose(), 200, -0.5, 35 / 3.6, -0.5, lead(60.0)) == -0.5         # above 30 km/h
   assert run(StopGapClose(), 200, -2.5, 8 / 3.6, -2.5, lead(12.0)) == -2.5          # hard brake
 
 
 def test_a_mid_stop_decel_does_not_predict_far():
-  c = StopGapClose()  # route 00000159 09:14:41: -1.14 at 12 km/h, 9.3 m; with the 0.9 cap it predicts 3.1 m
+  c = StopGapClose()  # route 00000159 09:14:41: -1.14 at 12 km/h, 9.3 m; with the 0.9 cap it predicts 3.1 m (< GAP_TRIGGER 3.5)
   run(c, 100, -1.14, 12 / 3.6, -1.4, lead(9.3))
   assert not c.active
 
@@ -65,10 +65,11 @@ def test_a_mid_stop_decel_does_not_predict_far():
 def test_far_stop_rolls_on_steadily_into_the_window():
   # 19:35:35 on route 0000015c (stopped 5.5 m out) and others; robust to PCM lag and creep torque spread
   for v0, d, plain in ((11.2, 16.5, -0.57), (12.0, 12.1, -0.88), (10.1, 8.9, -1.05), (11.0, 16.0, -0.5),
+                       (20.0, 21.9, -1.0), (25.0, 30.6, -1.0), (30.0, 41.2, -1.0),  # tncr: starts up to 30 km/h
                        (6.0, 9.0, -0.7), (4.1, 7.5, -0.65)):
     for tau in (0.35, 0.6, 0.9):
       for creep in (0.20, 0.25, 0.30):
-        gap, hist = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
+        gap, hist = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau, t_max=40.0)
         if v0 > 8.0:
           assert 3.0 <= gap <= 4.5, (v0, tau, creep, gap)  # tncr: held while it ends 3.35-3.8 m; the slowest plant overshoots a bit
         else:  # tncr: a late trigger eases at only 0.3 m/s^3 - it closes less, but never ends farther than without it
@@ -76,13 +77,15 @@ def test_far_stop_rolls_on_steadily_into_the_window():
           gap_off, _ = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
           stop_gap_close.ENABLED = True
           assert 3.0 <= gap <= gap_off + 0.05, (v0, tau, creep, gap, gap_off)
-        assert len(hist) < (1200 if v0 > 8.0 else 1500), (v0, tau, creep)  # it does stop (no endless crawl; tncr's slow
+        assert len(hist) < (1200 if v0 <= 12.0 and v0 > 8.0 else 1500), (v0, tau, creep)  # it does stop (no endless crawl; tncr's slow
         # ease makes a 6 km/h late trigger with the strongest creep torque take up to ~13 s)
         lo, rise = 99.0, 0.0
         for v, _, _ in hist:  # fast-slow-fast: how much the speed rises again after a dip
           lo = min(lo, v)
           rise = max(rise, v - lo)
-        assert rise < 0.15 / 3.6, (v0, tau, creep, rise * 3.6)
+        # tncr: a late (4-6 km/h) trigger with the strongest creep crawls ~0.9 km/h to the point and may drift up
+        # 0.16 km/h over ~6 s (steady creep, not fast-slow)
+        assert rise < (0.15 if v0 > 8.0 else 0.2) / 3.6, (v0, tau, creep, rise * 3.6)
 
 
 def test_end_is_minus_035_at_zero():  # tncr (Corolla Cross): -0.35; Altis -0.30
@@ -166,3 +169,14 @@ def test_tncr_far_gap_holds_the_present_force():
     v -= b_hold * 0.01
   steady = outs[50:]
   assert max(steady) - min(steady) < 0.02
+
+
+def test_tncr_eases_above_20kph_and_keeps_its_limit():
+  # route 00000069 00:40:16-18: plan -1.51 at 28 km/h, 33 m, stopped lead - the plan alone ends ~8 m out. It takes over
+  # above 20 km/h and eases slowly (<= 0.3 m/s^3); the firmest own decel stays at its 28 km/h value later on
+  gap, hist = sim(28.5 / 3.6, 33.0, plain=-1.51, t_max=40.0)
+  assert 3.2 <= gap <= 3.6, gap
+  assert any(a for v, _, a in hist if v > 20 / 3.6)                       # acting above 20 km/h
+  above = [cmd for v, cmd, _ in hist if v > 2.0 / 3.6]
+  assert all(c1 - c0 <= stop_gap_close.RELEASE_RATE * 0.01 + 1e-9 for c0, c1 in zip(above, above[1:], strict=False))
+  assert all(a for v, _, a in hist if 3 / 3.6 < v < 20 / 3.6)             # never handed back mid-stop

@@ -43,9 +43,10 @@ B_FLOOR = 0.3              # m/s^2: above V_FLOOR never ask for less decel than 
                            # routes 69/6a at 3-20 km/h: req -0.2/-0.3/-0.4 still gave aEgo -0.30/-0.44/-0.51 (regen, 80-480 N) -
                            # no dead zone there - and -0.5 would have blocked closing the gap at all on 6a
 V_FLOOR = 2.0 / 3.6        # m/s
-V_MAX = 12.0 / 3.6         # m/s: decides only in the last part of the stop
+V_MAX = 30.0 / 3.6         # m/s: tncr 12 -> 30 km/h (owner 10-15: do the slow easing above 20 km/h, not at the end)
 LEAD_V_MAX = 0.5           # m/s: lead treated as stopped
-GAP_TRIGGER = 4.0          # m (radar dRel): predicted stop beyond this -> close the gap
+GAP_TRIGGER = 3.5          # m (radar dRel): predicted stop beyond this -> close the gap (tncr 4.0 -> 3.5, owner 10-15:
+                           # ideal 3-3.5 m, beyond 3.5 ease slowly / creep-adjust)
 GAP_TARGET = 3.1           # m: aim of the final stop (owner: 3-3.5 m; the sim ends ~0.2 m beyond it)
 TAPER_ROLL = 0.25          # m: the 2 -> 0 km/h taper to -0.30 (end_force_limit) rolls a little further: aim short of it
 B_MIN = 0.3                # m/s^2: floor of the decel used in the prediction
@@ -53,7 +54,13 @@ B_PRED_MAX = 0.9           # m/s^2: and its cap (route 00000159 09:14:41: -1.14 
                            # the stop ended 2.8 m)
 HARD_ACCEL = -2.0          # m/s^2: never during a hard brake (route 00000159 08:58:18, -3.5 at 6.7 km/h)
 BRAKING_T = 0.5            # s: braking (request < 0) for this long before it may act (not right after engaging)
-B_MAX = 0.8                # m/s^2: firmest decel it asks for by itself
+B_MAX = 0.8                # m/s^2: firmest decel it asks for by itself (at <= 12 km/h; see B_HI_V)
+# tncr 10-15: to ease ABOVE 20 km/h (owner) the prediction cap and the firmest own decel rise with speed - route
+# 00000069 at 20 km/h / 21.5 m had the plan at -1.31 (the plan alone would end ~8 m out) and needed ~0.96: with 0.9 / 0.8
+# it never acted there and only eased at 10 km/h
+B_HI_V = [12.0 / 3.6, 20.0 / 3.6]  # m/s
+B_PRED_MAX_V = [0.9, 1.5]  # m/s^2: prediction cap by speed
+B_MAX_V = [0.8, 1.5]       # m/s^2: firmest own decel by speed
 ROOM_MIN = 0.1             # m
 K_A = 1.0                  # (m/s^2)/(m/s^2): decel feedback - tncr: FIRMER ONLY (two-sided it pumped against the Cross
                            # brake lag; one-sided it still makes up for creep torque the mapping underestimates)
@@ -68,9 +75,11 @@ V_FILTER_T = 0.3           # s: speed filter
 CREEP_V = [3.0 / 3.6, 6.0 / 3.6]  # m/s
 CREEP_OFF = [0.27, 0.0]           # m/s^2
 CREEP_GAIN = [1.2, 1.0]
-HOLD_BAND = 0.45           # m: tncr - the present force is held while the stop ends within GAP_TARGET + TAPER_ROLL and
-                           # this much beyond it (3.35-3.8 m aimed, owner 3-3.5 m)
-RELEASE_RATE = 0.3         # m/s^3: lighter (owner: linear release; tncr 1.0 -> 0.3, no release feel at 10-5 km/h)
+HOLD_BAND = 0.15           # m: tncr - the present force is held while the stop ends within GAP_TARGET + TAPER_ROLL and
+                           # this much beyond it (3.35-3.5 m; owner 10-15: beyond 3.5 m ease slowly / creep-adjust)
+RELEASE_RATE = 0.3         # m/s^3: lighter (owner: linear release; tncr 1.0 -> 0.3, no release feel at 10-5 km/h). Owner 10-15
+                           # "very slow easing is fine, but do it above 20 km/h, not at the end": done by starting at
+                           # V_MAX 30 km/h; a slower rate below 10 km/h (0.15/0.2) only ended late triggers farther (sim)
 FIRM_RATE = 1.0            # m/s^3: firmer (no bite)
 RETURN_RATE = 1.5          # m/s^3: back to the plain request after a hand-back
 JUMP_D = 1.0               # m: a dRel step this large in one frame = a different / flickering lead
@@ -92,6 +101,7 @@ class StopGapClose:
   def reset(self):
     self.active = False
     self.out = None          # shaped output while active / returning
+    self.b_max = B_MAX
     self.braking_t = 0.0
     self.lost_t = 0.0
     self.last_d = None
@@ -120,10 +130,13 @@ class StopGapClose:
         self._hand_back()
     elif present and lead.vLead < LEAD_V_MAX and not jumped and v_ego <= V_MAX and self.braking_t >= BRAKING_T and \
          accel > HARD_ACCEL:
-      b = float(np.clip(min(-accel, -a_ego), B_MIN, B_PRED_MAX))
+      b = float(np.clip(min(-accel, -a_ego), B_MIN, np.interp(v_ego, B_HI_V, B_PRED_MAX_V)))
       if d - v_ego ** 2 / (2.0 * b) > GAP_TRIGGER:
         self.active = True
         self.out = accel
+        # the firmest own decel is fixed at the speed it took over: dropping it with the speed would hand a stop it eased
+        # at 25 km/h back to a firmer plan at 11 km/h (open-loop replay of route 00000069)
+        self.b_max = float(np.interp(v_ego, B_HI_V, B_MAX_V))
 
     if self.active:
       self.v_f = v_ego if self.v_f is None else self.v_f + (v_ego - self.v_f) * DT_CTRL / V_FILTER_T
@@ -148,10 +161,11 @@ class StopGapClose:
       else:
         target = max(decel_request(b_far, v_ego), self.out - RELEASE_RATE * DT_CTRL)  # clearly too far even holding:
                                                     # ease slowly, only down to the edge of the hold band
-      if b > B_MAX and accel < target:  # can no longer be done lightly and the plan brakes firmer: it takes over
+      b_max = self.b_max
+      if b > b_max and accel < target:  # can no longer be done lightly and the plan brakes firmer: it takes over
         self._hand_back()
       else:
-        target = min(max(target, decel_request(B_MAX, v_ego)), 0.0)
+        target = min(max(target, decel_request(b_max, v_ego)), 0.0)
         if self.d_f - GAP_TARGET < ROOM_END or self.v_f < V_END:  # the stop itself: at least the owner's end -0.35
           target = min(target, END_ACCEL)
         if v_ego > V_FLOOR:  # tncr: never a coast above 2 km/h
