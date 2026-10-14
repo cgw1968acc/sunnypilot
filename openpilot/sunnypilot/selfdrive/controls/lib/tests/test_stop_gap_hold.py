@@ -58,3 +58,18 @@ def test_2_to_0_end_untouched():
   assert run(h, 1, -0.5, 2.0 / 3.6, -0.6, lead(1.5)) == -0.5                # 2 km/h and below: the end line as it is
   assert run(h, 1, -0.4, 0.0, 0.0, lead(1.5), standstill=True) == -0.4
   assert h.held is None
+
+
+def test_tncr_urgent_lead_brake_holds_only_below_2m():
+  # owner 10-15: in a hard lead brake the stop may end down to 2 m; the MPC's emergency trim aims ~2.4 m there
+  from types import SimpleNamespace as NS
+  from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_hold import StopGapHold
+  h = StopGapHold()
+  lead_braking = NS(present=True, dRel=20.0, vLead=8.0, aLeadK=-2.3)
+  for _ in range(50):
+    h.update(-2.4, 12.0, -2.3, False, lead_braking, True)    # urgent: lead -2.3 and we ask -2.4
+  assert h.urgent
+  stopped = NS(present=True, dRel=3.0, vLead=0.0, aLeadK=0.0)
+  for _ in range(300):
+    out = h.update(-0.8, 3.0 / 3.6, -0.8, False, stopped, True)  # predicted ~2.6 m: below 3.5 but above 2.0
+  assert out == -0.8 and not h.holding

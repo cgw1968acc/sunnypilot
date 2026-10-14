@@ -61,6 +61,26 @@ LIGHT_ONSET_T_V = [0.8, 1.1, 1.1, 0.0]  # s of travel reserved for the light fir
 # Standard and aggressive keep the stock factor.
 RELAXED_JERK_FACTOR = 3.0
 
+# Emergency stop-distance trim (tncr, owner 2026-10-15, supreme braking principle): "when the lead brakes hard, do not
+# insist on stopping 3 m or more back - allow down to 2 m, so the brake is not too fierce". STOP_DISTANCE (6 m) is
+# compiled into the solver, so - like the trim above - the obstacle is moved away while the lead brakes (<= EMERG_A) AND
+# our own plan is already fierce: the trim follows the firmest planned decel seen in this event, 0 at EMERG_PLAN_A0 up to
+# EMERG_TRIM at EMERG_PLAN_A1 (latched, so a softer plan does not take it away again). Ordinary stops (plan lighter than
+# EMERG_PLAN_A0) are untouched, so they still end 3-3.5 m. It ramps in at EMERG_RATE_ON and out at EMERG_RATE_OFF; it
+# ends when the car stops, the lead pulls away, or the lead has been calm (> EMERG_CALM_A, not closing) for EMERG_CALM_T.
+# Device closed-loop MPC replays (C4, see the commit): route 00000119 09:23 (lead -2.2..-2.4 from 46 km/h) the peak
+# falls -2.61 -> -2.41 (0.45 s car lag: -2.83 -> -2.55), closest 4.24 -> 2.40 m (2.30); route 00000157 23:29:35 (lead
+# -3.6 from 55 km/h) stays at the -3.5 limit (physics), only the stop ends closer: 4.79 -> 2.41 m (2.90).
+EMERG_A = -1.5           # m/s^2: the lead brakes at least this hard
+EMERG_PLAN_A0 = -2.0     # m/s^2: no trim while the plan is lighter than this
+EMERG_PLAN_A1 = -2.5     # m/s^2: full trim from here
+EMERG_TRIM = 2.5         # m taken off the desired distance at full trim
+EMERG_RATE_ON = 4.0      # m/s
+EMERG_RATE_OFF = 1.0     # m/s
+EMERG_CALM_A = -0.5      # m/s^2
+EMERG_CALM_T = 2.0       # s
+EMERG_DT = 0.05          # s: the planner runs at 20 Hz
+
 
 def get_light_onset_margin(v):
   v = np.maximum(v, 0.0)
@@ -91,8 +111,31 @@ class LongMpcObstacleExt:
     except Exception:
       pass
     self.night_gap = NightGap(mem_params)  # +5 m from 80 km/h at night, see night_gap.py
+    self.emerg = False
+    self.emerg_trim = 0.0
+    self.emerg_plan = 0.0  # firmest planned decel of this event
+    self.calm_t = 0.0
 
-  def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan):
+  def update_emergency(self, lead_xv_0, v_plan, t1: float, t_idxs=None) -> float:
+    """tncr: the emergency trim (m) for this planner step, see EMERG_*"""
+    v_ego = float(v_plan[0])
+    v_lead = float(lead_xv_0[0, 1])
+    a_lead = (float(lead_xv_0[1, 1]) - v_lead) / t1
+    closing = v_ego - v_lead
+    a_plan = float(np.min(np.diff(v_plan) / np.diff(t_idxs))) if t_idxs is not None else 0.0
+    self.calm_t = self.calm_t + EMERG_DT if (a_lead > EMERG_CALM_A and closing < 1.0) else 0.0
+    if v_ego < 0.3 or closing < -1.0 or self.calm_t >= EMERG_CALM_T:
+      self.emerg, self.emerg_plan = False, 0.0
+    elif a_lead <= EMERG_A and a_plan <= EMERG_PLAN_A0:
+      self.emerg = True
+    if self.emerg:
+      self.emerg_plan = min(self.emerg_plan, a_plan)
+    target = EMERG_TRIM * float(np.interp(self.emerg_plan, [EMERG_PLAN_A1, EMERG_PLAN_A0], [1.0, 0.0])) if self.emerg else 0.0
+    self.emerg_trim = float(np.clip(target, self.emerg_trim - EMERG_RATE_OFF * EMERG_DT, self.emerg_trim + EMERG_RATE_ON * EMERG_DT))
+    return self.emerg_trim
+
+  def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan, t1: float = 0.0, t_idxs=None):
     x_obstacles = x_obstacles + np.column_stack([get_light_onset_margin(lead_xv_0[:, 1]), get_light_onset_margin(lead_xv_1[:, 1])])
     self.night_gap.update()
-    return x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan))[:, None]
+    emerg = self.update_emergency(lead_xv_0, v_plan, t1, t_idxs) if t1 > 0.0 else 0.0
+    return x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan) + emerg)[:, None]

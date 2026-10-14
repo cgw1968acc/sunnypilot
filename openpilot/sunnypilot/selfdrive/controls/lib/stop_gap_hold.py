@@ -33,10 +33,13 @@ BRAKING_T = 1.0          # s: ... for this long before it may hold (never at the
 END_BP = [2.0 / 3.6, 7.0 / 3.6]  # m/s: blended back into the request from 7 to 2 km/h
 END_W = [0.0, 1.0]
 # tncr, owner 2026-10-15 (supreme principle): when the lead brakes hard, allow the stop down to 2 m so the brake is not
-# too fierce: after an urgent lead brake (same test as lead_brake_boost: lead <= URGENT_A, closing >= URGENT_CLOSE, time
-# to collision <= URGENT_TTC) the hold only acts below GAP_MIN_URGENT, until this stop ends
+# too fierce: after an urgent lead brake the hold only acts below GAP_MIN_URGENT, until this stop ends. Urgent = the
+# same event the MPC's emergency trim reacts to (long_mpc_ext EMERG_*: the lead brakes at <= URGENT_A while our request
+# is firmer than URGENT_REQ), or the lead_brake_boost test (lead <= -2.0, closing >= URGENT_CLOSE, TTC <= URGENT_TTC).
+# Holding to 3.5 m there would undo the MPC's 2.5 m trim and make the end of the stop firmer.
 GAP_MIN_URGENT = 2.0     # m
-URGENT_A = -2.0          # m/s^2
+URGENT_A = -1.5          # m/s^2
+URGENT_REQ = -2.0        # m/s^2
 URGENT_TTC = 3.5         # s
 URGENT_CLOSE = 10.0 / 3.6  # m/s
 
@@ -54,7 +57,9 @@ class StopGapHold:
       return accel
     if bool(lead.present):
       closing = v_ego - lead.vLead
-      if lead.aLeadK <= URGENT_A and closing >= URGENT_CLOSE and lead.dRel / max(closing, 0.3) <= URGENT_TTC:
+      if lead.aLeadK <= URGENT_A and accel <= URGENT_REQ:
+        self.urgent = True
+      elif lead.aLeadK <= -2.0 and closing >= URGENT_CLOSE and lead.dRel / max(closing, 0.3) <= URGENT_TTC:
         self.urgent = True
 
     self.braking_t = self.braking_t + DT_CTRL if accel < BRAKING_REQ else 0.0
