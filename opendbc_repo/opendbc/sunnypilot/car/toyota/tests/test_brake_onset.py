@@ -96,22 +96,33 @@ class TestBrakeOnset:
 class TestEngageBrake:
   """2026-10-04: SET- while creeping up to a lead: the first 0.2 s after engaging is a light touch."""
   def test_first_0_2_s_after_engaging_is_light_then_blends_to_stock(self):
-    from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper, ENGAGE_BRAKE_T_BP
+    from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper
     dt = 0.03
     shaper, engage = BrakeOnsetShaper(dt, 4.0), EngageOnsetShaper(dt, 4.0)
     a, t, trace = 0.0, 0.0, {}
-    while t < 1.6:
+    while t < 2.2:
       engage.up_step(True)
       step = shaper.down_step(-1.65, a, v_ego=2.5, t_engaged=engage.t_since_engage)
       a = max(-1.65, a + step)
       t += dt
-      for mark in (0.2, 0.5, 1.5):
+      for mark in (0.2, 0.5, 1.0, 1.5):
         if mark not in trace and t >= mark:
           trace[mark] = a
     assert trace[0.2] > -0.12          # light first touch (at creep speed the creep onset schedule is the stricter one)
-    assert -1.0 < trace[0.5] < -0.15   # blending in
-    assert trace[1.5] < -1.4           # the planner's request has arrived (end jerk 2.0 m/s^3 below 60 km/h)
-    assert ENGAGE_BRAKE_T_BP[-1] <= 1.0
+    assert -0.27 < trace[0.5] < -0.1   # 2026-10-14: about -0.25 at 0.5 s, no more
+    assert -0.9 < trace[1.0] < -0.4    # then a linear build
+    assert trace[1.5] < -1.0 and a < -1.6  # the planner's request arrives by ~2 s
+
+  def test_an_emergency_is_not_held_back(self):
+    from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, EngageOnsetShaper
+    dt = 0.03
+    shaper, plain, engage = BrakeOnsetShaper(dt, 4.0), BrakeOnsetShaper(dt, 4.0), EngageOnsetShaper(dt, 4.0)
+    a = b = 0.0
+    for _ in range(int(1.0 / dt)):
+      engage.up_step(True)
+      a = max(-3.5, a + shaper.down_step(-3.5, a, v_ego=8.0, t_engaged=engage.t_since_engage))
+      b = max(-3.5, b + plain.down_step(-3.5, b, v_ego=8.0))
+    assert a == b  # beyond HARD_BRAKE_ACCEL the engage schedule does not apply (the normal onset still does)
 
 
 class TestCreepOnset:

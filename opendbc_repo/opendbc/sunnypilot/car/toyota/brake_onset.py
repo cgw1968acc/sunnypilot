@@ -33,8 +33,14 @@ ONSET_J_DOWN = [1.0, 1.0, 4.0]  # m/s^3 (reference shape; the first two entries 
 # -2.7 m/s^2 (3280 N). While the engage window is open the down jerk is capped on time SINCE ENGAGING: 0.5 m/s^3 for
 # the first 0.2 s (-0.1 m/s^2 at 0.2 s), then rising to stock by 0.7 s; the planner's full request still arrives, just
 # later. The normal onset schedule applies on top (the stricter of the two wins).
-ENGAGE_BRAKE_T_BP = [0.0, 0.2, 0.7]  # s since engaging
-ENGAGE_BRAKE_J_DOWN = [0.5, 0.5, 4.0]  # m/s^3
+# Owner 2026-10-14 (route 00000159, true GPS time 08:54:34, SET- while crawling at 9.6 km/h ~10 m behind the lead):
+# "clear jolt; the first brake must be the lightest, only about -0.25". The command was light for 0.4 s (-0.07 ->
+# -0.21) but the schedule reached the stock 4.0 m/s^3 at 0.7 s, so it went -0.21 -> -0.99 in 0.45 s and the car hit
+# -1.2 m/s^2 (1200 N). Now 0.5 m/s^3 for the first 0.5 s (-0.25 at 0.5 s), then a linear build whose jerk rises to
+# 1.5 m/s^3 by 1.5 s (about -0.75 at 1.1 s, -1.25 at 1.5 s), then the normal schedule. A genuine emergency (request
+# beyond HARD_BRAKE_ACCEL) is not held back by it.
+ENGAGE_BRAKE_T_BP = [0.0, 0.5, 1.5]  # s since engaging
+ENGAGE_BRAKE_J_DOWN = [0.5, 0.5, 1.5]  # m/s^3
 # Owner 2026-10-06: only a plan beyond -3.0 (a genuine emergency) bypasses the soft onset; -2.0 .. -3.0 keep it (at
 # 40 km/h -2.5 is reached slowly in ~1.8 s). History: -1.5 until 2026-10-03, -2.0, then -3.5 (= never) on 2026-10-05.
 HARD_BRAKE_ACCEL = -3.0
@@ -159,7 +165,7 @@ class BrakeOnsetShaper:
     else:
       j_down = self.stock_down_jerk
       self.t_onset = max(self.t_onset - self.dt, 0.0)
-    if t_engaged is not None and t_engaged < ENGAGE_BRAKE_T_BP[-1]:
+    if t_engaged is not None and t_engaged < ENGAGE_BRAKE_T_BP[-1] and accel_request >= HARD_BRAKE_ACCEL:
       j_down = min(j_down, float(np.interp(t_engaged, ENGAGE_BRAKE_T_BP, ENGAGE_BRAKE_J_DOWN)))
     return -min(j_down, self.stock_down_jerk) * self.dt
 
