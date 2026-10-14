@@ -155,6 +155,14 @@ class StoppingController:
   RELEASE_SLOW = 1.5  # m/s^3
   RELEASE_BAND_LO = -0.6  # m/s^2
   RELEASE_BAND_HI = 0.4  # m/s^2
+  # Above RELEASE_BAND_HI the plan used to take over at once. Route 00000159 (2026-10-14, true time 09:04:44, 09:09:04,
+  # 09:11:42; owner: "launch from standstill has a jolt, and several more launches after it"): the request stepped
+  # +0.39 -> +0.96 (09:04:44) / +0.30 -> +0.88 (09:11:42) in 0.1 s and reached the +1.70 launch plan within 0.4 s, while
+  # the brake was still letting go; the wheels started at a +1.6..+1.9 command and the car lurched to +2.3..+2.5 m/s^2.
+  # Now the release goes on above the band at LAUNCH_RATE until it meets the plan: +0.4 -> +1.7 takes 1.3 s and the car
+  # starts on a lighter command. Owner (10-14): "smooth first, then try faster" - this launches a little later than
+  # the immediate response asked for on 10-04, a deliberate trade for now.
+  LAUNCH_RATE = 1.0  # m/s^3
 
   # The tnpb2 additions below run on every car.
   # B - re-roll at a standstill. Route 0000010e 17:38:48: the car stood behind the lead at the
@@ -303,14 +311,19 @@ class StoppingController:
         return state, float(np.clip(self._cf_request(a_target, prev_accel), accel_limits[0], accel_limits[1]))
       if self.end_active:
         return state, float(np.clip(self._end_request(a_target, prev_accel, CS.vEgo, has_lead), accel_limits[0], accel_limits[1]))
-      # coming off the hold: linear, slow through the hand-over band (see RELEASE_*)
+      # coming off the hold: linear, slow through the hand-over band, then LAUNCH_RATE up to the plan (see RELEASE_*)
       if prev_state == LongCtrlState.stopping and state == LongCtrlState.pid and prev_accel < self.RELEASE_BAND_HI:
         self.releasing = True
       if self.releasing:
-        if stock_accel <= prev_accel or prev_accel >= self.RELEASE_BAND_HI or state == LongCtrlState.off:
+        if stock_accel <= prev_accel or state == LongCtrlState.off:
           self.releasing = False
           return state, stock_accel
-        rate = self.RELEASE_FAST if prev_accel < self.RELEASE_BAND_LO else self.RELEASE_SLOW
+        if prev_accel < self.RELEASE_BAND_LO:
+          rate = self.RELEASE_FAST
+        elif prev_accel < self.RELEASE_BAND_HI:
+          rate = self.RELEASE_SLOW
+        else:
+          rate = self.LAUNCH_RATE
         return state, float(min(stock_accel, prev_accel + rate * DT_CTRL))
       return state, stock_accel
 
