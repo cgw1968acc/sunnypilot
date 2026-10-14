@@ -17,7 +17,6 @@ from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarContr
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 from opendbc.sunnypilot.car.toyota.end_force import end_force_cap
 from opendbc.sunnypilot.car.toyota.engage_close_stop import EngageCloseStop
-from opendbc.sunnypilot.car.toyota.door_unlock import DoorUnlockOnPark
 from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, BrakeCommandCorrections, EngageOnsetShaper
 
 Ecu = structs.CarParams.Ecu
@@ -92,7 +91,6 @@ class CarController(CarControllerBase, GasInterceptorCarController):
     self.engage_onset = EngageOnsetShaper(DT_CTRL * 3, ACCEL_WINDUP_LIMIT / (DT_CTRL * 3))
     self.brake_corrections = BrakeCommandCorrections(DT_CTRL * 3)  # sunnypilot: see brake_onset.py
     self.engage_close = EngageCloseStop()  # sunnypilot: see engage_close_stop.py
-    self.door_unlock = DoorUnlockOnPark()  # sunnypilot: unlock all doors on shifting into P
     # *** end long control state ***
 
     self.packer = CANPacker(dbc_names[Bus.pt])
@@ -225,8 +223,6 @@ class CarController(CarControllerBase, GasInterceptorCarController):
           self.standstill_req = True
 
     self.last_standstill = CS.out.standstill
-
-    can_sends.extend(self.door_unlock.update(CS.out.gearShifter, self.frame))  # sunnypilot hook
 
     if self.auto_brake_hold.enabled:
       can_sends.extend(self.auto_brake_hold.update(CS, self.frame, self.packer, pitch_deg=math.degrees(self.pitch.x)))

@@ -1,12 +1,8 @@
 from types import SimpleNamespace as NS
 
-from opendbc.car import structs
 from opendbc.sunnypilot.car.toyota.engage_close_stop import EngageCloseStop, b_need
-from opendbc.sunnypilot.car.toyota.door_unlock import DoorUnlockOnPark, UNLOCK_MSG
 from opendbc.sunnypilot.car.toyota.end_force import end_force_cap
 from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper
-
-GearShifter = structs.CarState.GearShifter
 
 
 def lead(d, v=0.0, status=True):
@@ -46,24 +42,6 @@ def test_close_engage_builds_linearly_from_the_first_frame():
     t += dt
   assert a >= -0.26                    # far SET-: still the -0.25 soft start
   assert a_close <= -0.45              # close stop: ~1.0 m/s^3 from the first frame (-0.5 at 0.5 s)
-
-
-def test_door_unlock_once_on_park():
-  d = DoorUnlockOnPark()
-  assert d.update(GearShifter.park, 0) == []                 # boot in P: nothing
-  assert d.update(GearShifter.drive, 1) == []
-  msgs = []
-  for f in range(2, 60):
-    msgs += d.update(GearShifter.park, f)
-  assert len(msgs) == 2 and all(m.address == 0x750 and m.dat == UNLOCK_MSG and m.src == 0 for m in msgs)
-  assert d.update(GearShifter.park, 100) == []
-  assert d.update(GearShifter.reverse, 101) == [] and len(d.update(GearShifter.park, 102)) == 1
-
-
-def test_unlock_bytes_match_panda_safety():
-  # toyota.h: GET_BYTES(msg, 0, 4) == 0x11300540 and GET_BYTES(msg, 4, 4) == 0x00004000 (little endian)
-  assert int.from_bytes(UNLOCK_MSG[:4], 'little') == 0x11300540
-  assert int.from_bytes(UNLOCK_MSG[4:], 'little') == 0x00004000
 
 
 def test_end_force_cap_below_2kph_only():
