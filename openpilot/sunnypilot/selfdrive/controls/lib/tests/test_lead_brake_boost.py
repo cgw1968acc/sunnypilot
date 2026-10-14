@@ -56,3 +56,28 @@ def test_release_and_limits():
   run(b4, 200, -1.5, V15, URGENT)
   b4.update(-1.5, 0.0, True, lead(0.0), True, -3.5)
   assert not b4.latched
+
+
+def test_no_compounding_through_the_stopping_controller():
+  # route 00000159 08:54:37: the boosted request was fed back as prev_accel; below BLEND_V the stopping controller's end
+  # request is rate-limited around prev_accel, so x1.2 compounded every frame and ran to -3.5 (hard stop, -3.5 hold).
+  # controlsd now keeps last_output_accel un-boosted and boosts only what is sent; reproduce that loop here.
+  from types import SimpleNamespace
+  from opendbc.car.structs import car
+  from openpilot.sunnypilot.selfdrive.controls.lib.stopping_controller import StoppingController
+  pid = car.CarControl.Actuators.LongControlState.pid
+  sc = StoppingController(-1.0)
+  b = LeadBrakeBoost()
+  for _ in range(100):  # latched earlier, at 15 km/h while braking firmly (as on the road)
+    b.update(-2.0, V15, False, URGENT, True, -3.5)
+  assert b.gain > 1.1
+  last = -2.0
+  sent = []
+  for k in range(150):
+    v = max(9.6 - 0.05 * k, 3.5) / 3.6  # 9.6 -> 3.5 km/h, inside the end-of-stop window
+    cs = SimpleNamespace(vEgo=v, standstill=False)
+    _, accel = sc.update(pid, pid, cs, -1.37, last, -1.37, (-3.5, 2.0), True)
+    last = accel                                                   # un-boosted, as controlsd keeps it
+    sent.append(b.update(accel, v, False, URGENT, True, -3.5))   # boosted, only sent
+  assert min(sent) > -2.6, min(sent)  # around 1.2x a ~-2 request, never running to -3.5
+  assert sent[-1] > -2.0, sent[-1]    # settles near 1.2x the end request (feeding the boosted value back gave -3.5)

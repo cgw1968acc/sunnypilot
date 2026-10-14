@@ -147,10 +147,11 @@ class Controls(ControlsExt):
       a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None)  # sunnypilot hook
     if self.LoC.long_control_state != stock_state:
       self.LoC.reset()
-    accel = self.lead_brake_boost.update(accel, CS.vEgo, CS.standstill, self.sm['radarState'].leadOne, CC.longActive,
-                                         pid_accel_limits[0])  # sunnypilot hook
     self.LoC.last_output_accel = accel
-    actuators.accel = float(accel)
+    # sunnypilot hook: the boost only shapes what is sent; last_output_accel (the next frame's prev_accel for the
+    # stopping controller and LongControl's stopping state) keeps the un-boosted request, or the boost would compound
+    actuators.accel = float(self.lead_brake_boost.update(accel, CS.vEgo, CS.standstill, self.sm['radarState'].leadOne,
+                                                         CC.longActive, pid_accel_limits[0]))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
