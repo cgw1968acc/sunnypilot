@@ -1,6 +1,15 @@
+import pytest
+
 from openpilot.cereal import log
+import openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_close as stop_gap_close
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_close import StopGapClose
 from openpilot.sunnypilot.selfdrive.controls.lib.end_force_limit import EndForceLimit
+
+
+@pytest.fixture(autouse=True)
+def gap_close_on(monkeypatch):
+  # tncr ships it OFF (ENABLED = False); the behaviour itself is tested switched on
+  monkeypatch.setattr(stop_gap_close, "ENABLED", True)
 
 
 def lead(d, v=0.0, present=True):
@@ -103,3 +112,11 @@ def test_reset_at_standstill_and_disengage():
   assert not c.active and c.out is None
   run(c, 60, -0.7, 6 / 3.6, -0.7, lead(9.0))
   assert run(c, 1, -0.7, 6 / 3.6, -0.7, lead(9.0), active=False) == -0.7 and not c.active
+
+
+def test_off_passes_the_request_through(monkeypatch):
+  monkeypatch.setattr(stop_gap_close, "ENABLED", False)
+  c = StopGapClose()
+  for _ in range(200):  # route 00000069 00:40:20.7: -1.05 at 10 km/h, 8.9 m behind a stopped lead
+    assert c.update(-1.05, 10.0 / 3.6, -1.1, False, lead(8.9), True) == -1.05
+  assert not c.active

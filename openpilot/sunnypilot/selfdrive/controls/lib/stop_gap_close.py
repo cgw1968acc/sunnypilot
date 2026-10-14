@@ -25,6 +25,11 @@ from openpilot.common.realtime import DT_CTRL
 # bite). It hands back to the plain request (at RETURN_RATE) when the lead moves, the radar lead drops or jumps, the plan
 # stops braking, or the stop can no longer be made lightly (b > B_MAX and firmer than the plan). Only actuators.accel is
 # shaped (same rule as stop_gap_hold).
+# tncr (Corolla Cross) 2026-10-15: OFF. Route 00000069 00:40:20.7 (stopped lead, plan a steady -1.05 at 10 km/h, 8.9 m):
+# it predicted 4.1 m and eased the request -1.06 -> -0.58 in 0.4 s; the Cross brake fell 1120 -> 280 N, decel
+# -1.1 -> -0.3, then it handed back and the stop finished firmer (2280 N, -1.37 at 5 km/h), ending 2.9 m. Owner: "around
+# 10-5 km/h the brake feels slightly released - I want a linear deceleration there". The Altis (tnpb3) keeps it.
+ENABLED = False
 V_MAX = 12.0 / 3.6         # m/s: decides only in the last part of the stop
 LEAD_V_MAX = 0.5           # m/s: lead treated as stopped
 GAP_TRIGGER = 4.0          # m (radar dRel): predicted stop beyond this -> close the gap
@@ -78,7 +83,7 @@ class StopGapClose:
     self.active, self.v_f, self.d_f, self.a_f = False, None, None, None
 
   def update(self, accel: float, v_ego: float, a_ego: float, standstill: bool, lead, long_active: bool) -> float:
-    if not long_active or standstill:
+    if not ENABLED or not long_active or standstill:
       self.reset()
       return accel
 
