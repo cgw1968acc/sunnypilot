@@ -28,8 +28,20 @@ from openpilot.common.realtime import DT_CTRL
 # tncr (Corolla Cross) 2026-10-15: OFF. Route 00000069 00:40:20.7 (stopped lead, plan a steady -1.05 at 10 km/h, 8.9 m):
 # it predicted 4.1 m and eased the request -1.06 -> -0.58 in 0.4 s; the Cross brake fell 1120 -> 280 N, decel
 # -1.1 -> -0.3, then it handed back and the stop finished firmer (2280 N, -1.37 at 5 km/h), ending 2.9 m. Owner: "around
-# 10-5 km/h the brake feels slightly released - I want a linear deceleration there". The Altis (tnpb3) keeps it.
-ENABLED = False
+# 10-5 km/h the brake feels slightly released - I want a linear deceleration there". Route 0000006a 00:48:24 (11 km/h,
+# plan a steady -0.46..-0.54): the request pumped -0.28 <-> -0.46 every ~0.5 s and the brake 120 <-> 600 N - the decel
+# feedback K_A against the Cross brake lag (the car followed each swing: -0.28 -> ~120 N, -0.46 -> ~600 N).
+# Owner 2026-10-15 chose the fixed version (option B) on tncr: (1) the decel feedback may only firm up, never ease - the
+# easing comes from the constant decel from speed and distance only; (2) it eases at most RELEASE_RATE 0.3 m/s^3 (was 1.0), a slow straight
+# line; (3) above V_FLOOR it never asks for less than B_FLOOR of decel unless the plan itself is lighter
+# (no coasting). Below V_FLOOR the end-force line (end_force_limit) takes it to -0.35.
+# The Altis (tnpb3) keeps the original f908530 law.
+ENABLED = True
+B_FLOOR = 0.3              # m/s^2: above V_FLOOR never ask for less decel than this (mapped like b, so it includes the
+                           # creep torque below 6 km/h), unless the plan itself is lighter. Proposed as a -0.5 request floor, but
+                           # routes 69/6a at 3-20 km/h: req -0.2/-0.3/-0.4 still gave aEgo -0.30/-0.44/-0.51 (regen, 80-480 N) -
+                           # no dead zone there - and -0.5 would have blocked closing the gap at all on 6a
+V_FLOOR = 2.0 / 3.6        # m/s
 V_MAX = 12.0 / 3.6         # m/s: decides only in the last part of the stop
 LEAD_V_MAX = 0.5           # m/s: lead treated as stopped
 GAP_TRIGGER = 4.0          # m (radar dRel): predicted stop beyond this -> close the gap
@@ -42,7 +54,8 @@ HARD_ACCEL = -2.0          # m/s^2: never during a hard brake (route 00000159 08
 BRAKING_T = 0.5            # s: braking (request < 0) for this long before it may act (not right after engaging)
 B_MAX = 0.8                # m/s^2: firmest decel it asks for by itself
 ROOM_MIN = 0.1             # m
-K_A = 1.0                  # (m/s^2)/(m/s^2): decel feedback
+K_A = 1.0                  # (m/s^2)/(m/s^2): decel feedback - tncr: FIRMER ONLY (two-sided it pumped against the Cross
+                           # brake lag; one-sided it still makes up for creep torque the mapping underestimates)
 ROOM_END = 0.4             # m: this close to the target point ...
 V_END = 0.7 / 3.6          # m/s: ... or this slow, the request is at least END_ACCEL - the owner's end of a stop
 END_ACCEL = -0.35          # m/s^2 (tncr, Corolla Cross end of stop; Altis -0.30)
@@ -54,7 +67,7 @@ V_FILTER_T = 0.3           # s: speed filter
 CREEP_V = [3.0 / 3.6, 6.0 / 3.6]  # m/s
 CREEP_OFF = [0.27, 0.0]           # m/s^2
 CREEP_GAIN = [1.2, 1.0]
-RELEASE_RATE = 1.0         # m/s^3: lighter (owner: linear release)
+RELEASE_RATE = 0.3         # m/s^3: lighter (owner: linear release; tncr 1.0 -> 0.3, no release feel at 10-5 km/h)
 FIRM_RATE = 1.0            # m/s^3: firmer (no bite)
 RETURN_RATE = 1.5          # m/s^3: back to the plain request after a hand-back
 JUMP_D = 1.0               # m: a dRel step this large in one frame = a different / flickering lead
@@ -110,15 +123,17 @@ class StopGapClose:
       self.d_f = self.last_d if self.d_f is None else self.d_f + (self.last_d - self.d_f) * DT_CTRL / D_FILTER_T
       b = self.v_f ** 2 / (2.0 * max(self.d_f - GAP_TARGET - TAPER_ROLL, ROOM_MIN))
       # decel feedback (proportional, no integrator): the creep torque the request mapping assumes differs from car to
-      # car and moment to moment - decelerating more than b lightens, less than b firms
+      # car and moment to moment - decelerating less than b firms (tncr: it never lightens, see K_A)
       self.a_f = a_ego if self.a_f is None else self.a_f + (a_ego - self.a_f) * DT_CTRL / V_FILTER_T
-      target = decel_request(b, v_ego) + K_A * (-b - self.a_f)
+      target = decel_request(b, v_ego) + K_A * min(-b - self.a_f, 0.0)  # tncr: the feedback only ever firms up
       if b > B_MAX and accel < target:  # can no longer be done lightly and the plan brakes firmer: it takes over
         self._hand_back()
       else:
         target = min(max(target, decel_request(B_MAX, v_ego)), 0.0)
-        if self.d_f - GAP_TARGET < ROOM_END or self.v_f < V_END:  # the stop itself: at least the owner's end -0.30
+        if self.d_f - GAP_TARGET < ROOM_END or self.v_f < V_END:  # the stop itself: at least the owner's end -0.35
           target = min(target, END_ACCEL)
+        if v_ego > V_FLOOR:  # tncr: never a coast above 2 km/h
+          target = min(target, max(accel, decel_request(B_FLOOR, v_ego)))
         self.out = float(np.clip(target, self.out - FIRM_RATE * DT_CTRL, self.out + RELEASE_RATE * DT_CTRL))
         return self.out
 

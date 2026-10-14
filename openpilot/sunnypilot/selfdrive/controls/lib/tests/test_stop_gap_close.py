@@ -64,12 +64,20 @@ def test_a_mid_stop_decel_does_not_predict_far():
 
 def test_far_stop_rolls_on_steadily_into_the_window():
   # 19:35:35 on route 0000015c (stopped 5.5 m out) and others; robust to PCM lag and creep torque spread
-  for v0, d, plain in ((11.2, 16.5, -0.57), (12.0, 12.1, -0.88), (6.0, 9.0, -0.7), (4.1, 7.5, -0.65)):
+  for v0, d, plain in ((11.2, 16.5, -0.57), (12.0, 12.1, -0.88), (10.1, 8.9, -1.05), (11.0, 16.0, -0.5),
+                       (6.0, 9.0, -0.7), (4.1, 7.5, -0.65)):
     for tau in (0.35, 0.6, 0.9):
       for creep in (0.20, 0.25, 0.30):
         gap, hist = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
-        assert 3.0 <= gap <= 4.4, (v0, tau, creep, gap)
-        assert len(hist) < 1200, (v0, tau, creep)  # it does stop (no endless crawl)
+        if v0 > 8.0:
+          assert 3.0 <= gap <= 4.4, (v0, tau, creep, gap)
+        else:  # tncr: a late trigger eases at only 0.3 m/s^3 - it closes less, but never ends farther than without it
+          stop_gap_close.ENABLED = False
+          gap_off, _ = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
+          stop_gap_close.ENABLED = True
+          assert 3.0 <= gap <= gap_off + 0.05, (v0, tau, creep, gap, gap_off)
+        assert len(hist) < (1200 if v0 > 8.0 else 1500), (v0, tau, creep)  # it does stop (no endless crawl; tncr's slow
+        # ease makes a 6 km/h late trigger with the strongest creep torque take up to ~13 s)
         lo, rise = 99.0, 0.0
         for v, _, _ in hist:  # fast-slow-fast: how much the speed rises again after a dip
           lo = min(lo, v)
@@ -120,3 +128,24 @@ def test_off_passes_the_request_through(monkeypatch):
   for _ in range(200):  # route 00000069 00:40:20.7: -1.05 at 10 km/h, 8.9 m behind a stopped lead
     assert c.update(-1.05, 10.0 / 3.6, -1.1, False, lead(8.9), True) == -1.05
   assert not c.active
+
+
+def test_tncr_eases_slowly_and_never_coasts():
+  # route 00000069 00:40:20.7: -1.05 at 10 km/h, 8.9 m. f908530 eased -1.06 -> -0.58 in 0.4 s; now at most 0.3 m/s^3
+  for tau in (0.35, 0.6, 0.9):
+    _, hist = sim(10.1 / 3.6, 8.9, plain=-1.05, tau=tau)
+    above = [(v, cmd) for v, cmd, _ in hist if v > 2.0 / 3.6]
+    for (_, c0), (_, c1) in zip(above, above[1:], strict=False):
+      assert c1 - c0 <= stop_gap_close.RELEASE_RATE * 0.01 + 1e-9
+    assert min(cmd for _, cmd in above) <= -0.3 and max(cmd for _, cmd in above) <= -0.3 + 1e-9  # no coast above 2 km/h
+
+
+def test_tncr_feedback_only_firms_up():
+  # decelerating harder than needed must not lighten the request (that pumped on route 0000006a 00:48:24)
+  c1, c2 = StopGapClose(), StopGapClose()
+  run(c1, 60, -0.6, 11 / 3.6, -0.6, lead(16.0))
+  run(c2, 60, -0.6, 11 / 3.6, -0.6, lead(16.0))
+  out_hard = run(c1, 100, -0.6, 11 / 3.6, -1.2, lead(16.0))   # car decelerates much more than b
+  out_plain = run(c2, 100, -0.6, 11 / 3.6, -0.45, lead(16.0)) # about b
+  assert c1.active and c2.active
+  assert abs(out_hard - out_plain) < 0.02
