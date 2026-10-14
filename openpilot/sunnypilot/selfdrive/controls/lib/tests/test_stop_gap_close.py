@@ -68,10 +68,10 @@ def test_far_stop_rolls_on_steadily_into_the_window():
         assert rise < 0.15 / 3.6, (v0, tau, creep, rise * 3.6)
 
 
-def test_end_is_minus_030_at_zero():
+def test_end_is_minus_035_at_zero():  # tncr (Corolla Cross): -0.35; Altis -0.30
   for creep in (0.20, 0.30):
     _, hist = sim(6 / 3.6, 9.0, plain=-0.7, creep=creep)
-    assert -0.305 <= hist[-1][1] <= -0.28
+    assert -0.355 <= hist[-1][1] <= -0.33
     below = [cmd for v, cmd, _ in hist if v < 2.0 / 3.6]
     assert min(below) >= -0.8
 

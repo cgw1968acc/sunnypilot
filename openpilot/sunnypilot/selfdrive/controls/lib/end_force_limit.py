@@ -19,7 +19,8 @@ from openpilot.common.realtime import DT_CTRL
 # STALL_V - the hybrid's creep torque can beat a light request), the line is let go and re-anchored at the current speed
 # and request once it slows again: a stall is not "the stop", and it still ends on -0.30 at 0 km/h.
 V_LINE = 2.0 / 3.6     # m/s
-END_ACCEL = -0.30      # m/s^2 at 0 km/h
+END_ACCEL = -0.35      # m/s^2 at 0 km/h. tncr (Corolla Cross, owner 2026-10-15): -0.35, the Cross stop template (stopped at
+                       # 800-840 N, no nod); the Altis rule above is -0.30 and stays so on tnpb3
 HOLD_RATE = 0.5        # m/s^3: after the stop, toward the standstill hold
 STALL_V = 0.5 / 3.6    # m/s
 STALL_A = -0.1         # m/s^2

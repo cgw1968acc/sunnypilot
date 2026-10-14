@@ -46,8 +46,8 @@ class TestEndOfStop:
     assert abs(out - END_HI) < 1e-6
     out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
     assert abs(out - (-0.56 + -0.60) / 2) < 1e-6
-    assert abs(blend(sc, 4.0) - (-0.65)) < 1e-6 and abs(blend(sc, 1.0) - (-0.43)) < 1e-6
-    assert abs(blend(sc, 0.5) - (-0.365)) < 1e-6   # 1-0 km/h: straight line down to END_LO
+    assert abs(blend(sc, 4.0) - (-0.65)) < 1e-6 and abs(blend(sc, 1.0) - (END_LO + -0.56) / 2) < 1e-6
+    assert abs(blend(sc, 0.5) - (END_LO + (END_LO + -0.56) / 2) / 2) < 1e-6   # 1-0 km/h: straight line down to END_LO
     out = run(sc, PID, cs(0.0), -0.20, out, 0.4)
     assert abs(out - END_LO) < 1e-6
 
@@ -111,7 +111,7 @@ class TestEndOfStop:
     assert abs(out_at_stop - out) < 1e-6 and END_HI < out_at_stop <= END_LO + 1e-6
     out_held = run(sc, STOPPING, cs(0.0, standstill=True), -0.10, out_at_stop, 1.0)
     assert out_held < out_at_stop - 0.3
-    assert out_held >= -1.0 - 1e-6
+    assert out_held >= -1.05  # the ramp starts at the 1 km/h line value (-0.455 with the Cross END_LO -0.35)
 
 
 class TestHoldRelease:

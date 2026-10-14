@@ -110,7 +110,9 @@ class StoppingController:
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
   END_HI = -0.65  # m/s^2 at END_V_HI (~1200 N); -0.60 -> -0.65 2026-10-08, see END_CURVE_A
-  END_LO = -0.30  # m/s^2 at 0-1 km/h; driver 2026-10-04: -0.30 "closer to perfect", -0.25 the threshold; 2026-10-06 back to -0.30
+  END_LO = -0.35  # m/s^2 at 0 km/h. tncr (Corolla Cross, owner 2026-10-15): -0.35 (~840 N), the owner's Cross stop template
+  # (route 00000063 22:56:14, 2026-10-05: -0.36 in the last km/h, stopped at 800-840 N, no nod); a light request gives the
+  # Cross's duller brake only ~700 N (-0.25 crept at 0.7 km/h for 1.6 s, 22:53:30). Altis (tnpb3) keeps -0.30.
   # Driver 2026-10-04 (route 000000f2): "between 5 and 0 km/h not linear but parabolic: steeper from 5 to 2, flat from
   # 2 to 0" -> x^2 parabola -0.50/-0.41/-0.34/-0.29/-0.26/-0.25 ("closer to perfect"). An S-shaped table
   # (-0.50/-0.47/-0.40/-0.29/-0.25/-0.24) was "not better" and reverted. Then the driver gave his own points, close to
