@@ -25,15 +25,16 @@ from openpilot.common.realtime import DT_CTRL
 # bite). It hands back to the plain request (at RETURN_RATE) when the lead moves, the radar lead drops or jumps, the plan
 # stops braking, or the stop can no longer be made lightly (b > B_MAX and firmer than the plan). Only actuators.accel is
 # shaped (same rule as stop_gap_hold).
-# tncr (Corolla Cross) 2026-10-15: OFF. Route 00000069 00:40:20.7 (stopped lead, plan a steady -1.05 at 10 km/h, 8.9 m):
+# tncr (Corolla Cross) 2026-10-15 (briefly OFF in baeb992b7c). Route 00000069 00:40:20.7 (stopped lead, plan a steady -1.05 at 10 km/h, 8.9 m):
 # it predicted 4.1 m and eased the request -1.06 -> -0.58 in 0.4 s; the Cross brake fell 1120 -> 280 N, decel
 # -1.1 -> -0.3, then it handed back and the stop finished firmer (2280 N, -1.37 at 5 km/h), ending 2.9 m. Owner: "around
 # 10-5 km/h the brake feels slightly released - I want a linear deceleration there". Route 0000006a 00:48:24 (11 km/h,
 # plan a steady -0.46..-0.54): the request pumped -0.28 <-> -0.46 every ~0.5 s and the brake 120 <-> 600 N - the decel
 # feedback K_A against the Cross brake lag (the car followed each swing: -0.28 -> ~120 N, -0.46 -> ~600 N).
-# Owner 2026-10-15 chose the fixed version (option B) on tncr: (1) the decel feedback may only firm up, never ease - the
-# easing comes from the constant decel from speed and distance only; (2) it eases at most RELEASE_RATE 0.3 m/s^3 (was 1.0), a slow straight
-# line; (3) above V_FLOOR it never asks for less than B_FLOOR of decel unless the plan itself is lighter
+# Owner 2026-10-15 chose the fixed version (option B) on tncr: (1) the decel feedback may only firm up, and only when the
+# stop would end too close; when it would end too far the present force is HELD (owner: hold it longer, neither release
+# nor keep adding brake) and only eased - slowly - while holding would still end clearly too far; (2) it eases at most
+# RELEASE_RATE 0.3 m/s^3 (was 1.0), a slow straight line; (3) above V_FLOOR it never asks for less than B_FLOOR of decel unless the plan itself is lighter
 # (no coasting). Below V_FLOOR the end-force line (end_force_limit) takes it to -0.35.
 # The Altis (tnpb3) keeps the original f908530 law.
 ENABLED = True
@@ -67,6 +68,8 @@ V_FILTER_T = 0.3           # s: speed filter
 CREEP_V = [3.0 / 3.6, 6.0 / 3.6]  # m/s
 CREEP_OFF = [0.27, 0.0]           # m/s^2
 CREEP_GAIN = [1.2, 1.0]
+HOLD_BAND = 0.45           # m: tncr - the present force is held while the stop ends within GAP_TARGET + TAPER_ROLL and
+                           # this much beyond it (3.35-3.8 m aimed, owner 3-3.5 m)
 RELEASE_RATE = 0.3         # m/s^3: lighter (owner: linear release; tncr 1.0 -> 0.3, no release feel at 10-5 km/h)
 FIRM_RATE = 1.0            # m/s^3: firmer (no bite)
 RETURN_RATE = 1.5          # m/s^3: back to the plain request after a hand-back
@@ -76,6 +79,10 @@ LEAD_LOST_T = 0.3          # s
 
 def decel_request(b: float, v_ego: float) -> float:
   return -(b + float(np.interp(v_ego, CREEP_V, CREEP_OFF))) / float(np.interp(v_ego, CREEP_V, CREEP_GAIN))
+
+
+def decel_from_request(req: float, v_ego: float) -> float:
+  return -req * float(np.interp(v_ego, CREEP_V, CREEP_GAIN)) - float(np.interp(v_ego, CREEP_V, CREEP_OFF))
 
 
 class StopGapClose:
@@ -122,10 +129,25 @@ class StopGapClose:
       self.v_f = v_ego if self.v_f is None else self.v_f + (v_ego - self.v_f) * DT_CTRL / V_FILTER_T
       self.d_f = self.last_d if self.d_f is None else self.d_f + (self.last_d - self.d_f) * DT_CTRL / D_FILTER_T
       b = self.v_f ** 2 / (2.0 * max(self.d_f - GAP_TARGET - TAPER_ROLL, ROOM_MIN))
-      # decel feedback (proportional, no integrator): the creep torque the request mapping assumes differs from car to
-      # car and moment to moment - decelerating less than b firms (tncr: it never lightens, see K_A)
       self.a_f = a_ego if self.a_f is None else self.a_f + (a_ego - self.a_f) * DT_CTRL / V_FILTER_T
-      target = decel_request(b, v_ego) + K_A * min(-b - self.a_f, 0.0)  # tncr: the feedback only ever firms up
+      # tncr, owner 2026-10-15: "when the gap is too large, do not release and do not keep adding brake - HOLD the
+      # current force longer; only adding brake can itself end the stop too far". Three zones by where the car would
+      # stop with the decel the present command asks for (b_out, the inverse of decel_request - not the measured decel,
+      # which lags and would make easing feed on itself): b is the decel that ends at GAP_TARGET (+ the taper roll),
+      # b_far the one that ends HOLD_BAND beyond that.
+      b_out = decel_from_request(self.out, v_ego)
+      b_far = self.v_f ** 2 / (2.0 * max(self.d_f - GAP_TARGET - TAPER_ROLL - HOLD_BAND, ROOM_MIN))
+      # firm toward b; decelerating less than b firms more (proportional decel feedback, firmer only - two-sided it
+      # pumped against the Cross brake lag)
+      firm = decel_request(b, v_ego) + K_A * min(-b - self.a_f, 0.0)
+      if b_out < b:
+        target = firm                               # would end too close: firm up
+      elif b_out <= b_far:
+        target = min(self.out, firm)                # ends within 3.35-3.8 m: hold the present force (firmer only if the
+                                                    # car is not decelerating as asked)
+      else:
+        target = max(decel_request(b_far, v_ego), self.out - RELEASE_RATE * DT_CTRL)  # clearly too far even holding:
+                                                    # ease slowly, only down to the edge of the hold band
       if b > B_MAX and accel < target:  # can no longer be done lightly and the plan brakes firmer: it takes over
         self._hand_back()
       else:

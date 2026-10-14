@@ -70,7 +70,7 @@ def test_far_stop_rolls_on_steadily_into_the_window():
       for creep in (0.20, 0.25, 0.30):
         gap, hist = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
         if v0 > 8.0:
-          assert 3.0 <= gap <= 4.4, (v0, tau, creep, gap)
+          assert 3.0 <= gap <= 4.5, (v0, tau, creep, gap)  # tncr: held while it ends 3.35-3.8 m; the slowest plant overshoots a bit
         else:  # tncr: a late trigger eases at only 0.3 m/s^3 - it closes less, but never ends farther than without it
           stop_gap_close.ENABLED = False
           gap_off, _ = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
@@ -149,3 +149,20 @@ def test_tncr_feedback_only_firms_up():
   out_plain = run(c2, 100, -0.6, 11 / 3.6, -0.45, lead(16.0)) # about b
   assert c1.active and c2.active
   assert abs(out_hard - out_plain) < 0.02
+
+
+def test_tncr_far_gap_holds_the_present_force():
+  # owner 2026-10-15: too far -> hold the present force longer, neither release nor add brake. Route 0000006a 00:48:25:
+  # 11 km/h, 15.5 m, -0.48 asked: holding -0.40 ends ~3.6 m -> the request stays put while the car slows as asked
+  c = StopGapClose()
+  run(c, 60, -0.45, 11.4 / 3.6, -0.45, lead(16.2))
+  assert c.active
+  outs = []
+  v, d = 11.1 / 3.6, 15.5
+  for _ in range(100):
+    b_hold = 0.40
+    outs.append(c.update(-0.50, v, -b_hold, False, lead(d), True))
+    d -= v * 0.01
+    v -= b_hold * 0.01
+  steady = outs[50:]
+  assert max(steady) - min(steady) < 0.02
