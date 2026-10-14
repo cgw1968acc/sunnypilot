@@ -6,7 +6,7 @@ name: mirror to cgw1968acc/openpilot
 
 on:
   push:
-    branches: [tnpb2, tncr19, tnc3E-tici]
+    branches: [tnpb2, tncr19, tncr, tnc3E-tici]
   workflow_dispatch:
 
 concurrency:
