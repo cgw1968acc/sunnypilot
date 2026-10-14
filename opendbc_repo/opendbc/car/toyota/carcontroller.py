@@ -15,6 +15,9 @@ from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarContro
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
+from opendbc.sunnypilot.car.toyota.end_force import end_force_cap
+from opendbc.sunnypilot.car.toyota.engage_close_stop import EngageCloseStop
+from opendbc.sunnypilot.car.toyota.door_unlock import DoorUnlockOnPark
 from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, BrakeCommandCorrections, EngageOnsetShaper
 
 Ecu = structs.CarParams.Ecu
@@ -88,6 +91,8 @@ class CarController(CarControllerBase, GasInterceptorCarController):
     self.brake_onset = BrakeOnsetShaper(DT_CTRL * 3, -ACCEL_WINDDOWN_LIMIT / (DT_CTRL * 3))
     self.engage_onset = EngageOnsetShaper(DT_CTRL * 3, ACCEL_WINDUP_LIMIT / (DT_CTRL * 3))
     self.brake_corrections = BrakeCommandCorrections(DT_CTRL * 3)  # sunnypilot: see brake_onset.py
+    self.engage_close = EngageCloseStop()  # sunnypilot: see engage_close_stop.py
+    self.door_unlock = DoorUnlockOnPark()  # sunnypilot: unlock all doors on shifting into P
     # *** end long control state ***
 
     self.packer = CANPacker(dbc_names[Bus.pt])
@@ -221,6 +226,8 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     self.last_standstill = CS.out.standstill
 
+    can_sends.extend(self.door_unlock.update(CS.out.gearShifter, self.frame))  # sunnypilot hook
+
     if self.auto_brake_hold.enabled:
       can_sends.extend(self.auto_brake_hold.update(CS, self.frame, self.packer, pitch_deg=math.degrees(self.pitch.x)))
 
@@ -244,16 +251,21 @@ class CarController(CarControllerBase, GasInterceptorCarController):
         self.engage_onset.cruise_state(CS.out.cruiseState.enabled)  # sunnypilot hook
         if CC.longActive:
           self.prev_accel = self.engage_onset.start_accel(self.prev_accel, CS.out.aEgo, CS.out.vEgo)  # sunnypilot hook
+          self.engage_close.update(CC_SP.leadOne, CS.out.vEgo, CS.out.standstill, pcm_accel_cmd,
+                                   self.engage_onset.t_since_engage)  # sunnypilot hook
+          pcm_accel_cmd = self.engage_close.cap(pcm_accel_cmd, CC_SP.leadOne, CS.out.vEgo)
           # a hard request bypasses the soft brake onset, except in the first 0.6 s after engaging (FCW always does)
           urgent = self.brake_onset.is_urgent(pcm_accel_cmd, False) and not self.engage_onset.in_engage_window
           winddown_step = self.brake_onset.down_step(pcm_accel_cmd, self.prev_accel, bypass=fcw_alert, v_ego=CS.out.vEgo,
                                                      urgent=urgent, t_engaged=self.engage_onset.t_since_engage,
-                                                     a_ego=CS.out.aEgo, brake_force=CS.brake_force)  # sunnypilot hook
+                                                     a_ego=CS.out.aEgo, brake_force=CS.brake_force,
+                                                     engage_j_down=self.engage_close.j_down if self.engage_close.active else None)  # sunnypilot hook
           windup_step = self.engage_onset.up_step(True)
           pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, winddown_step, windup_step)
         else:
           self.brake_onset.reset()
           self.engage_onset.reset()
+          self.engage_close.reset()
         self.prev_accel = pcm_accel_cmd
 
         # calculate amount of acceleration PCM should apply to reach target, given pitch.
@@ -290,13 +302,16 @@ class CarController(CarControllerBase, GasInterceptorCarController):
             pcm_accel_cmd += pitch_compensation
 
           freeze_i = self.brake_corrections.condition_pid(self.long_pid, self.prev_accel, CS.out.vEgo)  # sunnypilot hook
+          freeze_i = freeze_i or self.engage_close.active
           pcm_accel_cmd = self.long_pid.update(error_future,
                                                speed=CS.out.vEgo,
                                                feedforward=pcm_accel_cmd,
                                                freeze_integrator=actuators.longControlState != LongCtrlState.pid or freeze_i)
           pcm_accel_cmd = self.brake_corrections.apply(pcm_accel_cmd, self.prev_accel, a_ego_future, CS.out.vEgo, stopping,
                                                        fcw_alert, a_ego=a_ego_blended,
-                                                       relaxed=hud_control.leadDistanceBars == 3)  # sunnypilot hook
+                                                       relaxed=hud_control.leadDistanceBars == 3,
+                                                       handover=not self.engage_close.active)  # sunnypilot hook
+          pcm_accel_cmd = end_force_cap(pcm_accel_cmd, actuators.accel, CS.out.vEgo, CS.out.standstill)  # sunnypilot hook
         else:
           self.long_pid.reset()
           self.brake_corrections.reset()  # sunnypilot hook

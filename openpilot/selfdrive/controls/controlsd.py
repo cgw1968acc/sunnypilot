@@ -153,10 +153,14 @@ class Controls(ControlsExt):
     # the boost would compound
     lead_one = self.sm['radarState'].leadOne
     accel_shaped = self.stop_gap_hold.update(accel, CS.vEgo, CS.aEgo, CS.standstill, lead_one, CC.longActive)
-    accel_shaped = self.creep_stall_guard.update(accel_shaped, CS.vEgo, CS.aEgo, CS.standstill, CC.longActive,
-                                                 pid_accel_limits[0])
-    actuators.accel = float(self.lead_brake_boost.update(accel_shaped, CS.vEgo, CS.standstill, lead_one,
-                                                         CC.longActive, pid_accel_limits[0]))
+    accel_shaped = self.stop_gap_close.update(accel_shaped, CS.vEgo, CS.aEgo, CS.standstill, lead_one, CC.longActive)
+    # the gap-close crawl rolls on purpose: not a creep stall
+    accel_shaped = self.creep_stall_guard.update(accel_shaped, CS.vEgo, CS.aEgo, CS.standstill,
+                                                 CC.longActive and not self.stop_gap_close.active, pid_accel_limits[0])
+    accel_shaped = self.lead_brake_boost.update(accel_shaped, CS.vEgo, CS.standstill, lead_one, CC.longActive,
+                                                pid_accel_limits[0])
+    # owner's end-force rule, last: never firmer than a line to -0.30 at 0 km/h below 2 km/h, whatever asked for more
+    actuators.accel = float(self.end_force_limit.update(accel_shaped, CS.vEgo, CS.standstill, CC.longActive, CS.aEgo))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage

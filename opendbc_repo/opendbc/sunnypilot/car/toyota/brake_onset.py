@@ -136,17 +136,17 @@ class BrakeOnsetShaper:
 
   def down_step(self, accel_request: float, prev_accel: float, bypass: bool = False, v_ego: float = 30.0,
                 urgent: bool = False, t_engaged: float | None = None, a_ego: float | None = None,
-                brake_force: float = float('nan')) -> float:
+                brake_force: float = float('nan'), engage_j_down=None) -> float:
     if bypass:
       self.t_onset = 0.0
       self.t_entry, self.catchup = 0.0, False
       return -self.stock_down_jerk * self.dt
     entry = None if urgent else self.friction_entry_step(accel_request, prev_accel, v_ego, a_ego, brake_force)
-    step = self._down_step(accel_request, prev_accel, v_ego, urgent, t_engaged)
+    step = self._down_step(accel_request, prev_accel, v_ego, urgent, t_engaged, engage_j_down)
     return step if entry is None else -min(-step, entry)
 
   def _down_step(self, accel_request: float, prev_accel: float, v_ego: float, urgent: bool,
-                 t_engaged: float | None) -> float:
+                 t_engaged: float | None, engage_j_down=None) -> float:
     if prev_accel > 0.0 and accel_request < prev_accel:
       # taking away gas is not braking: release it, then start the soft onset from zero
       self.t_onset = 0.0
@@ -166,7 +166,10 @@ class BrakeOnsetShaper:
       j_down = self.stock_down_jerk
       self.t_onset = max(self.t_onset - self.dt, 0.0)
     if t_engaged is not None and t_engaged < ENGAGE_BRAKE_T_BP[-1] and accel_request >= HARD_BRAKE_ACCEL:
-      j_down = min(j_down, float(np.interp(t_engaged, ENGAGE_BRAKE_T_BP, ENGAGE_BRAKE_J_DOWN)))
+      if engage_j_down is not None:  # close stop after engaging (engage_close_stop.py): linear from the first frame
+        j_down = engage_j_down(t_engaged)
+      else:
+        j_down = min(j_down, float(np.interp(t_engaged, ENGAGE_BRAKE_T_BP, ENGAGE_BRAKE_J_DOWN)))
     return -min(j_down, self.stock_down_jerk) * self.dt
 
   def is_urgent(self, accel_request: float, fcw: bool) -> bool:
@@ -417,13 +420,13 @@ class BrakeCommandCorrections:
     self.handover.reset()
 
   def apply(self, accel_cmd: float, accel_request: float, a_ego_future: float, v_ego: float, stopping: bool, fcw: bool,
-            a_ego: float | None = None, relaxed: bool = True) -> float:
+            a_ego: float | None = None, relaxed: bool = True, handover: bool = True) -> float:
     # take back braking the car delivers beyond a hard request (never under FCW); the moderate band only in Relaxed
     self.overshoot.update(accel_request, a_ego_future, active=not stopping and not fcw, v_ego=v_ego, a_ego=a_ego,
                           moderate_allowed=relaxed)
     accel_cmd = self.overshoot.apply(accel_cmd)
     # feed-forward the braking the car does not deliver in the low-speed regen hand-over
-    self.handover.update(accel_request, v_ego, active=not fcw)
+    self.handover.update(accel_request, v_ego, active=not fcw and handover)
     return self.handover.apply(accel_cmd)
 
   def condition_pid(self, pid, accel_request: float, v_ego: float) -> bool:
