@@ -180,3 +180,29 @@ def test_tncr_eases_above_20kph_and_keeps_its_limit():
   above = [cmd for v, cmd, _ in hist if v > 2.0 / 3.6]
   assert all(c1 - c0 <= stop_gap_close.RELEASE_RATE * 0.01 + 1e-9 for c0, c1 in zip(above, above[1:], strict=False))
   assert all(a for v, _, a in hist if 3 / 3.6 < v < 20 / 3.6)             # never handed back mid-stop
+
+
+def test_tncr_cut_in_firms_light_first_then_linear():
+  # supreme principle: even when a car cuts in and the plan goes hard, the firming starts light (1 m/s^3) and builds
+  # linearly (to 5 m/s^3 for an urgent plan by 0.3 s) - never a step
+  c = StopGapClose()
+  run(c, 60, -1.0, 25 / 3.6, -1.0, lead(40.0))
+  run(c, 100, -1.0, 24 / 3.6, -1.0, lead(38.0))
+  assert c.active
+  outs = [c.update(-3.0, 24 / 3.6, -1.0, False, lead(8.0, v=2.0), True) for _ in range(60)]
+  assert not c.active
+  rates = [-(b - a) / 0.01 for a, b in zip(outs, outs[1:], strict=False)]
+  assert rates[0] <= 1.3                                              # light first (~1 m/s^3)
+  assert all(r2 >= r1 - 1e-6 for r1, r2 in zip(rates[:25], rates[1:26], strict=False))  # then a linear build-up
+  assert max(rates) <= 5.0 + 1e-6
+  assert outs[-1] < -2.0                                              # and it gets there within 0.6 s
+
+
+def test_tncr_firm_return_rate_scales_with_the_plan():
+  # handed back because the stop can no longer be done lightly: starts at 1 m/s^3, grows to 2.4 (plan -1.2) / 5 (-2.6)
+  for plan, top in ((-1.2, 2.4), (-2.6, 5.0)):
+    c = StopGapClose()
+    c.out, c.active = -0.8, False
+    outs = [c.update(plan, 10 / 3.6, -0.8, False, lead(20.0), True) for _ in range(40)]
+    rates = [-(b - a) / 0.01 for a, b in zip([-0.8] + outs, outs, strict=False)]
+    assert rates[0] <= 1.2 and max(rates) <= top + 1e-6 and max(rates) > top - 0.3

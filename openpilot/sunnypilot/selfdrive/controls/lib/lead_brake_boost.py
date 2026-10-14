@@ -47,6 +47,15 @@ ONSET_T = 0.5         # s: ... and braking (request < BRAKING_REQ) has lasted th
 BRAKING_REQ = -0.3    # m/s^2
 END_BP = [2.0 / 3.6, 4.0 / 3.6]  # m/s: faded out from 4 to 2 km/h
 END_W = [0.0, 1.0]
+# tncr, owner 2026-10-15 (supreme principle): "when the lead brakes hard, do not insist on stopping 3 m or more back -
+# allow down to 2 m, so the brake is not too fierce". The x1.2 was sized to end ~3.3 m behind the lead (route 00000157
+# ended 0.8 m without it). Now it builds only while the stop is predicted closer than BOOST_GAP (where the lead itself
+# stops, minus our stopping distance at the weaker of the request and the delivered decel) and fades again once the
+# prediction is back beyond BOOST_GAP_OFF; the ramp (GAIN_RATE) and the 4 -> 2 km/h fade are unchanged.
+BOOST_GAP = 2.0       # m
+BOOST_GAP_OFF = 2.5   # m
+LEAD_STOP_A_MIN = 0.5  # m/s^2: floor of the lead decel used for where the lead stops
+B_MIN = 0.3           # m/s^2: floor of our decel in the prediction
 
 
 class LeadBrakeBoost:
@@ -55,8 +64,10 @@ class LeadBrakeBoost:
     self.braking_t = 0.0
     self.mid = False
     self.gain = 1.0
+    self.short = False  # the stop is predicted closer than BOOST_GAP
 
-  def update(self, accel: float, v_ego: float, standstill: bool, lead, long_active: bool, accel_min: float) -> float:
+  def update(self, accel: float, v_ego: float, standstill: bool, lead, long_active: bool, accel_min: float,
+             a_ego: float | None = None) -> float:
     present = bool(lead.present)
     closing = v_ego - lead.vLead
     ttc = lead.dRel / closing if closing > 0.3 else 99.0
@@ -75,7 +86,15 @@ class LeadBrakeBoost:
     elif accel >= 0.0:
       self.braking_t, self.mid = 0.0, False
 
-    target = 1.0 + (GAIN - 1.0) * float(np.interp(v_ego, END_BP, END_W)) if (self.latched and self.mid) else 1.0
+    if present and a_ego is not None:
+      lead_stop = lead.vLead ** 2 / (2.0 * max(-lead.aLeadK, LEAD_STOP_A_MIN)) if lead.vLead > 0.0 else 0.0
+      b = max(min(-accel, -a_ego), B_MIN)
+      gap = lead.dRel + lead_stop - v_ego ** 2 / (2.0 * b)
+      self.short = gap < BOOST_GAP or (self.short and gap < BOOST_GAP_OFF)
+    else:
+      self.short = a_ego is None  # without a_ego (old callers / tests) keep the old behaviour
+    boost = self.latched and self.mid and self.short
+    target = 1.0 + (GAIN - 1.0) * float(np.interp(v_ego, END_BP, END_W)) if boost else 1.0
     step = GAIN_RATE * DT_CTRL
     self.gain = float(np.clip(target, self.gain - step, self.gain + step))
     if accel < 0.0 and self.gain > 1.0:

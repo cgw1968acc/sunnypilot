@@ -81,7 +81,17 @@ RELEASE_RATE = 0.3         # m/s^3: lighter (owner: linear release; tncr 1.0 -> 
                            # "very slow easing is fine, but do it above 20 km/h, not at the end": done by starting at
                            # V_MAX 30 km/h; a slower rate below 10 km/h (0.15/0.2) only ended late triggers farther (sim)
 FIRM_RATE = 1.0            # m/s^3: firmer (no bite)
-RETURN_RATE = 1.5          # m/s^3: back to the plain request after a hand-back
+RETURN_RATE = 1.5          # m/s^3: back to a LIGHTER plain request after a hand-back
+# back to a FIRMER plain request: faster the firmer the plan (tncr 10-15, owner asked for a sudden-brake check). Sim: B
+# eased from 28 km/h, then a car cuts in 8 m ahead at 8 km/h and brakes -6: returning at 1.5 m/s^3 ended 1.88 m from it
+# with a -3.34 peak, plan alone 2.71 m / -2.21; 5 m/s^3 gave 2.67 m / -2.72. A mild re-firm (plan ~-1) stays gentle.
+RETURN_FIRM_A = [-2.5, -1.0]   # m/s^2: plan request
+RETURN_FIRM_RATE = [5.0, 2.0]  # m/s^3
+# ... but never a bite, even in an emergency (owner 10-15, supreme principle: "even when the lead brakes hard, the first
+# brake must be light, then build linearly as needed"): the firming starts at RETURN_FIRM_START and the rate itself grows
+# linearly to the value above over RETURN_FIRM_RAMP_T
+RETURN_FIRM_START = 1.0        # m/s^3
+RETURN_FIRM_RAMP_T = 0.3       # s
 JUMP_D = 1.0               # m: a dRel step this large in one frame = a different / flickering lead
 LEAD_LOST_T = 0.3          # s
 
@@ -102,6 +112,7 @@ class StopGapClose:
     self.active = False
     self.out = None          # shaped output while active / returning
     self.b_max = B_MAX
+    self.return_t = 0.0      # time spent firming back toward the plan
     self.braking_t = 0.0
     self.lost_t = 0.0
     self.last_d = None
@@ -111,6 +122,7 @@ class StopGapClose:
 
   def _hand_back(self):
     self.active, self.v_f, self.d_f, self.a_f = False, None, None, None
+    self.return_t = 0.0
 
   def update(self, accel: float, v_ego: float, a_ego: float, standstill: bool, lead, long_active: bool) -> float:
     if not ENABLED or not long_active or standstill:
@@ -174,7 +186,10 @@ class StopGapClose:
         return self.out
 
     if self.out is not None:            # returning to the plain request after a hand-back
-      self.out = float(np.clip(accel, self.out - RETURN_RATE * DT_CTRL, self.out + RETURN_RATE * DT_CTRL))
+      self.return_t = self.return_t + DT_CTRL if accel < self.out else 0.0
+      firm_rate = float(np.interp(accel, RETURN_FIRM_A, RETURN_FIRM_RATE))
+      firm_rate = RETURN_FIRM_START + (firm_rate - RETURN_FIRM_START) * min(self.return_t / RETURN_FIRM_RAMP_T, 1.0)
+      self.out = float(np.clip(accel, self.out - firm_rate * DT_CTRL, self.out + RETURN_RATE * DT_CTRL))
       if abs(self.out - accel) < 1e-3:
         self.out = None
         return accel
