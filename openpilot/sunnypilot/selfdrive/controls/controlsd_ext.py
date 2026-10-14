@@ -20,6 +20,8 @@ from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import BlinkerPauseLateral
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_brake_boost import LeadBrakeBoost
+from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_hold import StopGapHold
+from openpilot.sunnypilot.selfdrive.controls.lib.creep_stall_guard import CreepStallGuard
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_split import LatControlTorqueSplit, SPLIT_ENABLED
 
@@ -56,6 +58,8 @@ class ControlsExt(ModelStateBase):
     self._param_update_time: float = 0.0
     self.blinker_pause_lateral = BlinkerPauseLateral()
     self.lead_brake_boost = LeadBrakeBoost()  # tnpb2: 3-30 km/h x1.2 after a hard lead brake, see lead_brake_boost.py
+    self.stop_gap_hold = StopGapHold()  # tnpb3: <30 km/h no lighter while the stop gap < 3.5 m, see stop_gap_hold.py
+    self.creep_stall_guard = CreepStallGuard()  # tnpb3: 1-5 km/h adds back brake the hybrid creep eats
 
     cloudlog.info("controlsd_ext is waiting for CarParamsSP")
     self.CP_SP = messaging.log_from_bytes(params.get("CarParamsSP", block=True), custom.CarParamsSP)

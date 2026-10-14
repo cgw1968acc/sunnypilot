@@ -148,9 +148,14 @@ class Controls(ControlsExt):
     if self.LoC.long_control_state != stock_state:
       self.LoC.reset()
     self.LoC.last_output_accel = accel
-    # sunnypilot hook: the boost only shapes what is sent; last_output_accel (the next frame's prev_accel for the
-    # stopping controller and LongControl's stopping state) keeps the un-boosted request, or the boost would compound
-    actuators.accel = float(self.lead_brake_boost.update(accel, CS.vEgo, CS.standstill, self.sm['radarState'].leadOne,
+    # sunnypilot hook: the stop-gap hold, creep-stall guard and boost only shape what is sent; last_output_accel (the
+    # next frame's prev_accel for the stopping controller and LongControl's stopping state) keeps the plain request, or
+    # the boost would compound
+    lead_one = self.sm['radarState'].leadOne
+    accel_shaped = self.stop_gap_hold.update(accel, CS.vEgo, CS.aEgo, CS.standstill, lead_one, CC.longActive)
+    accel_shaped = self.creep_stall_guard.update(accel_shaped, CS.vEgo, CS.aEgo, CS.standstill, CC.longActive,
+                                                 pid_accel_limits[0])
+    actuators.accel = float(self.lead_brake_boost.update(accel_shaped, CS.vEgo, CS.standstill, lead_one,
                                                          CC.longActive, pid_accel_limits[0]))
 
     # Steering PID loop and lateral MPC
