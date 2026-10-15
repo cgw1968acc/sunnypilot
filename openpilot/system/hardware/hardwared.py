@@ -388,14 +388,19 @@ def hardware_thread(end_event, hw_queue) -> None:
     if started_ts is None:
       should_start = should_start and all(startup_conditions.values())
 
+    # sunnypilot: these writes go through the non-blocking writer. Corolla Cross 2026-10-15 23:26:45 (route 0000007d) and
+    # 23:12:00 (0000007c): this loop stopped for 5-7.5 s (deviceState gone -> selfdrived commIssue -> "TAKE CONTROL
+    # IMMEDIATELY", the lateral dropped) while the device's storage was busy (log writer, a git fetch, three personality
+    # param writes); a synchronous put here fsyncs the file and the directory and waits for it. deviceState must keep
+    # coming whatever the storage does; the value still lands, just not in this thread.
     if should_start != should_start_prev or (count == 0):
-      params.put_bool("IsEngaged", False, block=True)
+      params.put_bool("IsEngaged", False, block=False)
       engaged_prev = False
 
     if sm.updated['selfdriveState']:
       engaged = sm['selfdriveState'].enabled
       if engaged != engaged_prev:
-        params.put_bool("IsEngaged", engaged, block=True)
+        params.put_bool("IsEngaged", engaged, block=False)
         engaged_prev = engaged
 
       try:
@@ -509,8 +514,8 @@ def hardware_thread(end_event, hw_queue) -> None:
     last_uptime_ts = now_ts
 
     if (count % int(60. / DT_HW)) == 0:
-      params.put("UptimeOffroad", uptime_offroad, block=True)
-      params.put("UptimeOnroad", uptime_onroad, block=True)
+      params.put("UptimeOffroad", uptime_offroad, block=False)  # sunnypilot: non-blocking, see IsEngaged above
+      params.put("UptimeOnroad", uptime_onroad, block=False)
 
     count += 1
     should_start_prev = should_start
