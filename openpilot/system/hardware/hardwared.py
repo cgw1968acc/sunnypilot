@@ -243,6 +243,8 @@ def hardware_thread(end_event, hw_queue) -> None:
   thermal_config = HARDWARE.get_thermal_config()
 
   fan_controller = FanController(int(1./DT_HW))
+  last_sufficient_voltage = None  # sunnypilot: see the GithubRunnerSufficientVoltage write
+  last_network_metered = None     # sunnypilot: see the NetworkMetered write
   chestnut = Chestnut()
   chestnut_status = ChestnutStatus()
   branch = get_short_branch()
@@ -439,7 +441,15 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     # GitHub runner auto off: 9V is used as the threshold because most desktop runners
     # will rarely exceed 5V so 9V is set as our buffer between desk use and car use.
-    params.put_bool("GithubRunnerSufficientVoltage", ((voltage or 0) and voltage > 9000))
+    # sunnypilot: write only on change. Stock writes this and NetworkMetered on EVERY iteration (0.5 s), and each put is a
+    # temp file + fsync + rename + directory fsync in its own thread: four fsyncs a second from this process alone. On the
+    # Corolla Cross (2026-10-15, routes 0000007c/7d/7e, storage freshly wiped of 45 GB) the storage then stalled for 3-7 s
+    # at a time, this loop stopped (it opens ~10 param files per iteration), deviceState went missing and selfdrived
+    # dropped the drive with "TAKE CONTROL IMMEDIATELY".
+    sufficient_voltage = bool((voltage or 0) and voltage > 9000)
+    if sufficient_voltage != last_sufficient_voltage:
+      params.put_bool("GithubRunnerSufficientVoltage", sufficient_voltage)
+      last_sufficient_voltage = sufficient_voltage
 
     power_monitor.calculate(voltage, onroad_conditions["ignition"])
     msg.deviceState.offroadPowerUsageUwh = power_monitor.get_power_used()
@@ -504,7 +514,9 @@ def hardware_thread(end_event, hw_queue) -> None:
         except Exception:
           cloudlog.exception("failed to save offroad status")
 
-    params.put_bool("NetworkMetered", msg.deviceState.networkMetered)
+    if msg.deviceState.networkMetered != last_network_metered:  # sunnypilot: on change only, see above
+      params.put_bool("NetworkMetered", msg.deviceState.networkMetered)
+      last_network_metered = msg.deviceState.networkMetered
 
     now_ts = time.monotonic()
     if off_ts:
