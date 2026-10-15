@@ -52,12 +52,18 @@ def test_linear_release_once_safe_again():
 
 
 def test_2_to_0_end_untouched():
-  h = StopGapHold()
-  run(h, 150, -1.5, V12, -1.2, lead(5.0))
-  assert abs(run(h, 1, -0.8, 4.5 / 3.6, -1.0, lead(2.0)) - (-1.15)) < 1e-6  # 4.5 km/h: half way back to the request
-  assert run(h, 1, -0.5, 2.0 / 3.6, -0.6, lead(1.5)) == -0.5                # 2 km/h and below: the end line as it is
-  assert run(h, 1, -0.4, 0.0, 0.0, lead(1.5), standstill=True) == -0.4
-  assert h.held is None
+  # the hold's own blend (the tncr roll guard, which acts this close to a stopped lead, is tested below)
+  import openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_hold as m
+  saved, m.ROLL_TRIGGER = m.ROLL_TRIGGER, -99.0
+  try:
+    h = StopGapHold()
+    run(h, 150, -1.5, V12, -1.2, lead(5.0))
+    assert abs(run(h, 1, -0.8, 4.5 / 3.6, -1.0, lead(2.0)) - (-1.15)) < 1e-6  # 4.5 km/h: half way back to the request
+    assert run(h, 1, -0.5, 2.0 / 3.6, -0.6, lead(1.5)) == -0.5                # 2 km/h and below: the end line as it is
+    assert run(h, 1, -0.4, 0.0, 0.0, lead(1.5), standstill=True) == -0.4
+    assert h.held is None
+  finally:
+    m.ROLL_TRIGGER = saved
 
 
 def test_tncr_urgent_lead_brake_holds_only_below_2m():
@@ -73,3 +79,77 @@ def test_tncr_urgent_lead_brake_holds_only_below_2m():
   for _ in range(300):
     out = h.update(-0.8, 3.0 / 3.6, -0.8, False, stopped, True)  # predicted ~2.6 m: below 3.5 but above 2.0
   assert out == -0.8 and not h.holding
+
+
+def sim_roll(h, accel_fn, d0=3.57, creep=0.45, n=1500):
+  """Cross creeping off a standstill behind a stopped lead (route 0000006b 09:21): plant decel ~ 1.2|u| - creep below
+  5 km/h, 0.2 s delay, 0.6 s lag; accel_fn(i, v) is the request reaching the guard; returns (closest gap, trace)"""
+  v = a = x = 0.0
+  buf, trace = [0.0] * 20, []
+  for i in range(n):
+    ss = v < 0.01
+    cmd = h.update(accel_fn(i, v), v, a, ss, lead(d0 - x, v=0.25), True)
+    trace.append((v, d0 - x, cmd))
+    buf.append(cmd)
+    u = buf.pop(0)
+    tgt = (1.2 * u + creep) if (v < 5 / 3.6 and u < 0) else u
+    if ss and tgt < 0:
+      tgt = 0.0
+    a += (tgt - a) * 0.01 / 0.6
+    v = max(v + a * 0.01, 0.0)
+    x += v * 0.01
+  return min(d for _, d, _ in trace), trace
+
+
+def false_launch(i, v):
+  # route 0000006b 09:21: the plan launched (+0.5 for 0.8 s) toward a lead that never moved, then asked only -0.24
+  return 0.5 if i < 80 else -0.24
+
+
+def test_roll_guard_keeps_the_car_off_a_lead_that_never_moved():
+  closest, trace = sim_roll(StopGapHold(), false_launch)
+  assert closest >= 1.8, closest
+  # and once it stands again it stays put, held firmly, while the lead does not move
+  tail = trace[-300:]
+  assert all(v < 0.01 for v, _, _ in tail)
+  assert tail[-1][2] <= -1.2 + 1e-6
+
+
+def test_roll_guard_off_without_it_the_car_reaches_the_lead():
+  import openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_hold as m
+  saved = m.ROLL_TRIGGER
+  m.ROLL_TRIGGER = -99.0
+  try:
+    closest, _ = sim_roll(StopGapHold(), false_launch)
+  finally:
+    m.ROLL_TRIGGER = saved
+  assert closest < 0.5
+
+
+def test_roll_guard_leaves_a_normal_launch_alone():
+  # the lead pulls away (vLead >= 0.5): the launch passes untouched
+  h = StopGapHold()
+  outs = [h.update(0.8, 0.5 * i * 0.01, 0.8, i == 0, lead(3.5 + 0.8 * i * 0.01, v=0.8), True) for i in range(200)]
+  assert all(o == 0.8 for o in outs)
+
+
+def test_roll_guard_leaves_an_ordinary_stop_alone():
+  # firm enough to stop ~3 m out: never touched (the end of the stop keeps the owner's end force)
+  h = StopGapHold()
+  v, d = 8 / 3.6, 6.0
+  while v > 0:
+    req = -(v ** 2 / (2 * (d - 3.0)))
+    assert h.update(req, v, req, False, lead(d), True) == req or h.roll_out is None
+    d -= v * 0.01
+    v = max(v + req * 0.01, 0.0)
+  assert h.roll_out is None
+
+
+def test_roll_guard_hold_releases_when_the_lead_moves():
+  h = StopGapHold()
+  sim_roll(h, false_launch)
+  assert h.roll_caught
+  outs = [h.update(0.5, 0.0, 0.0, True, lead(2.2, v=1.0), True) for _ in range(200)]
+  assert outs[-1] == 0.5
+  steps = [b - a for a, b in zip(outs, outs[1:], strict=False)]
+  assert max(steps) <= 1.5 * 0.01 + 1e-9                     # a linear release, no step
