@@ -29,6 +29,14 @@ NEED_MARGIN = 1.15
 NEED_ADD = 0.1         # m/s^2
 J_BP = [0.0, 1.0, 1.5]       # s since engaging
 J_DOWN = [1.0, 1.0, 1.5]     # m/s^3
+# tncr (Corolla Cross): the cap may not go lighter than the Cross's own end of a stop. Route 0000006b (2026-10-15, true
+# time 09:06:05, SET- at 8.6 km/h, lead 8 m): b_need aims 2.0 m short, so near the end the cap fell to -0.23 at 2 km/h and
+# -0.12 at 0.7 km/h (the request was -0.55..-0.85); the Cross's creep torque held the car at 0.7-0.9 km/h for ~1 s and
+# it then stopped with a nod (-0.5 m/s^2, owner: "the end of the stop still jolts a little"). So the cap is at least
+# CAP_FLOOR: -0.50 down to 2 km/h (the lightest request that still slows the Cross there), then a line to the owner's
+# -0.35 at 0 km/h - the same end the plain stop has.
+CAP_FLOOR_V = [0.0, 2.0 / 3.6]   # m/s
+CAP_FLOOR_A = [-0.35, -0.50]     # m/s^2
 
 
 def b_need(v_ego: float, d_rel: float) -> float:
@@ -53,7 +61,8 @@ class EngageCloseStop:
   def cap(self, accel_request: float, lead, v_ego: float) -> float:
     if not self.active:
       return accel_request
-    return max(accel_request, -(b_need(v_ego, lead.dRel) * NEED_MARGIN + NEED_ADD))
+    cap = -(b_need(v_ego, lead.dRel) * NEED_MARGIN + NEED_ADD)
+    return max(accel_request, min(cap, float(np.interp(v_ego, CAP_FLOOR_V, CAP_FLOOR_A))))
 
   def j_down(self, t_engaged: float) -> float:
     return float(np.interp(t_engaged, J_BP, J_DOWN))
