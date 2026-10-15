@@ -24,12 +24,14 @@ KP_INTERP_TN = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, KP]  # Altis: [.., 6.0, 3
 # AGAINST the model-driven swing (friction x0.5: +11% 0.3-1 Hz torque, x0 +21%), and friction x1.3 lowered every
 # measure (0.3-1 Hz -7%, 1-3 Hz -8%, torque rate -6%) while adding no lag. Applied on top of whatever friction torqued /
 # the override set, above HWY_FRICTION_BP; centering, gains and the path are untouched.
-HWY_FRICTION_BP = [60.0 / 3.6, 70.0 / 3.6, 100.0 / 3.6]  # m/s
+HWY_FRICTION_BP = [60.0 / 3.6, 70.0 / 3.6, 100.0 / 3.6, 110.0 / 3.6]  # m/s
 # 1.3 -> 1.4 (owner 2026-10-08, after the 00:07 "excellent" drive at 1.3 = tag altis-highway-lateral-baseline-1:
 # "raise the highway friction a little, I'll try it"; open-loop 00000110 vs 1.3: 0.3-1 Hz -3%, 1-3 Hz -3%, rate -3%).
 # 70 -> 100 km/h: 1.4 -> 1.5, flat above (owner 2026-10-13 night, after an "ideal" lateral drive: "can friction keep
 # rising linearly above 70 km/h? - not too much, try it"; the smallest of the options shown, +7% at 100 km/h).
-HWY_FRICTION_SCALE_V = [1.0, 1.4, 1.5]
+# tncr (Corolla Cross), owner 2026-10-15 night after the tncr19 lateral port ("this feels right for the Cross; add a
+# x1.6 step for the highway friction and try"): one more point, 1.6 at 110 km/h, flat above; 100 km/h stays 1.5.
+HWY_FRICTION_SCALE_V = [1.0, 1.4, 1.5, 1.6]
 
 
 def get_highway_friction_scale(v_ego: float) -> float:

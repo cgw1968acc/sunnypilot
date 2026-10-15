@@ -23,7 +23,9 @@ def test_schedule():
   assert get_highway_friction_scale(70 / 3.6) == 1.4
   assert abs(get_highway_friction_scale(85 / 3.6) - 1.45) < 1e-9
   assert get_highway_friction_scale(100 / 3.6) == 1.5
-  assert get_highway_friction_scale(130 / 3.6) == 1.5
+  assert abs(get_highway_friction_scale(105 / 3.6) - 1.55) < 1e-9
+  assert get_highway_friction_scale(110 / 3.6) == 1.6
+  assert get_highway_friction_scale(130 / 3.6) == 1.6
 
 
 def test_no_compounding_and_follows_a_new_base():
