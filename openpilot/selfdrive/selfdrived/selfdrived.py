@@ -39,7 +39,8 @@ SIMULATION = "SIMULATION" in os.environ
 TESTING_CLOSET = "TESTING_CLOSET" in os.environ
 
 LONGITUDINAL_PERSONALITY_MAP = {v: k for k, v in log.LongitudinalPersonality.schema.enumerants.items()}
-PERSONALITY_SETTLE_T = 15.0  # s: how long a stale read-back of our own LongitudinalPersonality write is ignored (sunnypilot)
+PERSONALITY_SETTLE_T = 30.0  # s: how long the values of our own LongitudinalPersonality writes are known as "ours" (sunnypilot)
+PERSONALITY_WRITE_DEBOUNCE = 1.0  # s after the last distance-button press before the value is written to the storage (sunnypilot)
 
 ThermalStatus = log.DeviceState.ThermalStatus
 State = log.SelfdriveState.OpenpilotState
@@ -145,6 +146,9 @@ class SelfdriveD(CruiseHelper):
     self.experimental_mode = False
     self.personality_written_t = -1e9  # sunnypilot: see params_thread
     self.personality_written = None
+    self.personality_writes: list[tuple[float, int]] = []  # (time, value) of our own recent writes
+    self.personality_pending: int | None = None  # value still to be written (debounced)
+    self.personality_last_read: int | None = None
     self.personality = get_sanitize_int_param(
       "LongitudinalPersonality",
       min(log.LongitudinalPersonality.schema.enumerants.values()),
@@ -525,8 +529,11 @@ class SelfdriveD(CruiseHelper):
       if any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents):
         if not self.experimental_mode_switched:
           self.personality = (self.personality - 1) % 3
-          self.params.put('LongitudinalPersonality', self.personality)
-          self.personality_written_t = time.monotonic()  # sunnypilot: params_thread must not read the stale value back
+          # sunnypilot: the storage write is debounced (route 0000007f: eight presses in 20 s = eight fsync'd writes, the
+          # storage stalled 6 s and hardwared with it); the value in use changes at once, the file follows 1 s after the
+          # last press, see params_thread
+          self.personality_pending = self.personality
+          self.personality_written_t = time.monotonic()
           self.personality_written = self.personality
           self.events.add(EventName.personalityChanged)
         self.experimental_mode_switched = False
@@ -681,10 +688,23 @@ class SelfdriveD(CruiseHelper):
       # old one (the non-blocking write had not landed on the busy storage) and flipped the personality back. So for
       # PERSONALITY_SETTLE_T after our own write the read is only accepted when it differs from what we wrote AND from
       # the value it replaced, i.e. when somebody else (UI, sunnylink) really changed it; a stale read is ignored.
+      # Route 0000007f 23:57:55-23:58:17 (feb5c140c2): on the slow storage the queued writes landed seconds late, so the
+      # value read back was the one from two presses ago, and the 15 s guard (which only knew the previous value) let it
+      # through. Now: the pending value is written once, PERSONALITY_WRITE_DEBOUNCE after the last press; the file is
+      # only acted on when its value CHANGES between two reads (an edge), and an edge whose value is one of our own
+      # recent writes is ignored - only somebody else's change (UI, sunnylink) gets through.
+      now = time.monotonic()
+      if self.personality_pending is not None and now - self.personality_written_t >= PERSONALITY_WRITE_DEBOUNCE:
+        self.params.put('LongitudinalPersonality', self.personality_pending)
+        self.personality_writes = [(t, v) for t, v in self.personality_writes if now - t < PERSONALITY_SETTLE_T]
+        self.personality_writes.append((now, self.personality_pending))
+        self.personality_pending = None
       p = self.params.get("LongitudinalPersonality", return_default=True)
-      if time.monotonic() - self.personality_written_t > PERSONALITY_SETTLE_T or p == self.personality_written \
-         or (self.personality_written is not None and p != (self.personality_written + 1) % 3):
-        self.personality = p
+      if p != self.personality_last_read:
+        self.personality_last_read = p
+        ours = any(v == p and now - t < PERSONALITY_SETTLE_T for t, v in self.personality_writes) or p == self.personality_pending
+        if not ours and p != self.personality:
+          self.personality = p
 
       self.mads.read_params()
       time.sleep(0.1)
