@@ -240,10 +240,10 @@ class TestCreepFollowStop:
       outs.append(out)
     return outs
 
-  def test_stops_with_minus_0_24_not_the_end_line(self):
+  def test_stops_with_the_cross_creep_end_not_the_end_line(self):
     outs = self._creep(StoppingController(-2.0), -0.40)
     assert outs[0] <= 0.0                       # a positive request is dropped at once
-    assert abs(outs[-1] - StoppingController.CF_END) < 1e-9
+    assert abs(outs[-1] - StoppingController.CF_END_CROSS) < 1e-9   # tncr: -0.50, the Cross creep beats -0.24
     steps = [a - b for a, b in zip(outs, outs[1:], strict=False)]
     assert max(steps) <= StoppingController.CF_RATE * DT_CTRL + 1e-9
 
@@ -251,11 +251,17 @@ class TestCreepFollowStop:
     outs = self._creep(StoppingController(-2.0), -1.0)
     assert abs(outs[-1] - (-1.0)) < 1e-9
 
-  def test_light_plan_keeps_minus_0_24_to_the_stop(self):
+  def test_light_plan_keeps_the_cross_creep_end_to_the_stop(self):
     sc = StoppingController(-2.0)
     outs = self._creep(sc, -0.40, secs=1.0)
     _, out = sc.update(PID, PID, cs(1.0), -0.10, outs[-1], -0.10, LIMITS, has_lead=True)
-    assert abs(out - StoppingController.CF_END) < 1e-9
+    assert abs(out - StoppingController.CF_END_CROSS) < 1e-9
+
+  def test_the_plan_blends_in_from_cf_plan_soft(self):
+    sc = StoppingController(-2.0)
+    mid = (StoppingController.CF_PLAN_SOFT_CROSS + StoppingController.CF_PLAN_FIRM) / 2
+    outs = self._creep(sc, mid)
+    assert StoppingController.CF_PLAN_FIRM < outs[-1] < StoppingController.CF_END_CROSS
 
   def test_not_after_a_real_launch(self):
     sc = StoppingController(-2.0)
@@ -283,7 +289,8 @@ class TestCreepFollowStop:
       trace.append(out)
     assert trace[50] <= StoppingController.CF_SETTLE_ACCEL + 1e-9          # -0.6 within 0.5 s, no hold delay
     assert trace[10] > StoppingController.CF_SETTLE_ACCEL                    # but gradually
-    assert abs(trace[150] - (StoppingController.CF_SETTLE_ACCEL - 1.0 * StoppingController.CF_HOLD_RATE)) < 0.02
+    t_settle = (StoppingController.CF_END_CROSS - StoppingController.CF_SETTLE_ACCEL) / StoppingController.CF_SETTLE_JERK
+    assert abs(trace[150] - (StoppingController.CF_SETTLE_ACCEL - (1.5 - t_settle) * StoppingController.CF_HOLD_RATE)) < 0.02
     assert abs(trace[-1] - StoppingController.FLAT_HOLD_ACCEL) < 1e-9       # the flat hold after ~2.5 s
     steps = [a - b for a, b in zip(trace, trace[1:], strict=False)]
     assert max(steps) <= StoppingController.CF_SETTLE_JERK * DT_CTRL + 1e-9
@@ -344,3 +351,4 @@ class TestEndCapWithoutLead:
     out = run(sc, PID, cs(9.0), -1.05, -1.05, 0.3, has_lead=True)
     out = run(sc, PID, cs(4.0), -1.05, out, 1.0, has_lead=True)
     assert abs(out - (-1.05)) < 1e-6
+

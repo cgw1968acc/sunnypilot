@@ -210,6 +210,13 @@ class StoppingController:
   CF_SETTLE_ACCEL = -0.6  # m/s^2 (~1100 N)
   CF_SETTLE_JERK = 0.72  # m/s^3: -0.24 -> -0.6 in 0.5 s
   CF_HOLD_RATE = 0.3  # m/s^2/s: -0.6 -> -1.2 in 2 s
+  # tncr (Corolla Cross): the Cross's creep torque beats -0.24. Route 0000006b (2026-10-15, true time 09:21:03) the
+  # creep-follow stop sat at -0.24 for 2.7 s while the car sped up to 3.3 km/h and closed from 3.5 to 1.4 m on a stopped
+  # lead - the owner had to brake. -0.50 is the lightest request that still decelerates the Cross at 2-3 km/h
+  # (~0.3 m/s^2: decel ~ 1.2 * |req| - 0.27 at 3 km/h, stop_gap_close.CREEP_*); below 2 km/h end_force_limit still
+  # tapers it to the owner's -0.35 at 0 km/h. The plan blends in from -0.55 and wins below -0.70 as before.
+  CF_END_CROSS = -0.50  # m/s^2
+  CF_PLAN_SOFT_CROSS = -0.55  # m/s^2
 
   def __init__(self, stop_accel):
     self.stop_accel = stop_accel
@@ -250,7 +257,7 @@ class StoppingController:
     return max(self.stop_accel, self.FLAT_HOLD_ACCEL)
 
   def _cf_request(self, a_target, prev_accel):
-    target = float(np.interp(a_target, [self.CF_PLAN_FIRM, self.CF_PLAN_SOFT], [self.CF_PLAN_FIRM, self.CF_END]))
+    target = float(np.interp(a_target, [self.CF_PLAN_FIRM, self.CF_PLAN_SOFT_CROSS], [self.CF_PLAN_FIRM, self.CF_END_CROSS]))
     target = min(target, a_target) if a_target < self.CF_PLAN_FIRM else target
     if target < prev_accel:
       return max(target, min(prev_accel, 0.0) - self.CF_RATE * DT_CTRL)
