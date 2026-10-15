@@ -39,6 +39,7 @@ SIMULATION = "SIMULATION" in os.environ
 TESTING_CLOSET = "TESTING_CLOSET" in os.environ
 
 LONGITUDINAL_PERSONALITY_MAP = {v: k for k, v in log.LongitudinalPersonality.schema.enumerants.items()}
+PERSONALITY_SETTLE_T = 15.0  # s: how long a stale read-back of our own LongitudinalPersonality write is ignored (sunnypilot)
 
 ThermalStatus = log.DeviceState.ThermalStatus
 State = log.SelfdriveState.OpenpilotState
@@ -143,6 +144,7 @@ class SelfdriveD(CruiseHelper):
     self.not_running_prev = None
     self.experimental_mode = False
     self.personality_written_t = -1e9  # sunnypilot: see params_thread
+    self.personality_written = None
     self.personality = get_sanitize_int_param(
       "LongitudinalPersonality",
       min(log.LongitudinalPersonality.schema.enumerants.values()),
@@ -525,6 +527,7 @@ class SelfdriveD(CruiseHelper):
           self.personality = (self.personality - 1) % 3
           self.params.put('LongitudinalPersonality', self.personality)
           self.personality_written_t = time.monotonic()  # sunnypilot: params_thread must not read the stale value back
+          self.personality_written = self.personality
           self.events.add(EventName.personalityChanged)
         self.experimental_mode_switched = False
 
@@ -674,8 +677,14 @@ class SelfdriveD(CruiseHelper):
       # sunnypilot: route 0000007d 23:26:39 (Corolla Cross): every distance-button press flipped relaxed -> standard ->
       # relaxed within 0.11 s, because this 10 Hz read returned the OLD value while the main thread's put was still
       # being written (slow storage), and overwrote the new personality. Leave it alone for a second after our own write.
-      if time.monotonic() - self.personality_written_t > 1.0:
-        self.personality = self.params.get("LongitudinalPersonality", return_default=True)
+      # Route 0000007e 23:42:51-23:43:08 (5ee48a51bc, with the 1 s window): the value read back after 1.0 s was STILL the
+      # old one (the non-blocking write had not landed on the busy storage) and flipped the personality back. So for
+      # PERSONALITY_SETTLE_T after our own write the read is only accepted when it differs from what we wrote AND from
+      # the value it replaced, i.e. when somebody else (UI, sunnylink) really changed it; a stale read is ignored.
+      p = self.params.get("LongitudinalPersonality", return_default=True)
+      if time.monotonic() - self.personality_written_t > PERSONALITY_SETTLE_T or p == self.personality_written \
+         or (self.personality_written is not None and p != (self.personality_written + 1) % 3):
+        self.personality = p
 
       self.mads.read_params()
       time.sleep(0.1)
