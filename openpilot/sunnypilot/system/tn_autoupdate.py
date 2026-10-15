@@ -37,7 +37,7 @@ from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 
-FETCH_PERIOD = 300.  # s
+FETCH_PERIOD = 60.  # s (owner 2026-10-16: fetch every minute, 5 minutes is too long)
 FIRST_FETCH_DELAY = 30.  # s after start
 DRIVE_FETCH_PERIOD = 20.  # s between fetches while in D with MAIN ACC off (the first one is immediate)
 FETCH_TIMEOUT = 120.  # s
