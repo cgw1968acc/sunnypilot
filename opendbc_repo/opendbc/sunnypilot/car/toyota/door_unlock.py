@@ -13,6 +13,8 @@ GearShifter = structs.CarState.GearShifter
 # on the diagnostic address 0x750, sub-address 0x40: 40 05 30 11 00 40 00 00 = unlock (00 80 = lock), the pair the
 # panda Toyota safety already allows ("automatic door locking and unlocking"). Sent UNLOCK_REPEAT times, UNLOCK_GAP
 # frames apart, once per shift into P from a driving gear; nothing else ever sends it.
+# tncr 2026-10-16: checked against opendbc/safety/modes/toyota.h - the panda DOES pass 40 05 30 11 00 40 00 00 (unlock) and
+# 00 80 (lock) on 0x750 (sp_valid_uds_msgs). The commit that ported this file said otherwise; that note was wrong.
 UNLOCK_MSG = b'\x40\x05\x30\x11\x00\x40\x00\x00'
 UNLOCK_REPEAT = 2
 UNLOCK_GAP = 10  # frames (0.1 s)
