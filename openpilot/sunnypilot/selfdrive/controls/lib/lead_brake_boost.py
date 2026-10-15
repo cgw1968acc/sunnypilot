@@ -67,7 +67,9 @@ class LeadBrakeBoost:
     self.short = False  # the stop is predicted closer than BOOST_GAP
 
   def update(self, accel: float, v_ego: float, standstill: bool, lead, long_active: bool, accel_min: float,
-             a_ego: float | None = None) -> float:
+             a_ego: float | None = None, hold_off: bool = False) -> float:
+    """hold_off (tncr 2026-10-15): the input already comes from the stop-gap roll guard - pass it through unchanged
+    (the factor must not multiply the guard's own stop request; route 00000073 17:16:07: -2.15 x 1.2 = -2.58)"""
     present = bool(lead.present)
     closing = v_ego - lead.vLead
     ttc = lead.dRel / closing if closing > 0.3 else 99.0
@@ -97,6 +99,6 @@ class LeadBrakeBoost:
     target = 1.0 + (GAIN - 1.0) * float(np.interp(v_ego, END_BP, END_W)) if boost else 1.0
     step = GAIN_RATE * DT_CTRL
     self.gain = float(np.clip(target, self.gain - step, self.gain + step))
-    if accel < 0.0 and self.gain > 1.0:
+    if accel < 0.0 and self.gain > 1.0 and not hold_off:
       return max(accel * self.gain, accel_min)
     return accel

@@ -68,6 +68,13 @@ ROLL_HOLD = -1.2         # m/s^2
 ROLL_HOLD_RATE = 1.0     # m/s^3
 ROLL_GO_D = 0.4          # m
 ROLL_RELEASE_RATE = 1.5  # m/s^3
+# Owner 2026-10-15 evening (route 00000073 17:16:08, lead braked hard, bookmark 1): the guard fired at 6.6 km/h with
+# the stopped lead 3.6 m ahead, demanded a 2.5 m stop and drove the request from -1.5 to -2.69 inside 0.5 s (4120 N
+# at 2.7 km/h; the car stood with -1.67 still on it - the jolt). The urgent hold and the MPC trim allow 2.0 m in such
+# a stop, so the guard conflicts with them at 2.5 m. While the stop is urgent the guard uses the urgent gap and
+# trigger; and (controlsd) its output is no longer exempt from the end-force ceiling while the car moves.
+ROLL_GAP_URGENT = 2.0    # m
+ROLL_TRIGGER_URGENT = 2.0  # m
 
 
 class StopGapHold:
@@ -83,6 +90,7 @@ class StopGapHold:
   def _roll_guard(self, accel: float, v_ego: float, standstill: bool, lead) -> float:
     present = lead is not None and bool(lead.present)
     lead_still = present and lead.vLead < ROLL_LEAD_V
+    roll_gap, roll_trigger = (ROLL_GAP_URGENT, ROLL_TRIGGER_URGENT) if self.urgent else (ROLL_GAP, ROLL_TRIGGER)
     if standstill:
       if self.roll_caught and lead_still and lead.dRel < self.roll_d0 + ROLL_GO_D:
         prev = accel if self.roll_out is None else self.roll_out
@@ -90,13 +98,13 @@ class StopGapHold:
         return self.roll_out
       self.roll_caught = False
     elif lead_still and v_ego <= ROLL_V_MAX and (self.roll_caught or
-                                                lead.dRel - v_ego * ROLL_LOOK_T - v_ego ** 2 / (2.0 * ROLL_B) < ROLL_TRIGGER):
-      b = v_ego ** 2 / (2.0 * max(lead.dRel - ROLL_GAP, ROLL_D_MIN))
+                                                lead.dRel - v_ego * ROLL_LOOK_T - v_ego ** 2 / (2.0 * ROLL_B) < roll_trigger):
+      b = v_ego ** 2 / (2.0 * max(lead.dRel - roll_gap, ROLL_D_MIN))
       if self.roll_caught:
         b = max(b, ROLL_B_CAUGHT)
       need = decel_request(b, v_ego)
       b_req = decel_from_request(accel, v_ego)
-      ends_short = b_req <= 0.0 or lead.dRel - v_ego ** 2 / (2.0 * b_req) < ROLL_GAP - ROLL_SLACK
+      ends_short = b_req <= 0.0 or lead.dRel - v_ego ** 2 / (2.0 * b_req) < roll_gap - ROLL_SLACK
       if need < accel and (self.roll_caught or ends_short):
         prev = min(accel, 0.0) if self.roll_out is None else self.roll_out
         self.roll_out = max(need, prev - ROLL_RATE * DT_CTRL)

@@ -81,3 +81,15 @@ def test_no_compounding_through_the_stopping_controller():
     sent.append(b.update(accel, v, False, URGENT, True, -3.5))   # boosted, only sent
   assert min(sent) > -2.6, min(sent)  # around 1.2x a ~-2 request, never running to -3.5
   assert sent[-1] > -2.0, sent[-1]    # settles near 1.2x the end request (feeding the boosted value back gave -3.5)
+
+
+def test_hold_off_passes_the_guard_output_unchanged():
+  from openpilot.cereal import log
+  b = LeadBrakeBoost()
+  l = log.RadarState.LeadData.new_message()
+  l.present, l.dRel, l.vLead, l.aLeadK = True, 5.0, 0.0, -3.0
+  for _ in range(200):  # latch + light phase over + gain ramped to 1.2
+    out = b.update(-1.5, 12 / 3.6, False, l, True, -3.5, a_ego=-1.4)
+  assert out < -1.5 - 0.2
+  assert b.update(-2.15, 4 / 3.6, False, l, True, -3.5, a_ego=-1.8, hold_off=True) == -2.15
+  assert b.update(-2.15, 4 / 3.6, False, l, True, -3.5, a_ego=-1.8) < -2.15   # back on when the guard lets go

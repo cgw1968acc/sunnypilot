@@ -31,10 +31,12 @@ def test_standstill_continues_into_the_hold_without_a_step():
 
 
 def test_engaged_below_the_line():
+  from openpilot.sunnypilot.selfdrive.controls.lib.end_force_limit import CEIL_V, CEIL_TOP
   e = EndForceLimit()
-  assert e.update(-0.9, 1.5 / 3.6, False, True) == -0.9           # the line is anchored where braking began
+  ceil15 = END_ACCEL + (CEIL_TOP - END_ACCEL) * (1.5 / 3.6) / CEIL_V      # tncr: the fixed ceiling caps -0.9 at 1.5 km/h
+  assert abs(e.update(-0.9, 1.5 / 3.6, False, True) - ceil15) < 1e-9     # and the line is anchored there
   out = e.update(-0.9, 0.75 / 3.6, False, True)
-  assert abs(out - (END_ACCEL + (-0.9 - END_ACCEL) * 0.5)) < 1e-9
+  assert abs(out - (END_ACCEL + (ceil15 - END_ACCEL) * 0.5)) < 1e-9
   assert e.update(-0.9, 0.0, False, True) == END_ACCEL
 
 
@@ -49,3 +51,20 @@ def test_stall_lets_the_line_go_and_reanchors():
   out = e.update(-0.8, 0.7 / 3.6, False, True, -0.4)
   assert abs(out - (END_ACCEL + (-0.8 - END_ACCEL) * 0.7 / 1.5)) < 1e-6
   assert e.update(-0.8, 0.0, False, True, -0.4) == END_ACCEL
+
+
+def test_fixed_ceiling_from_5kph_caps_everything():  # tncr 2026-10-15 evening: -2.0 @5 -> -0.34 @0, no exceptions
+  from openpilot.sunnypilot.selfdrive.controls.lib.end_force_limit import CEIL_V, CEIL_TOP
+  e = EndForceLimit()
+  assert e.update(-2.7, 6.0 / 3.6, False, True) == -2.7                       # above 5 km/h: untouched
+  for kph, want in ((5.0, CEIL_TOP), (4.0, -1.668), (3.0, -1.336), (2.0, -1.004), (1.0, -0.672), (0.0, END_ACCEL)):
+    out = e.update(-2.7, kph / 3.6, False, True)
+    assert abs(out - (END_ACCEL + (CEIL_TOP - END_ACCEL) * kph / 3.6 / CEIL_V)) < 1e-9 and abs(out - want) < 0.01, (kph, out)
+  e2 = EndForceLimit()
+  assert e2.update(-0.65, 5.0 / 3.6, False, True) == -0.65                    # an ordinary end (END curve) never touches it
+  assert e2.update(-0.60, 3.0 / 3.6, False, True) == -0.60
+  e3 = EndForceLimit()                                                        # into the standstill hold without a step
+  e3.update(-2.7, 1.0 / 3.6, False, True)
+  assert e3.update(-2.7, 0.0, False, True) == END_ACCEL
+  out = e3.update(-1.2, 0.0, True, True)
+  assert abs(out - (END_ACCEL - 0.005)) < 1e-9

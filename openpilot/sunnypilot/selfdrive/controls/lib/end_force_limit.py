@@ -23,6 +23,16 @@ END_ACCEL = -0.34      # m/s^2 at 0 km/h. tncr (Corolla Cross): -0.35 -> -0.34 (
                        # -0.35 was the Cross stop template (stopped at
                        # 800-840 N, no nod); the Altis rule above is -0.30 and stays so on tnpb3
 HOLD_RATE = 0.5        # m/s^3: after the stop, toward the standstill hold
+# tncr (Corolla Cross), owner 2026-10-15 evening after route 00000073 17:16:08 (a stop that ended with 4120 N at
+# 2.7 km/h and -1.67 m/s^2 still on the car as the wheels stopped - the jolt): 'the car must, without exception, stop
+# on a force that cannot jolt; the end must ease smoothly down to -0.34 at 0 km/h; 5 km/h may still need a firm brake'.
+# So besides the anchored line below V_LINE there is a FIXED ceiling line from CEIL_V down to END_ACCEL at 0 km/h that
+# nothing may exceed while the car moves (the roll guard included - controlsd no longer bypasses this stage): -2.0 at
+# 5 km/h, -1.34 at 3, -1.0 at 2, -0.67 at 1, -0.34 at 0. An ordinary stop (END curve -0.65 at 5 km/h) never touches
+# it; only the hold / guard / boost extras are capped. From 5 km/h at -2.0 (~2800 N) the pressure has to come off at
+# ~2000 N/s to follow the line; the Cross released 4120 -> 1400 N in 0.4 s on 17:16:07 (~6800 N/s), so it can.
+CEIL_V = 5.0 / 3.6     # m/s
+CEIL_TOP = -2.0        # m/s^2 at CEIL_V
 STALL_V = 0.5 / 3.6    # m/s
 STALL_A = -0.1         # m/s^2
 STALL_T = 0.3          # s
@@ -52,8 +62,14 @@ class EndForceLimit:
         return accel
       return self.out
 
+    ceil_in = accel
+    if v_ego <= CEIL_V:  # the fixed ceiling line (never firmer, whatever asked for it)
+      ceil = END_ACCEL + (CEIL_TOP - END_ACCEL) * max(v_ego, 0.0) / CEIL_V
+      if accel < ceil:
+        accel = ceil
     if v_ego >= V_LINE:
       self.a_line, self.v_line, self.out, self.stall_t = accel, V_LINE, None, 0.0
+      self.out = accel if accel > ceil_in else None
       return accel
 
     self.stall_t = self.stall_t + DT_CTRL if (v_ego > STALL_V and a_ego > STALL_A) else 0.0
@@ -67,5 +83,5 @@ class EndForceLimit:
     if accel < floor:
       self.out = floor
       return floor
-    self.out = None
+    self.out = accel if accel > ceil_in else None
     return accel

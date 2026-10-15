@@ -59,8 +59,15 @@ URGENT_T_RAMP = 0.1  # s
 # 0.1 s (-0.1 at 0.1 s, lighter than the owner's own touch), then a linear rise to 4.0 m/s^3 by 0.4 s (about -0.6 at
 # 0.3 s, -1.4 at 0.5 s, -2.2 at 0.7 s), without the friction-entry hold-back. Latched for this brake (until the request
 # is no longer braking); never inside the engage window (engage_close_stop / the engage schedule own that).
-LEAD_URGENT_A = -1.5      # m/s^2: lead decel (aLeadK)
-LEAD_URGENT_REQ = -2.0    # m/s^2: our request
+# Owner 2026-10-15 evening (route 00000073 17:16:08, lead braked ~-3 from 34 km/h at 22 m): with the old gate (lead
+# <= -1.5 AND request <= -2.0) the template only took over at 02.9 s, when the request had already climbed from -0.26
+# to -2.0 under the ordinary soft onset: the sent command lagged the request by ~0.5 s (request -0.88 / sent -0.23)
+# and the first brake pressure came 1.5 s after the lead started slowing. Owner: 'brake earlier, and the command the
+# system sends must be what the car gets'. So the template now takes over as soon as the lead brakes at <= -1.2
+# (aLeadK -1.13 -> -1.53 between 02.16 and 02.26 on that stop) and the request is braking at all (<= -0.3): the sent
+# command then follows the MPC's own light-first ramp (-0.6 -> -2.0 over 0.7 s) instead of trailing it.
+LEAD_URGENT_A = -1.2      # m/s^2: lead decel (aLeadK); was -1.5
+LEAD_URGENT_REQ = -0.3    # m/s^2: our request is braking; was -2.0
 LEAD_URGENT_T_BP = [0.0, 0.1, 0.4]  # s
 LEAD_URGENT_J = [1.0, 1.0, 4.0]     # m/s^3
 

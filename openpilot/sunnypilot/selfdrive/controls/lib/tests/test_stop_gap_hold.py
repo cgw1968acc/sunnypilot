@@ -153,3 +153,18 @@ def test_roll_guard_hold_releases_when_the_lead_moves():
   assert outs[-1] == 0.5
   steps = [b - a for a, b in zip(outs, outs[1:], strict=False)]
   assert max(steps) <= 1.5 * 0.01 + 1e-9                     # a linear release, no step
+
+
+def test_roll_guard_targets_2m_in_an_urgent_stop():
+  # tncr 2026-10-15 evening (17:16:08): an urgent lead brake ending at 3.1 m / 6 km/h must not be driven to -2.x by the
+  # guard's 2.5 m target; with the urgent 2.0 m gap the guard asks far less
+  import openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_hold as m
+  v, d = 6.0 / 3.6, 3.14
+  plain = StopGapHold()
+  out_plain = run(plain, 60, -0.97, v, -1.1, lead(d))                     # 0.6 s at the same point: where each settles
+  urgent = StopGapHold()
+  urgent.urgent = True
+  out_urgent = run(urgent, 60, -0.97, v, -1.1, lead(d))
+  assert out_plain < -0.97 and plain.roll_out is not None                   # the 2.5 m guard acts
+  assert out_urgent > out_plain + 0.3, (out_plain, out_urgent)               # the urgent guard asks much less
+  assert m.ROLL_GAP_URGENT == 2.0
