@@ -35,7 +35,14 @@ from opendbc.car import DT_CTRL
 # the end of the stop belongs to the end rules). Nothing at a standstill or while not braking.
 ENABLED = True
 STEADY_BP = [6.0 / 3.6, 9.0 / 3.6, 11.0 / 3.6, 13.0 / 3.6, 20.0 / 3.6, 25.0 / 3.6]  # m/s
-STEADY_V = [0.0, 0.05, 0.20, 0.15, 0.10, 0.0]       # m/s^2 added (firmer)
+# Owner 2026-10-15 late night road test of ebff239099: "brakes too early and stops too far". The closed-loop sim
+# (claude_work/tncr_1015pm/sim, route 6b 09:19:54 slow lead stop) shows why: at 10-15 km/h the plan asks -0.95, this
+# steady trim plus the stock PID send -1.33 and the car gives -1.10, 0.15 MORE than the plan; without the steady trim
+# the PID alone already made the car match the plan there (sim stop gap 6.07 m with it, 4.78 m without). The residual
+# the map measured on sent-vs-delivered was being closed by the PID on plan-vs-delivered, so adding it again
+# double-counts. -> steady part OFF (all zeros, kept as a table for a later re-measure with the PID in the loop);
+# the release extra (the PID lags a release) and the hard lift stay.
+STEADY_V = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]           # m/s^2 added (firmer); was [0, 0.05, 0.20, 0.15, 0.10, 0]
 STEADY_FROM = -0.3   # m/s^2: no trim for a lighter command ...
 STEADY_FULL = -0.6   # m/s^2: ... full trim from here
 RELEASE_EXTRA = 0.10  # m/s^2 (firmer) while releasing

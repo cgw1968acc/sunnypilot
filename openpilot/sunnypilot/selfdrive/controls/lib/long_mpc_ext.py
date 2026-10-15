@@ -49,7 +49,9 @@ from openpilot.sunnypilot.selfdrive.controls.lib.night_gap import NightGap
 # (17:16 3.3 m, 17:20 3.3 m) did not need the low-speed part. -> the low end is scaled back: 0 at 10 km/h, +1 at 20,
 # +3.7 at 30 (unchanged by interpolation), +5 at 40-50 as before; 5 km/h -1 m and the highway part unchanged.
 DESIRED_DIST_TRIM_BP = [5.0 / 3.6, 10.0 / 3.6, 20.0 / 3.6, 30.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
-DESIRED_DIST_TRIM_V = [1.0, 0.0, -1.0, -3.7, -5.0, -5.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+# Owner 2026-10-15 late night road test of ebff239099: "brakes too early and stops too far" -> the low end goes back
+# further: 0 at 10 AND 20 km/h, +2 at 30 (was +3.7), +5 at 40-50 kept (the +3 m the owner asked for).
+DESIRED_DIST_TRIM_V = [1.0, 0.0, 0.0, -2.0, -5.0, -5.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
 # Driver 2026-10-04 night: "bring the soft brake at 40-45 km/h a little earlier, i.e. slightly more distance to the
 # lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
 # at 50, fading to 0 at 80 as before. Margin before the -1 m trim: +7.8 m at 35 km/h, +12.2 at 40, +13.8 at 45,

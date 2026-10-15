@@ -8,14 +8,13 @@ def settle(t, cmd, v, n=100):
   return out
 
 
-def test_steady_handover_band_gets_the_measured_residual():
-  t = DeliveryTrim()
-  assert abs(settle(t, -1.0, 11 / 3.6) - (-1.0 - 0.20)) < 1e-9     # 11 km/h: the car gives 0.2 less -> send 0.2 more
-  assert abs(settle(DeliveryTrim(), -1.0, 20 / 3.6) - (-1.10)) < 1e-9
+def test_steady_part_is_off_the_pid_already_closes_it():
+  # 10-15 late: the steady residual was double-counted with the stock PID (plan-vs-delivered) -> zeros for now.
+  assert settle(DeliveryTrim(), -1.0, 11 / 3.6) == -1.0
+  assert settle(DeliveryTrim(), -1.0, 20 / 3.6) == -1.0
   assert settle(DeliveryTrim(), -1.0, 30 / 3.6) == -1.0            # 30 km/h: matched, untouched
   assert settle(DeliveryTrim(), -1.0, 4 / 3.6) == -1.0             # below 6 km/h: nothing (end rules own it)
   assert settle(DeliveryTrim(), -0.2, 11 / 3.6) == -0.2            # a light touch is untouched
-  assert abs(settle(DeliveryTrim(), -0.45, 11 / 3.6) - (-0.45 - 0.10)) < 1e-9  # half way in between -0.3 and -0.6
 
 
 def test_release_adds_a_little_more_while_the_command_rises():
@@ -30,13 +29,13 @@ def test_hard_brake_at_speed_is_lifted_but_stays_hard():
   assert abs(settle(DeliveryTrim(), -2.5, 30 / 3.6) - (-2.5 + 0.25)) < 1e-9
   assert abs(settle(DeliveryTrim(), -3.0, 40 / 3.6) - (-3.0 + 0.35)) < 1e-9
   assert settle(DeliveryTrim(), -1.6, 30 / 3.6) >= -1.6 and settle(DeliveryTrim(), -1.6, 30 / 3.6) <= HARD_CEIL
-  assert settle(DeliveryTrim(), -2.5, 10 / 3.6) < -2.5             # below 15 km/h no lift (the steady trim applies)
+  assert settle(DeliveryTrim(), -2.5, 10 / 3.6) == -2.5            # below 15 km/h no lift
 
 
 def test_trim_moves_at_its_rate_and_resets_at_standstill():
   t = DeliveryTrim()
-  first = t.apply(-1.0, 11 / 3.6, False, True)
-  assert abs(first - (-1.0 - 0.03)) < 1e-9                          # 1.0 m/s^3 * 0.03 s
-  settle(t, -1.0, 11 / 3.6)
-  assert t.apply(-1.0, 0.0, True, True) == -1.0 and t.trim == 0.0
-  assert t.apply(-1.0, 11 / 3.6, False, False) == -1.0
+  first = t.apply(-2.5, 30 / 3.6, False, True)
+  assert abs(first - (-2.5 + 0.03)) < 1e-9                          # 1.0 m/s^3 * 0.03 s
+  settle(t, -2.5, 30 / 3.6)
+  assert t.apply(-2.5, 0.0, True, True) == -2.5 and t.trim == 0.0
+  assert t.apply(-2.5, 30 / 3.6, False, False) == -2.5
