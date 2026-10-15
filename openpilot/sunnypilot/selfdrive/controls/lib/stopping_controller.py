@@ -215,8 +215,8 @@ class StoppingController:
   # lead - the owner had to brake. -0.50 is the lightest request that still decelerates the Cross at 2-3 km/h
   # (~0.3 m/s^2: decel ~ 1.2 * |req| - 0.27 at 3 km/h, stop_gap_close.CREEP_*); below 2 km/h end_force_limit still
   # tapers it to the owner's -0.35 at 0 km/h. The plan blends in from -0.55 and wins below -0.70 as before.
-  CF_END_CROSS = -0.50  # m/s^2
-  CF_PLAN_SOFT_CROSS = -0.55  # m/s^2
+  CF_END_CROSS = -0.47  # m/s^2 (owner 2026-10-15 road test: "a touch lighter after the creep", -0.50 -> -0.47)
+  CF_PLAN_SOFT_CROSS = -0.52  # m/s^2 (kept 0.05 below CF_END_CROSS)
 
   def __init__(self, stop_accel):
     self.stop_accel = stop_accel
