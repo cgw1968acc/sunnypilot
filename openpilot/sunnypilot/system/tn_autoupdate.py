@@ -56,24 +56,42 @@ def enabled() -> bool:
 INSTALL_GEARS = (car.CarState.GearShifter.park, car.CarState.GearShifter.drive)
 
 
-def why_not_now(gear, cruise_available: bool, engaged: bool) -> str:
+# Owner 2026-10-15 23:12 (route 0000007c seg 3, Corolla Cross): driving in D with MAIN ACC off and MADS steering, this
+# process took the "D + MAIN off + not engaged" condition as true and ran `git fetch` every DRIVE_FETCH_PERIOD while the
+# car was MOVING; at 23:12:00 hardwared / manager / gps stalled for ~5 s (commIssue -> "TAKE CONTROL IMMEDIATELY", the
+# lateral dropped). Had a new commit been waiting it would have restarted comma at speed. So now: nothing (no fetch, no
+# install) unless the car is standing (MOVING_V), MADS lateral counts as engaged, and git runs at the lowest CPU / IO
+# priority. The owner's "updates at a stop in D with MAIN off" stays.
+MOVING_V = 0.3  # m/s
+
+
+def why_not_now(gear, cruise_available: bool, engaged: bool, moving: bool = False, lateral_active: bool = False) -> str:
   """'' when the car is in a state to install, else the reason"""
   if gear not in INSTALL_GEARS:
     return f"gear {gear}"
+  if moving:
+    return "moving"
   if cruise_available:
     return "MAIN ACC on"
   if engaged:
     return "engaged"
+  if lateral_active:
+    return "lateral active"
   return ""
 
 
-def drive_gear_main_off(gear, cruise_available: bool, engaged: bool) -> bool:
-  return why_not_now(gear, cruise_available, engaged) == ""
+def drive_gear_main_off(gear, cruise_available: bool, engaged: bool, moving: bool = False, lateral_active: bool = False) -> bool:
+  return why_not_now(gear, cruise_available, engaged, moving, lateral_active) == ""
+
+
+def _low_priority() -> None:
+  os.nice(19)
 
 
 def git(*args, timeout=30.) -> str:
-  return subprocess.check_output(["git", "-C", BASEDIR, *args], text=True, timeout=timeout,
-                                 stderr=subprocess.STDOUT).strip()
+  # lowest CPU priority (and IO idle class when ionice exists): a fetch must never starve the driving processes
+  cmd = (["ionice", "-c", "3"] if shutil.which("ionice") else []) + ["git", "-C", BASEDIR, *args]
+  return subprocess.check_output(cmd, text=True, timeout=timeout, stderr=subprocess.STDOUT, preexec_fn=_low_priority).strip()
 
 
 class DriveGearUpdater:
@@ -133,8 +151,9 @@ class DriveGearUpdater:
     # systemd stops and restarts every openpilot process, this one included
     subprocess.Popen(RESTART_CMD, start_new_session=True)
 
-  def step(self, dt: float, condition: bool, why: str = "") -> bool:
-    """returns True when it started an install; why = the reason the car state is not right (when condition is False)"""
+  def step(self, dt: float, condition: bool, why: str = "", standing: bool = True) -> bool:
+    """returns True when it started an install; why = the reason the car state is not right (when condition is False);
+    standing = the car is not moving (offroad counts): no fetch at all while it moves"""
     now = time.monotonic()
     if not enabled():
       self.hold_t = 0.0
@@ -143,7 +162,7 @@ class DriveGearUpdater:
       self.hold_t = 0.0
       self.log_reason("DisableUpdates")
       return False
-    if now >= self.next_fetch or (condition and now - self.last_fetch >= DRIVE_FETCH_PERIOD):
+    if standing and (now >= self.next_fetch or (condition and now - self.last_fetch >= DRIVE_FETCH_PERIOD)):
       self.next_fetch, self.last_fetch = now + FETCH_PERIOD, now
       self.fetch()
     self.hold_t = self.hold_t + dt if condition else 0.0
@@ -182,7 +201,7 @@ def main():
   except Exception as e:
     cloudlog.warning(f"tn_autoupdate: description failed: {e}")
   # conflated sockets: read once a second, always the newest message
-  socks = {s: messaging.sub_sock(s, conflate=True) for s in ('carState', 'selfdriveState')}
+  socks = {s: messaging.sub_sock(s, conflate=True) for s in ('carState', 'selfdriveState', 'selfdriveStateSP')}
   last: dict = {}
   last_t: dict = {}
   updater = DriveGearUpdater(params)
@@ -192,10 +211,12 @@ def main():
       msg = messaging.recv_one_or_none(sock)
       if msg is not None:
         last[s], last_t[s] = getattr(msg, s), now
-    alive = all(now - last_t.get(s, -1e9) < 2.0 for s in socks)
+    alive = all(now - last_t.get(s, -1e9) < 2.0 for s in ('carState', 'selfdriveState'))
+    moving = alive and abs(last['carState'].vEgo) > MOVING_V
+    mads = last['selfdriveStateSP'].mads.active if (alive and now - last_t.get('selfdriveStateSP', -1e9) < 2.0) else False
     why = why_not_now(last['carState'].gearShifter, last['carState'].cruiseState.available,
-                      last['selfdriveState'].enabled) if alive else "offroad / no carState"
-    if updater.step(1.0, why == "", why):
+                      last['selfdriveState'].enabled, moving, mads) if alive else "offroad / no carState"
+    if updater.step(1.0, why == "", why, standing=not moving):
       time.sleep(60.)  # the restart takes this process down
     time.sleep(1.0)
 
