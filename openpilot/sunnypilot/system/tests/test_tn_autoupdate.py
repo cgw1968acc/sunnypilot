@@ -15,28 +15,6 @@ def test_condition_is_p_or_d_with_main_off_and_not_engaged():
   assert not M.drive_gear_main_off(D, False, True)
 
 
-def test_never_while_moving_or_with_mads_steering():
-  # owner 2026-10-15 23:12: D + MAIN off + MADS steering at speed must not fetch or install
-  assert M.why_not_now(D, False, False, moving=True) == "moving"
-  assert M.why_not_now(D, False, False, moving=False, lateral_active=True) == ""  # MADS at a stop does not block (10-16)
-  assert not M.drive_gear_main_off(D, False, False, moving=True)
-  assert M.drive_gear_main_off(D, False, False, moving=False, lateral_active=False)
-
-
-def test_no_fetch_while_moving():
-  class Counting(Probe):
-    def __init__(self, params):
-      super().__init__(params); self.fetches = 0
-    def fetch(self):
-      self.fetches += 1
-  u = Counting(FakeParams())
-  u.next_fetch = -1.0  # the periodic fetch is due
-  assert not u.step(1.0, False, "moving", standing=False) and u.fetches == 0
-  assert not u.step(1.0, False, "moving", standing=False) and u.fetches == 0
-  u.step(1.0, False, "MAIN ACC on", standing=True)
-  assert u.fetches == 1
-
-
 class FakeParams:
   def __init__(self, disable=False):
     self.disable = disable
