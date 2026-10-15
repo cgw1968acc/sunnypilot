@@ -17,6 +17,7 @@ from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarContr
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 from opendbc.sunnypilot.car.toyota.end_force import end_force_cap
 from opendbc.sunnypilot.car.toyota.delivery_trim import DeliveryTrim
+from opendbc.sunnypilot.car.toyota.pitch_compensation import apply_pitch_deadband
 from opendbc.sunnypilot.car.toyota.engage_close_stop import EngageCloseStop
 from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, BrakeCommandCorrections, EngageOnsetShaper
 
@@ -298,7 +299,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
             # acceleration request to compensate for the undershoot and following overshoot
             pitch_compensation = float(np.clip(math.sin(self.pitch_hp.x) * ACCELERATION_DUE_TO_GRAVITY,
                                                -MAX_PITCH_COMPENSATION, MAX_PITCH_COMPENSATION))
-            pcm_accel_cmd += pitch_compensation
+            pcm_accel_cmd += apply_pitch_deadband(pitch_compensation)  # sunnypilot hook: pitch_compensation.py
 
           freeze_i = self.brake_corrections.condition_pid(self.long_pid, self.prev_accel, CS.out.vEgo)  # sunnypilot hook
           freeze_i = freeze_i or self.engage_close.active
