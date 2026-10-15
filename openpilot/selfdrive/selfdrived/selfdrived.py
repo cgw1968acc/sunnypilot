@@ -101,6 +101,13 @@ class SelfdriveD(CruiseHelper):
     self.car_state_sock = messaging.sub_sock('carState', timeout=20)
 
     ignore = self.sensor_packets + self.gps_packets + ['alertDebug', 'lateralManeuverPlan'] + ['modelDataV2SP', 'longitudinalPlanSP']
+    # sunnypilot (tncr, owner 2026-10-16 02:4x after four "TAKE CONTROL IMMEDIATELY" drops at 60-83 km/h in one evening,
+    # routes 0000007c/7d/7e/7f): hardwared and manager are low-priority Python loops that open parameter files every
+    # iteration; when the device's storage stalls on fsync for 3-7 s they stop publishing and this process dropped the
+    # whole drive, lateral included, for a late thermal / process-list message. Both are kept for their contents (the
+    # last values are used) but a late one no longer counts as a communication issue. Everything that steers or brakes
+    # (card, controlsd, plannerd, modeld, radard, pandad ...) is checked as before.
+    ignore_stall = ['deviceState', 'managerState']
     if SIMULATION:
       ignore += ['cabinCameraState', 'managerState']
     if REPLAY:
@@ -112,7 +119,7 @@ class SelfdriveD(CruiseHelper):
                                    'controlsState', 'carControl', 'driverAssistance', 'alertDebug', 'userBookmark',
                                    'lateralManeuverPlan', 'modelDataV2SP', 'longitudinalPlanSP'] + \
                                    self.camera_packets + self.sensor_packets + self.gps_packets,
-                                  ignore_alive=ignore, ignore_avg_freq=ignore,
+                                  ignore_alive=ignore + ignore_stall, ignore_avg_freq=ignore + ignore_stall,
                                   ignore_valid=ignore, frequency=int(1/DT_CTRL))
 
     # read params
