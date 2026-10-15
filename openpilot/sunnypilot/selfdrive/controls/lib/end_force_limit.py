@@ -4,6 +4,8 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import numpy as np
+
 from openpilot.common.realtime import DT_CTRL
 
 # End-force limit - the owner's end-of-stop rule (2026-10-14 evening, "remember it forever"): the request at the 0 km/h
@@ -31,8 +33,16 @@ HOLD_RATE = 0.5        # m/s^3: after the stop, toward the standstill hold
 # 5 km/h, -1.34 at 3, -1.0 at 2, -0.67 at 1, -0.34 at 0. An ordinary stop (END curve -0.65 at 5 km/h) never touches
 # it; only the hold / guard / boost extras are capped. From 5 km/h at -2.0 (~2800 N) the pressure has to come off at
 # ~2000 N/s to follow the line; the Cross released 4120 -> 1400 N in 0.4 s on 17:16:07 (~6800 N/s), so it can.
-CEIL_V = 5.0 / 3.6     # m/s
-CEIL_TOP = -2.0        # m/s^2 at CEIL_V
+# Owner, same evening, on 17:16:07.8-08.0 (sent -0.71 at 1.0 km/h, the car stood with -1.67): "the cap for the last
+# 1-0 km/h must be below -0.6, best stay at -0.34; at 07.8 the sent -0.71 should already have been back below -0.4; the
+# gap was still 2.2 m, so a lighter force was allowed". So the ceiling is a table, not a straight line: -2.0 at 5 km/h,
+# -1.2 at 3, -0.60 at 2, -0.38 at 1, -0.34 at 0 (1.4 km/h -0.47, 0.5 km/h -0.36). Note the -1.67 on 17:16 was not a
+# request: the request was already -0.75 -> -0.37 over the last 1.4 km/h; it was the pressure left from the 4120 N
+# spike at 2.7 km/h (the guard, now capped at 3 km/h to -1.2 ~ 1700 N) that the PCM could not release in 0.3 s.
+CEIL_BP = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 5.0 / 3.6]  # m/s
+CEIL_A = [-0.34, -0.38, -0.60, -1.2, -2.0]                  # m/s^2 (CEIL_A[0] must equal END_ACCEL)
+CEIL_V = CEIL_BP[-1]
+CEIL_TOP = CEIL_A[-1]
 STALL_V = 0.5 / 3.6    # m/s
 STALL_A = -0.1         # m/s^2
 STALL_T = 0.3          # s
@@ -64,7 +74,7 @@ class EndForceLimit:
 
     ceil_in = accel
     if v_ego <= CEIL_V:  # the fixed ceiling line (never firmer, whatever asked for it)
-      ceil = END_ACCEL + (CEIL_TOP - END_ACCEL) * max(v_ego, 0.0) / CEIL_V
+      ceil = float(np.interp(max(v_ego, 0.0), CEIL_BP, CEIL_A))
       if accel < ceil:
         accel = ceil
     if v_ego >= V_LINE:
