@@ -33,10 +33,10 @@ def test_no_compounding_and_follows_a_new_base():
   ext._v_ego = 100 / 3.6
   for _ in range(500):
     LatControlTorqueExt.update_override_torque_params(ext, tp)
-  assert abs(tp.friction - 0.14) < 1e-6
+  assert abs(tp.friction - 0.15) < 1e-6  # 1.5 at 100 km/h since 2026-10-13 (the test still said 1.4; fixed 10-16)
   tp.friction = 0.2  # torqued / the override sets a new value
   LatControlTorqueExt.update_override_torque_params(ext, tp)
-  assert abs(tp.friction - 0.28) < 1e-6
+  assert abs(tp.friction - 0.30) < 1e-6
   ext._v_ego = 40 / 3.6
   LatControlTorqueExt.update_override_torque_params(ext, tp)
   assert abs(tp.friction - 0.2) < 1e-6
