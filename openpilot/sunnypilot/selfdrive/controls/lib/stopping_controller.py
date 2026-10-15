@@ -138,6 +138,15 @@ class StoppingController:
   # left only -0.13..-0.17 of decel, the car crept at 0.6-1 km/h and then stopped with a jolt (owner: "a clear jolt at 0").
   END_CURVE_A = [END_LO, (END_LO + -0.56) / 2, -0.56, -0.60, -0.65, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
+  # The line is for the END of a stop. tncr, owner 2026-10-15 night (route 00000075 20:59:40, stopped 7.5 m out, bookmark 1):
+  # at 9.6 km/h the lead was still 12 m ahead rolling to its stop; the plan eased to -0.3 (roll on to 3 m), but the line
+  # floored the request at -0.65 from 12 m away and the Cross stopped 7.5 m back. "Creep is a fine-tune, not a way to
+  # make up for stopping too early" -> with a lead the line only arms once the stop point is near: the car's own stopping
+  # distance on the plan (at least END_FAR_B of decel) must reach to within END_FAR_GAP of where the lead will stop
+  # (its position plus its own run-out at END_FAR_LEAD_B). While the stop point is still far the plain plan is sent.
+  END_FAR_GAP = 3.5       # m
+  END_FAR_B = 0.3         # m/s^2: the lightest decel assumed for the car's own stopping distance
+  END_FAR_LEAD_B = 1.0    # m/s^2: the lead's assumed decel for its run-out
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
   # Without a lead (experimental mode stopping for a light / sign) the line is also a CEILING below END_V_HI. Owner
   # 2026-10-12 (route 0000013a 00:07:34, experimental, red light, "not smooth enough"): the e2e plan held -1.05 down to
@@ -241,6 +250,14 @@ class StoppingController:
       return float(np.interp(max(v_ego, 0.0), self.END_CURVE_V, self.END_CURVE_A))
     return float(np.interp(v_ego, [self.END_V_HI, self.BLEND_V], [self.END_HI, self.a_entry]))
 
+  def _end_far(self, v_ego, a_target, lead_d, lead_v) -> bool:
+    """True while the lead's stop point is still beyond END_FAR_GAP of where the car would stop on its plan"""
+    if lead_d is None or lead_v is None:
+      return False
+    d_lead_stop = lead_d + max(lead_v, 0.0) ** 2 / (2.0 * self.END_FAR_LEAD_B)
+    d_ego_stop = max(v_ego, 0.0) ** 2 / (2.0 * max(-a_target, self.END_FAR_B))
+    return d_lead_stop - d_ego_stop > self.END_FAR_GAP
+
   def _end_request(self, a_target, prev_accel, v_ego, has_lead=True):
     line = self._blend(v_ego)
     target = min(a_target, line)  # the firmer of the plan and the line
@@ -287,7 +304,7 @@ class StoppingController:
     return self.cf_stopping
 
   def update(self, prev_state, state, CS, a_target, prev_accel, stock_accel, accel_limits, has_lead=False, pitch=None,
-             a_long=None):
+             a_long=None, lead_d=None, lead_v=None):
     if prev_state == LongCtrlState.stopping and state == LongCtrlState.pid and CS.standstill:
       self.go_t += DT_CTRL
       if self.go_t < self.STOPPING_EXIT_DEBOUNCE:
@@ -310,7 +327,8 @@ class StoppingController:
 
     # end-of-stop window: rolling below BLEND_V with a plan that is braking to a stop
     rolling = not CS.standstill and not self.stopped_once
-    if state == LongCtrlState.off or not rolling or CS.vEgo >= self.BLEND_V or a_target > 0.0:
+    end_far = has_lead and self._end_far(CS.vEgo, a_target, lead_d, lead_v)
+    if state == LongCtrlState.off or not rolling or CS.vEgo >= self.BLEND_V or a_target > 0.0 or end_far:
       self.end_active = False
     elif not self.end_active and a_target <= self.END_PLAN_MIN:
       self.end_active = True

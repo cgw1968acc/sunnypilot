@@ -144,7 +144,9 @@ class Controls(ControlsExt):
     self.LoC.long_control_state, accel = self.stopping_controller.update(
       prev_state, stock_state, CS, long_plan.aTarget, prev_accel, accel, pid_accel_limits, long_plan.hasLead,
       pitch=self.calibrated_pose.orientation.pitch if self.calibrated_pose is not None else None,
-      a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None)  # sunnypilot hook
+      a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None,
+      lead_d=self.sm['radarState'].leadOne.dRel if self.sm["radarState"].leadOne.present else None,
+      lead_v=self.sm['radarState'].leadOne.vLead if self.sm["radarState"].leadOne.present else None)  # sunnypilot hook
     if self.LoC.long_control_state != stock_state:
       self.LoC.reset()
     self.LoC.last_output_accel = accel
