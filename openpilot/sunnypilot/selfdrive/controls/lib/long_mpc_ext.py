@@ -49,9 +49,32 @@ from openpilot.sunnypilot.selfdrive.controls.lib.night_gap import NightGap
 # (17:16 3.3 m, 17:20 3.3 m) did not need the low-speed part. -> the low end is scaled back: 0 at 10 km/h, +1 at 20,
 # +3.7 at 30 (unchanged by interpolation), +5 at 40-50 as before; 5 km/h -1 m and the highway part unchanged.
 DESIRED_DIST_TRIM_BP = [5.0 / 3.6, 10.0 / 3.6, 20.0 / 3.6, 30.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
-# Owner 2026-10-15 late night road test of ebff239099: "brakes too early and stops too far" -> the low end goes back
-# further: 0 at 10 AND 20 km/h, +2 at 30 (was +3.7), +5 at 40-50 kept (the +3 m the owner asked for).
-DESIRED_DIST_TRIM_V = [1.0, 0.0, 0.0, -2.0, -5.0, -5.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+# Owner 2026-10-15 night (road tests of ebff239099 / 8e08ba7e31: "brakes too early and stops too far - a close-follow
+# add must not apply to every situation; following traffic changes every moment, a static distance estimated once and
+# never adjusted cannot be right"): the close-follow part of this table is now DYNAMIC (DYN_* below) and the static
+# table keeps only the old -1 m at 5 km/h and the highway part (0 at 70, +2.5 m at 120).
+DESIRED_DIST_TRIM_BP = [5.0 / 3.6, 10.0 / 3.6, 70.0 / 3.6, 120.0 / 3.6]  # m/s
+DESIRED_DIST_TRIM_V = [1.0, 0.0, 0.0, -2.5]  # m taken OFF the desired distance (negative = added)
+
+# Dynamic close-follow gap (tncr, owner 2026-10-15 night). The extra room the owner wants when the lead brakes hard
+# ("+3 m at 50-40 km/h so the brake can start light") is added ONLY while the lead is braking, scaled by how hard:
+# nothing while the lead decelerates lighter than DYN_A0 (ordinary slow-downs, a coasting lead, a stopped lead ahead),
+# full DYN_GAP_V (by the planned ego speed per node, 0 below 20 km/h) from DYN_A1. It comes in fast (DYN_RATE_ON, so the
+# onset moves earlier the moment the radar sees the braking) and goes away slowly (DYN_RATE_OFF). It is taken away as
+# soon as the lead is nearly stopped (below DYN_V_LEAD_OFF: the stop point is known, the car still has 15-20 km/h to
+# settle to the normal 3-3.5 m without creeping), when the lead pulls away, or when we stop. Why dynamic: the static
+# +2..+5 m made every stop start early and the slow-lead stops end 5-6 m out (sim 6b 09:19:54: 6.07 m), and the Cross
+# cannot creep that in.
+DYN_GAP_BP = [20.0 / 3.6, 30.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6]  # m/s planned ego speed per node
+DYN_GAP_V = [0.0, 2.0, 5.0, 5.0, 0.0]  # m ADDED at full urgency
+DYN_A0 = -0.8        # m/s^2 lead decel: no add while the lead brakes lighter than this
+DYN_A1 = -2.0        # m/s^2: full add from here
+DYN_RATE_ON = 4.0    # 1/s: 0.25 s to full
+DYN_RATE_OFF = 0.67  # 1/s: 1.5 s to zero
+DYN_V_LEAD_OFF = 10.0 / 3.6  # m/s: the lead is nearly stopped -> take the add away
+DYN_DT = 0.05        # s: the planner runs at 20 Hz
+
+
 # Driver 2026-10-04 night: "bring the soft brake at 40-45 km/h a little earlier, i.e. slightly more distance to the
 # lead at that speed" -> the reserved time is speed scheduled: 0.8 s up to 35 km/h, 1.1 s from 40 to 45, back to 0.8
 # at 50, fading to 0 at 80 as before. Margin before the -1 m trim: +7.8 m at 35 km/h, +12.2 at 40, +13.8 at 45,
@@ -127,6 +150,20 @@ class LongMpcObstacleExt:
     self.emerg_trim = 0.0
     self.emerg_plan = 0.0  # firmest planned decel of this event
     self.calm_t = 0.0
+    self.dyn = 0.0  # dynamic close-follow gap factor 0..1, see DYN_*
+
+  def update_dynamic_gap(self, lead_xv_0, v_plan, t1: float) -> float:
+    """tncr: the dynamic close-follow gap factor (0..1) for this planner step, see DYN_*"""
+    v_ego = float(v_plan[0])
+    v_lead = float(lead_xv_0[0, 1])
+    a_lead = (float(lead_xv_0[1, 1]) - v_lead) / t1
+    closing = v_ego - v_lead
+    if v_ego < 0.3 or closing < -1.0 or v_lead < DYN_V_LEAD_OFF:
+      target = 0.0
+    else:
+      target = float(np.interp(a_lead, [DYN_A1, DYN_A0], [1.0, 0.0]))
+    self.dyn = float(np.clip(target, self.dyn - DYN_RATE_OFF * DYN_DT, self.dyn + DYN_RATE_ON * DYN_DT))
+    return self.dyn
 
   def update_emergency(self, lead_xv_0, v_plan, t1: float, t_idxs=None) -> float:
     """tncr: the emergency trim (m) for this planner step, see EMERG_*"""
@@ -150,4 +187,6 @@ class LongMpcObstacleExt:
     x_obstacles = x_obstacles + np.column_stack([get_light_onset_margin(lead_xv_0[:, 1]), get_light_onset_margin(lead_xv_1[:, 1])])
     self.night_gap.update()
     emerg = self.update_emergency(lead_xv_0, v_plan, t1, t_idxs) if t1 > 0.0 else 0.0
-    return x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan) + emerg)[:, None]
+    dyn = self.update_dynamic_gap(lead_xv_0, v_plan, t1) if t1 > 0.0 else 0.0
+    dyn_gap = dyn * np.interp(np.maximum(v_plan, 0.0), DYN_GAP_BP, DYN_GAP_V)
+    return x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan) + emerg - dyn_gap)[:, None]
