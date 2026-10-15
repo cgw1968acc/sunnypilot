@@ -75,8 +75,10 @@ def why_not_now(gear, cruise_available: bool, engaged: bool, moving: bool = Fals
     return "MAIN ACC on"
   if engaged:
     return "engaged"
-  if lateral_active:
-    return "lateral active"
+  # lateral_active (MADS) is deliberately NOT a reason any more: owner 2026-10-16 00:5x "the last few updates were all
+  # manual" - with MADS on, mads.active stays true at every stop, so since 350d8bbe5b nothing installed on the road at
+  # all. Standing still (MOVING_V) with MAIN off is the safe state the owner asked for; the restart ends MADS as it
+  # always did before.
   return ""
 
 
@@ -215,7 +217,7 @@ def main():
     moving = alive and abs(last['carState'].vEgo) > MOVING_V
     mads = last['selfdriveStateSP'].mads.active if (alive and now - last_t.get('selfdriveStateSP', -1e9) < 2.0) else False
     why = why_not_now(last['carState'].gearShifter, last['carState'].cruiseState.available,
-                      last['selfdriveState'].enabled, moving, mads) if alive else "offroad / no carState"
+                      last['selfdriveState'].enabled, moving) if alive else "offroad / no carState"
     if updater.step(1.0, why == "", why, standing=not moving):
       time.sleep(60.)  # the restart takes this process down
     time.sleep(1.0)

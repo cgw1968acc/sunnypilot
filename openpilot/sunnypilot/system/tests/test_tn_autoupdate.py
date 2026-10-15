@@ -18,7 +18,7 @@ def test_condition_is_p_or_d_with_main_off_and_not_engaged():
 def test_never_while_moving_or_with_mads_steering():
   # owner 2026-10-15 23:12: D + MAIN off + MADS steering at speed must not fetch or install
   assert M.why_not_now(D, False, False, moving=True) == "moving"
-  assert M.why_not_now(D, False, False, moving=False, lateral_active=True) == "lateral active"
+  assert M.why_not_now(D, False, False, moving=False, lateral_active=True) == ""  # MADS at a stop does not block (10-16)
   assert not M.drive_gear_main_off(D, False, False, moving=True)
   assert M.drive_gear_main_off(D, False, False, moving=False, lateral_active=False)
 
