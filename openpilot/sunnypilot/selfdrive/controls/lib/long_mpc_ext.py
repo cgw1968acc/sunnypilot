@@ -117,6 +117,32 @@ EMERG_CALM_T = 2.0       # s
 EMERG_DT = 0.05          # s: the planner runs at 20 Hz
 
 
+# Soft brake onset inside the MPC (tncr, owner 2026-10-15 night): "the point of the extra distance at 40-50 km/h is to
+# enter a SOFT brake earlier, so that when the lead suddenly brakes hard there is time to raise the force slowly and
+# smoothly - not to stop further back and creep". Giving the MPC more room only moves its onset earlier; it still
+# plans the same steep rise (route 77 21:28:52: a stopped lead 58 m ahead at 44 km/h, the plan went -0.7 -> -2.1 in
+# 1.5 s, then coasted at -0.4 for 20 m). So the plan's brake limit (the MPC's a_min parameter, per horizon node) is now
+# scheduled from the start of a brake event: CAP_A0 at the start, growing CAP_RATE per second (CAP_RATE_URGENT at full
+# lead urgency, the DYN_* factor), and never below CAP_NEED_MARGIN times the constant decel that would stop CAP_STOP_D
+# short of the REAL obstacle (lead + its own stopping distance, before any margin - the margins exist to move the onset,
+# not the stop), so a light cap can never make the stop late or hard. Each node further down the horizon
+# gets the cap of its own time, so the MPC plans the slow build itself and its internal state stays consistent.
+# Lead stops only (no cap without a lead), full between 25 and 55 km/h, none below 15 (the end rules own it) or
+# above 70 km/h (highway untouched). A brake event starts when the plan asks less than CAP_BRAKING_A and ends after
+# CAP_RELEASE_T without braking. Hook: the one line in LongitudinalMpc.update that sets params[:, 0].
+CAP_V_BP = [15.0 / 3.6, 25.0 / 3.6, 55.0 / 3.6, 70.0 / 3.6]  # m/s
+CAP_V_W = [0.0, 1.0, 1.0, 0.0]
+CAP_A0 = 0.6            # m/s^2: the brake the plan may ask at the start of a brake event
+CAP_RATE = 0.4          # m/s^3: the cap grows this fast with a calm lead (-1.0 at 1 s, -1.4 at 2 s, -2.0 at 3.5 s)
+CAP_RATE_URGENT = 2.0   # m/s^3: at full lead urgency (lead braking -2.0 or harder)
+CAP_NEED_MARGIN = 1.15  # the cap never sits below this times the constant decel needed to stop CAP_STOP_D short
+CAP_STOP_D = 3.5        # m short of the obstacle (a stopped lead: ~3-3.5 m behind it)
+CAP_BRAKING_A = -0.2    # m/s^2: the plan counts as braking below this
+CAP_RELEASE_T = 1.0     # s without braking -> the brake event ends
+CAP_DT = 0.05           # s: the planner runs at 20 Hz
+ACCEL_MIN_MPC = -3.5    # m/s^2: the stock limit (opendbc ACCEL_MIN), used when no cap applies
+
+
 def get_light_onset_margin(v):
   v = np.maximum(v, 0.0)
   return v * np.interp(v, LIGHT_ONSET_BP, LIGHT_ONSET_T_V)
@@ -151,6 +177,35 @@ class LongMpcObstacleExt:
     self.emerg_plan = 0.0  # firmest planned decel of this event
     self.calm_t = 0.0
     self.dyn = 0.0  # dynamic close-follow gap factor 0..1, see DYN_*
+    self.cap_t_on = 0.0   # s since this brake event started, see CAP_*
+    self.cap_t_off = 0.0  # s since the plan stopped braking
+    self.a_min = None     # per-node brake limit for the MPC, None = stock
+
+  def update_onset_cap(self, x_obstacle_0: float, v_plan, t1: float, t_idxs, closing: float, dyn: float):
+    """tncr: the per-node brake limit (negative, m/s^2) for this planner step, see CAP_*"""
+    v_ego = float(v_plan[0])
+    a0 = (float(v_plan[1]) - v_ego) / t1
+    if a0 < CAP_BRAKING_A:
+      self.cap_t_on += CAP_DT
+      self.cap_t_off = 0.0
+    else:
+      self.cap_t_off += CAP_DT
+      if self.cap_t_off >= CAP_RELEASE_T:
+        self.cap_t_on = 0.0
+    w = float(np.interp(v_ego, CAP_V_BP, CAP_V_W))
+    if w <= 0.0 or closing < -1.0 or self.cap_t_on <= 0.0:
+      self.a_min = None
+      return None
+    rate = CAP_RATE + (CAP_RATE_URGENT - CAP_RATE) * dyn
+    need = v_ego ** 2 / (2.0 * max(x_obstacle_0 - CAP_STOP_D, 0.5))
+    cap = CAP_A0 + rate * (self.cap_t_on + np.asarray(t_idxs))
+    cap = np.minimum(np.maximum(cap, CAP_NEED_MARGIN * need), -ACCEL_MIN_MPC)
+    self.a_min = -(w * cap + (1.0 - w) * -ACCEL_MIN_MPC)
+    return self.a_min
+
+  def min_accel(self, accel_min: float):
+    """called by stock LongitudinalMpc.update for params[:, 0]: the onset cap when one applies, else accel_min"""
+    return self.a_min if self.a_min is not None else accel_min
 
   def update_dynamic_gap(self, lead_xv_0, v_plan, t1: float) -> float:
     """tncr: the dynamic close-follow gap factor (0..1) for this planner step, see DYN_*"""
@@ -184,9 +239,13 @@ class LongMpcObstacleExt:
     return self.emerg_trim
 
   def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan, t1: float = 0.0, t_idxs=None):
+    x_obstacle_raw = float(np.min(x_obstacles[0]))  # the real obstacle (lead + its stopping distance), before any margin
     x_obstacles = x_obstacles + np.column_stack([get_light_onset_margin(lead_xv_0[:, 1]), get_light_onset_margin(lead_xv_1[:, 1])])
     self.night_gap.update()
     emerg = self.update_emergency(lead_xv_0, v_plan, t1, t_idxs) if t1 > 0.0 else 0.0
     dyn = self.update_dynamic_gap(lead_xv_0, v_plan, t1) if t1 > 0.0 else 0.0
     dyn_gap = dyn * np.interp(np.maximum(v_plan, 0.0), DYN_GAP_BP, DYN_GAP_V)
-    return x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan) + emerg - dyn_gap)[:, None]
+    x_obstacles = x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan) + emerg - dyn_gap)[:, None]
+    if t1 > 0.0 and t_idxs is not None:
+      self.update_onset_cap(x_obstacle_raw, v_plan, t1, t_idxs, float(v_plan[0]) - float(lead_xv_0[0, 1]), dyn)
+    return x_obstacles
