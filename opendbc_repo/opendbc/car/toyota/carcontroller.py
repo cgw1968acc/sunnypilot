@@ -16,6 +16,7 @@ from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 from opendbc.sunnypilot.car.toyota.end_force import end_force_cap
+from opendbc.sunnypilot.car.toyota.delivery_trim import DeliveryTrim
 from opendbc.sunnypilot.car.toyota.engage_close_stop import EngageCloseStop
 from opendbc.sunnypilot.car.toyota.brake_onset import BrakeOnsetShaper, BrakeCommandCorrections, EngageOnsetShaper
 
@@ -81,6 +82,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     # *** start long control state ***
     self.long_pid = get_long_tune(self.CP, self.CP_SP, self.params)
+    self.delivery_trim = DeliveryTrim()  # sunnypilot hook (tncr): measured delivery residual, see delivery_trim.py
     self.aego = FirstOrderFilter(0.0, 0.45, DT_CTRL * 3)
     self.pitch = FirstOrderFilter(0, 0.5, DT_CTRL)
     self.pitch_hp = HighPassFilter(0.0, 0.25, 1.5, DT_CTRL)
@@ -308,10 +310,12 @@ class CarController(CarControllerBase, GasInterceptorCarController):
                                                        fcw_alert, a_ego=a_ego_blended,
                                                        relaxed=hud_control.leadDistanceBars == 3,
                                                        handover=not self.engage_close.active)  # sunnypilot hook
+          pcm_accel_cmd = self.delivery_trim.apply(pcm_accel_cmd, CS.out.vEgo, CS.out.standstill, CC.longActive)  # sunnypilot hook
           pcm_accel_cmd = end_force_cap(pcm_accel_cmd, actuators.accel, CS.out.vEgo, CS.out.standstill)  # sunnypilot hook
         else:
           self.long_pid.reset()
           self.brake_corrections.reset()  # sunnypilot hook
+          self.delivery_trim.reset()  # sunnypilot hook
 
         # Along with rate limiting positive jerk above, this greatly improves gas response time
         # Consider the net acceleration request that the PCM should be applying (pitch included)
