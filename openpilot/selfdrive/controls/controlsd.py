@@ -21,6 +21,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.sunnypilot.selfdrive.controls.lib.stopping_controller import StoppingController
+from openpilot.sunnypilot.selfdrive.controls.lib.cruise_smoother import CruiseSmoother
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
@@ -59,6 +60,7 @@ class Controls(ControlsExt):
 
     self.LoC = LongControl(self.CP, self.CP_SP)
     self.stopping_controller = StoppingController(self.CP.stopAccel)
+    self.cruise_smoother = CruiseSmoother()  # sunnypilot: steady-cruise ripple, see cruise_smoother.py
     self.VM = VehicleModel(self.CP)
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
@@ -139,10 +141,12 @@ class Controls(ControlsExt):
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     prev_state = self.LoC.long_control_state
     prev_accel = self.LoC.last_output_accel
-    accel = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits)
+    a_target = self.cruise_smoother.update(long_plan.aTarget, CS.vEgo, self.sm['radarState'].leadOne.present,
+                                           CC.longActive, long_plan.shouldStop)  # sunnypilot hook
+    accel = self.LoC.update(CC.longActive, CS, a_target, long_plan.shouldStop, pid_accel_limits)
     stock_state = self.LoC.long_control_state
     self.LoC.long_control_state, accel = self.stopping_controller.update(
-      prev_state, stock_state, CS, long_plan.aTarget, prev_accel, accel, pid_accel_limits, long_plan.hasLead,
+      prev_state, stock_state, CS, a_target, prev_accel, accel, pid_accel_limits, long_plan.hasLead,
       pitch=self.calibrated_pose.orientation.pitch if self.calibrated_pose is not None else None,
       a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None,
       lead_d=self.sm['radarState'].leadOne.dRel if self.sm["radarState"].leadOne.present else None,
