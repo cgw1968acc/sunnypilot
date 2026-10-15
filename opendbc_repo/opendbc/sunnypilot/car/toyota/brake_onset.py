@@ -396,7 +396,14 @@ HANDOVER_REQ_W = [0.0, 1.0]
 # So a second, low-speed feed-forward: LOW_EXTRA at LOW_EXTRA_V_BP (0.25 at 5-6.5 km/h, gone by 3 km/h, led by about
 # 0.5 km/h for the ~0.3 s actuator lag), added to the hand-over extra, same request gate and rate.
 LOW_EXTRA_V_BP = [3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6, 6.5 / 3.6, 8.5 / 3.6]  # m/s
-LOW_EXTRA = [0.0, 0.15, 0.25, 0.25, 0.0]  # m/s^2
+# tncr (Corolla Cross, owner 2026-10-15 'try A'): the Cross does NOT under-deliver at 4-7 km/h, so this extra was pure
+# over-braking there. Route 0000006b, all 9 engaged stops (request / sent 0x343 / delivered 0.3 s later, m/s^2): at
+# 4-7 km/h sent = request -0.14..-0.20 and delivered = sent (-0.03..-0.12), i.e. delivered = request -0.18..-0.27,
+# brake force 1500-2000 N (creep torque ~800-900 N); at 2-4 km/h delivered = request -0.01..-0.10 with no extra. The
+# result was a bump in every stop, even a 3-bookmark one (09:20:54: 10-7 / 7-5 / 3-2 km/h delivered -0.71 / -1.00 /
+# -0.73). The 10-14 km/h hand-over extra above is kept: there the car delivers 0.2 less than sent and lands on the
+# request (+0.03..+0.11). Altis (tnpb3) keeps 0.25.
+LOW_EXTRA = [0.0, 0.0, 0.0, 0.0, 0.0]  # m/s^2 (Altis: [0.0, 0.15, 0.25, 0.25, 0.0])
 PID_HOLD_V = 9.0 / 3.6  # m/s
 PID_BLEED_NEG = 0.5  # m/s^2 per s: a braking integral fades this fast
 PID_BLEED_POS = 2.0  # m/s^2 per s: a gas integral (left from the launch) fades this fast

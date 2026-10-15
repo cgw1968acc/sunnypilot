@@ -29,9 +29,10 @@ class TestHandoverFeedforward(unittest.TestCase):
 
   def test_low_speed_extra(self):
     # route 0000011c 00:19:10: asked -0.67 at 5-4 km/h, the car gave -0.28
-    self.assertAlmostEqual(self.run_steady(-0.67, 5.0).extra, 0.25, places=6)
-    self.assertAlmostEqual(self.run_steady(-0.67, 6.0).extra, 0.25, places=6)
-    self.assertAlmostEqual(self.run_steady(-0.62, 4.0).extra, 0.15, places=6)
+    # tncr (Corolla Cross): LOW_EXTRA is zero - route 0000006b showed the Cross delivers the sent command at 4-7 km/h
+    self.assertAlmostEqual(self.run_steady(-0.67, 5.0).extra, LOW_EXTRA[2], places=6)
+    self.assertAlmostEqual(self.run_steady(-0.67, 6.0).extra, LOW_EXTRA[2], places=6)
+    self.assertAlmostEqual(self.run_steady(-0.62, 4.0).extra, LOW_EXTRA[1], places=6)
     self.assertEqual(self.run_steady(-0.6, 3.0).extra, 0.0)   # the last km/h already brakes on target
     self.assertEqual(self.run_steady(-0.25, 5.0).extra, 0.0)  # not for a request lighter than HANDOVER_MIN_REQUEST
     self.assertEqual(self.run_steady(-1.5, 5.0).extra, 0.0)   # nor for a firm one
