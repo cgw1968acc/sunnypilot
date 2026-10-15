@@ -16,8 +16,12 @@ import numpy as np
 # low-speed curvature term on top. From ~40 km/h KP is down to ~0.8 and NNLC was calm. Below NNLC_BLEND_V_BP[0] the
 # extension is not run at all (so it also no longer updates the shared PID there); between the breakpoints the two
 # outputs are blended. No effect when NNLC is off.
+NNLC_BLEND_ENABLED = False  # tncr (Corolla Cross), owner 2026-10-15 night: not in tncr19 (its stock KP schedule kept NNLC
+                            # calm at low speed); Altis/tnpb3: True
 NNLC_BLEND_V_BP = [30.0 / 3.6, 45.0 / 3.6]  # m/s: torque control below, NNLC above, linear in between
 
 
 def get_nnlc_weight(v_ego: float) -> float:
+  if not NNLC_BLEND_ENABLED:
+    return 1.0
   return float(np.interp(v_ego, NNLC_BLEND_V_BP, [0.0, 1.0]))

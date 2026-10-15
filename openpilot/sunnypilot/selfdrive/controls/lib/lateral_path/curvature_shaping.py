@@ -25,8 +25,9 @@ DESIRED_CURVATURE_JERK_MIN_SPEED = 8.0  # m/s; below this the cap in curvature t
 # desired curvature swung -22 -> +6 -> -4 e-3 (~6 m/s^3) and the car swayed twice; a 2.5 m/s^3 cap rounds that off while
 # a normal turn-in (~1 m/s^3) is untouched. Off below 30 km/h (tight intersection turns need the full rate), 2.5 from
 # 40 to 70 km/h, then the highway 1.0 from 80 km/h.
-DESIRED_CURVATURE_JERK_FADE_BP = [8.3, 11.1, 19.4, 22.2]  # m/s (30, 40, 70, 80 km/h)
-DESIRED_CURVATURE_JERK_FADE_V = [8.0, 2.5, 2.5, DESIRED_CURVATURE_MAX_LAT_JERK]
+# tncr (Corolla Cross), owner 2026-10-15 night: tncr19's schedule - no mid-speed cap, 8.0 up to 70 km/h, 1.0 from 80.
+DESIRED_CURVATURE_JERK_FADE_BP = [19.4, 22.2]  # m/s (70, 80 km/h); Altis/tnpb3: [8.3, 11.1, 19.4, 22.2] -> [8, 2.5, 2.5, 1]
+DESIRED_CURVATURE_JERK_FADE_V = [8.0, DESIRED_CURVATURE_MAX_LAT_JERK]
 
 
 class DesiredCurvatureJerkLimiter:
@@ -141,6 +142,7 @@ class PlanAverageSmoother:
 # unwound, a request to the OTHER side is capped at EXIT_COUNTER_MAX; the cap is released smoothly at the end of the
 # window. A real S-bend is left alone: when the model's own plan 1-3 s ahead asks for more than EXIT_SBEND_MIN to the
 # other side, nothing is capped. Off above 55 km/h, during lane changes and when lateral control is inactive.
+EXIT_ENABLED = False  # tncr (Corolla Cross), owner 2026-10-15 night: not in tncr19, off; Altis/tnpb3: True
 EXIT_TURN_MIN = 1.0  # m/s^2 of model lateral accel that counts as a turn
 EXIT_UNWOUND = 0.3  # m/s^2: the turn has unwound below this
 EXIT_WINDOW_T = [0.0, 2.0, 3.0]  # s since unwinding

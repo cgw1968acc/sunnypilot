@@ -9,7 +9,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering imp
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering_low_speed import LaneCenteringLowSpeed, \
   LOW_CENTER_ENABLED
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.curvature_shaping import DesiredCurvatureJerkLimiter, \
-  HighwayCurvatureSmoother, TurnExitSwingLimiter, PlanAverageSmoother, PLAN_AVG_ENABLED
+  HighwayCurvatureSmoother, TurnExitSwingLimiter, PlanAverageSmoother, PLAN_AVG_ENABLED, EXIT_ENABLED
 
 
 class LateralPathCorrections:
@@ -23,7 +23,7 @@ class LateralPathCorrections:
     self.low_centering = LaneCenteringLowSpeed(dt, self.lane_centering) if LOW_CENTER_ENABLED else None
     self.curvature_jerk_limiter = DesiredCurvatureJerkLimiter(dt)
     self.highway_smoother = HighwayCurvatureSmoother(dt)
-    self.turn_exit_limiter = TurnExitSwingLimiter(dt)
+    self.turn_exit_limiter = TurnExitSwingLimiter(dt) if EXIT_ENABLED else None
     self.plan_average = PlanAverageSmoother(dt) if PLAN_AVG_ENABLED else None
 
   def update(self, desired_curvature: float, CS, active: bool, model_v2, set_path_correction=None) -> float:
@@ -40,8 +40,9 @@ class LateralPathCorrections:
                                                      lane_changing)
     else:
       desired_curvature += self.lane_trim.update(model_v2, CS.vEgo, active, CS.steeringPressed, model_curvature)
-    desired_curvature = self.turn_exit_limiter.update(desired_curvature, model_curvature, CS.vEgo, active, lane_changing,
-                                                      model_v2)
+    if self.turn_exit_limiter is not None:
+      desired_curvature = self.turn_exit_limiter.update(desired_curvature, model_curvature, CS.vEgo, active, lane_changing,
+                                                        model_v2)
     if set_path_correction is not None:
       # NNLC builds its feedforward from the model's own future lateral accelerations, which carry none of the
       # corrections above; hand it the same correction so its future inputs describe the corrected path

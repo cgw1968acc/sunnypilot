@@ -40,7 +40,7 @@ LANE_CENTER_WIDTH_TAU = 3.0        # s; filter of the lane width, fed only by co
 LANE_CENTER_WIDTH_TOL = 0.7        # m; a width this far from the filtered one means one line is not the ego lane's
 LANE_CENTER_WIDTH_RANGE = (2.6, 4.6)  # m; outside this the pair is not the ego lane
 LANE_CENTER_FIT_RANGE = 12.0       # m ahead used to fit the lane centre (offset + heading + curvature)
-LANE_CENTER_DEADBAND = 0.015       # m; no position correction inside this (0.03 -> 0.015, 2026-09-30: the driver felt the
+LANE_CENTER_DEADBAND = 0.03        # m; tncr19 Cross value (Altis 0.015); no position correction inside this (0.03 -> 0.015, 2026-09-30: the driver felt the
                                    # ... -> 0.0075 2026-10-04: route 000000f2 10:34 at 82-88 km/h he felt the corrections again
                                    # and asked for a smaller dead band once more. Note: the offset there wandered -20..+15 cm
                                    # with a 4-6 s rhythm, far outside any dead band, so the next lever is the gain, not this.
@@ -55,16 +55,16 @@ LANE_CENTER_KP = 0.35              # m/s^2 of lateral accel per metre of offset
 # 0.090-0.094). The firm hold is position + integral, the visible activity mostly damping: KD 0.9 -> p95 |correction|
 # 0.090 -> 0.074 (-18%), 0.3-1 Hz -26%, active 26% -> 18% of the time; damping ratio 1.0 -> 0.76 (~3% overshoot);
 # 0.6 would halve the 0.3-1 Hz part but at 0.51 (~16% overshoot) risks a slow weave with the car/model lag.
-LANE_CENTER_KD = 0.90              # m/s^2 per m/s of lateral speed toward/away from the centre (damping)
+LANE_CENTER_KD = 1.20              # tncr19 Cross value (Altis 0.90); m/s^2 per m/s of lateral speed toward/away from the centre (damping)
 LANE_CENTER_KI = 0.05              # m/s^2 per metre per second: slowly takes over what the model keeps pulling
-LANE_CENTER_I_LIMIT = 0.45         # m/s^2; cap on the integrated part
+LANE_CENTER_I_LIMIT = 0.25         # tncr19 Cross value (Altis 0.45); m/s^2; cap on the integrated part
 # 2026-10-06 (route 00000109 23:27-23:34, ~103 km/h): the car sat LEFT of the lane centre the whole stretch (straight
 # -10 cm, left curves -20..-35, right curves -13..-24 cm) with the centering saturated near 0.35-0.43 m/s^2 against the
 # model's pull; the integral cap 0.25 -> 0.45 m/s^2 lets it finish the job. The total stays capped by MAX_LAT_ACCEL.
 # The centering has no upper speed limit (full from 80 km/h up, e.g. 140 km/h).
 LANE_CENTER_MAX_LAT_ACCEL = 0.6    # m/s^2; cap on the total correction as felt by the driver
 LANE_CENTER_MAX_CURV = 3.5e-3      # 1/m; cap on the total correction (radius ~290 m)
-LANE_CENTER_JERK = 0.3             # m/s^3; how fast the correction may change, as lateral jerk so it feels the same at
+LANE_CENTER_JERK = 0.5             # tncr19 Cross value (Altis 0.3); m/s^3; how fast the correction may change, as lateral jerk so it feels the same at
                                    # every speed (driver 2026-09-26: corrections at ~90 km/h felt stiff; was 3e-3 1/m/s = 1.9 m/s^3 there)
                                    # 0.5 -> 0.3 (owner 2026-10-10: "highway corrections still slightly noticeable"; route 0000011b
                                    # 85 km/h, 514 s: unlimited correction rate p95 0.12 / p99 0.20 m/s^3, the limit binds 0.1% -> 0.4%)
@@ -163,11 +163,11 @@ class LaneCentering:
 LANE_TRIM_MIN_SPEED = 8.0        # m/s (~30 km/h)
 LANE_TRIM_FADE_BP = [19.4, 22.2]  # m/s: full below 70 km/h, gone at 80 (the highway centering takes over)
 LANE_TRIM_FADE_V = [1.0, 0.0]
-LANE_TRIM_ENGAGE_OFFSET = 0.30   # m; the offset must exceed this ...
-LANE_TRIM_ENGAGE_TIME = 1.0      # s; ... for this long before the trim starts building
+LANE_TRIM_ENGAGE_OFFSET = 0.10   # tncr19 Cross value (Altis 0.30); m; the offset must exceed this ...
+LANE_TRIM_ENGAGE_TIME = 0.5      # tncr19 Cross value (Altis 1.0); s; ... for this long before the trim starts building
 LANE_TRIM_KI = 0.08              # m/s^2 per metre per second while the offset keeps the trim's direction
 LANE_TRIM_UNWIND_KI = 0.24       # m/s^2 per metre per second once the car is past the centre (3x, so it does not overshoot)
-LANE_TRIM_RELEASE_OFFSET = 0.15  # m; inside this band the trim is released ...
+LANE_TRIM_RELEASE_OFFSET = 0.05  # tncr19 Cross value (Altis 0.15); m; inside this band the trim is released ...
 LANE_TRIM_RELEASE_DECAY = 0.15   # m/s^2 per s; ... at this rate
 LANE_TRIM_FLIP_CURV = 1.0e-3     # 1/m; the curve direction has flipped when the desired curvature is this far the other way
 LANE_TRIM_FLIP_DECAY = 0.30      # m/s^2 per s; a trim built in a left curve is bled off quickly in the following right curve

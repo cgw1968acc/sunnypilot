@@ -22,21 +22,25 @@ class TestCurveOutwardBias(unittest.TestCase):
       self.assertGreater(out * k, 0.0)              # same direction
 
   def test_hand_over_between_30_and_40_kmh(self):
-    # 2026-10-13: -0.01 (inward) at 30 km/h, 0 at 35 km/h, the outward bias 0.03 at 40 km/h
+    # tncr19 Cross table (ported 2026-10-15): -0.05 (inward) at 30 km/h, 0.02 outward at 40, zero at ~37 km/h
     for k in (0.006, 0.02, -0.02):
-      self.assertAlmostEqual(apply_curve_outward_bias(k, V40), k * (1.0 - 0.03), places=9)
-      self.assertEqual(apply_curve_outward_bias(k, 35 * CV.KPH_TO_MS), k)  # 35 km/h point = 0 (owner 2026-10-13)
+      self.assertAlmostEqual(apply_curve_outward_bias(k, V40), k * (1.0 - 0.02), places=9)
+      v_zero = V30 + (V40 - V30) * (0.05 / 0.07)
+      self.assertAlmostEqual(apply_curve_outward_bias(k, v_zero), k, places=9)
 
-  def test_low_speed_curves_slightly_inward(self):
-    # 30 km/h and below: 1% more than the model curvature (owner 2026-10-13; was exactly the model since 2026-10-06)
+  def test_low_speed_curves_biased_inward(self):
+    # 30 km/h and below: 5% more than the model curvature (tncr18/tncr19 Cross tune)
     for v in (V30, 20 * CV.KPH_TO_MS):
       for k in (0.006, 0.02, -0.02):
-        self.assertAlmostEqual(apply_curve_outward_bias(k, v), k * 1.01, places=12)
+        out = apply_curve_outward_bias(k, v)
+        self.assertGreater(abs(out), abs(k))
+        self.assertGreater(out * k, 0.0)
+        self.assertAlmostEqual(out, k * (1.0 - CURVE_OUTWARD_FRAC_V[0]), places=9)
 
   def test_schedule_is_monotonic_and_bounded(self):
     self.assertEqual(list(CURVE_OUTWARD_V_BP), sorted(CURVE_OUTWARD_V_BP))
     self.assertEqual(list(CURVE_OUTWARD_FRAC_V), sorted(CURVE_OUTWARD_FRAC_V))
-    self.assertEqual([round(f, 3) for f in CURVE_OUTWARD_FRAC_V], [-0.01, 0.0, 0.03, 0.063, 0.087, 0.09, 0.155, 0.155, 0.155])
+    self.assertEqual([round(f, 3) for f in CURVE_OUTWARD_FRAC_V], [-0.05, 0.02, 0.06, 0.085, 0.09, 0.155, 0.155, 0.155])
     self.assertGreaterEqual(min(CURVE_OUTWARD_FRAC_V), -0.1)
     self.assertLessEqual(max(CURVE_OUTWARD_FRAC_V), 0.25)
     for k in (0.05, -0.05):

@@ -27,7 +27,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering imp
 # Off with a blinker, during a lane change, while the driver steers and when lateral is inactive; the lines briefly lost
 # (an intersection, a weak outer line) hold the correction for LOST_HOLD_T, then it eases to zero. Fades out 70 -> 80
 # km/h, where the highway LaneCentering fades in.
-LOW_CENTER_ENABLED = True  # False = the old LaneTrimLowSpeed
+LOW_CENTER_ENABLED = False  # False = the old LaneTrimLowSpeed (tncr19 Cross: trim; Altis/tnpb3: True)
 LOW_CENTER_MIN_SPEED = 8.0          # m/s (~29 km/h; the shared lane measurement starts here too)
 LOW_CENTER_FADE_BP = [19.4, 22.2]   # m/s: full below 70 km/h, gone at 80
 LOW_CENTER_FADE_V = [1.0, 0.0]
