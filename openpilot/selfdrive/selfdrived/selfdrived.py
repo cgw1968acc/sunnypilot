@@ -142,6 +142,7 @@ class SelfdriveD(CruiseHelper):
     self.logged_comm_issue = None
     self.not_running_prev = None
     self.experimental_mode = False
+    self.personality_written_t = -1e9  # sunnypilot: see params_thread
     self.personality = get_sanitize_int_param(
       "LongitudinalPersonality",
       min(log.LongitudinalPersonality.schema.enumerants.values()),
@@ -523,6 +524,7 @@ class SelfdriveD(CruiseHelper):
         if not self.experimental_mode_switched:
           self.personality = (self.personality - 1) % 3
           self.params.put('LongitudinalPersonality', self.personality)
+          self.personality_written_t = time.monotonic()  # sunnypilot: params_thread must not read the stale value back
           self.events.add(EventName.personalityChanged)
         self.experimental_mode_switched = False
 
@@ -669,7 +671,11 @@ class SelfdriveD(CruiseHelper):
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
-      self.personality = self.params.get("LongitudinalPersonality", return_default=True)
+      # sunnypilot: route 0000007d 23:26:39 (Corolla Cross): every distance-button press flipped relaxed -> standard ->
+      # relaxed within 0.11 s, because this 10 Hz read returned the OLD value while the main thread's put was still
+      # being written (slow storage), and overwrote the new personality. Leave it alone for a second after our own write.
+      if time.monotonic() - self.personality_written_t > 1.0:
+        self.personality = self.params.get("LongitudinalPersonality", return_default=True)
 
       self.mads.read_params()
       time.sleep(0.1)
