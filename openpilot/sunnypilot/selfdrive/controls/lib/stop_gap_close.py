@@ -43,7 +43,11 @@ B_FLOOR = 0.3              # m/s^2: above V_FLOOR never ask for less decel than 
                            # routes 69/6a at 3-20 km/h: req -0.2/-0.3/-0.4 still gave aEgo -0.30/-0.44/-0.51 (regen, 80-480 N) -
                            # no dead zone there - and -0.5 would have blocked closing the gap at all on 6a
 V_FLOOR = 2.0 / 3.6        # m/s
-V_MAX = 30.0 / 3.6         # m/s: tncr 12 -> 30 km/h (owner 10-15: do the slow easing above 20 km/h, not at the end)
+V_MAX = 18.0 / 3.6         # m/s: tncr 12 -> 30 -> 18 km/h. 30 (owner 10-15: ease above 20 km/h) backfired on route 0000006b
+                           # (2026-10-15 true 09:09:10 / 09:15:17, from 50 km/h, owner 1 bookmark each): taking over at 30 km/h with
+                           # 37 m left, the constant-decel prediction saw the stop 13 m short and eased -1.36 -> -0.95 below a plan
+                           # that would have eased by itself; the car slid (-0.6..-0.75), then firmed to -1.5 at 7-2 km/h (aEgo
+                           # -1.6..-1.7) and stopped 2.8-2.9 m out. The 3-bookmark stops that day all began it at <= 17.5 km/h.
 LEAD_V_MAX = 0.5           # m/s: lead treated as stopped
 GAP_TRIGGER = 3.5          # m (radar dRel): predicted stop beyond this -> close the gap (tncr 4.0 -> 3.5, owner 10-15:
                            # ideal 3-3.5 m, beyond 3.5 ease slowly / creep-adjust)

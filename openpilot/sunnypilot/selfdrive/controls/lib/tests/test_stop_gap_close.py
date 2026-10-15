@@ -171,25 +171,26 @@ def test_tncr_far_gap_holds_the_present_force():
   assert max(steady) - min(steady) < 0.02
 
 
-def test_tncr_eases_above_20kph_and_keeps_its_limit():
-  # route 00000069 00:40:16-18: plan -1.51 at 28 km/h, 33 m, stopped lead - the plan alone ends ~8 m out. It takes over
-  # above 20 km/h and eases slowly (<= 0.3 m/s^3); the firmest own decel stays at its 28 km/h value later on
-  gap, hist = sim(28.5 / 3.6, 33.0, plain=-1.51, t_max=40.0)
+def test_tncr_takes_over_only_below_18kph_and_keeps_its_limit():
+  # route 0000006b (2026-10-15 true 09:09:10 / 09:15:17): taking over at 30 km/h eased below a plan that would have
+  # eased by itself, the car slid and then firmed to -1.5 at the end (owner: 1 bookmark each). The 3-bookmark stops
+  # that day all began it at <= 17.5 km/h. From 25 km/h the plain plan brakes alone down to V_MAX, then it closes.
+  gap, hist = sim(25.0 / 3.6, 30.0, plain=-1.2, t_max=40.0)
   assert 3.2 <= gap <= 3.6, gap
-  assert any(a for v, _, a in hist if v > 20 / 3.6)                       # acting above 20 km/h
+  assert not any(a for v, _, a in hist if v > stop_gap_close.V_MAX + 0.01)  # never above 18 km/h
   above = [cmd for v, cmd, _ in hist if v > 2.0 / 3.6]
   assert all(c1 - c0 <= stop_gap_close.RELEASE_RATE * 0.01 + 1e-9 for c0, c1 in zip(above, above[1:], strict=False))
-  assert all(a for v, _, a in hist if 3 / 3.6 < v < 20 / 3.6)             # never handed back mid-stop
+  assert all(a for v, _, a in hist if 3 / 3.6 < v < 17 / 3.6)             # never handed back mid-stop
 
 
 def test_tncr_cut_in_firms_light_first_then_linear():
   # supreme principle: even when a car cuts in and the plan goes hard, the firming starts light (1 m/s^3) and builds
   # linearly (to 5 m/s^3 for an urgent plan by 0.3 s) - never a step
   c = StopGapClose()
-  run(c, 60, -1.0, 25 / 3.6, -1.0, lead(40.0))
-  run(c, 100, -1.0, 24 / 3.6, -1.0, lead(38.0))
+  run(c, 60, -1.0, 15 / 3.6, -1.0, lead(22.0))
+  run(c, 100, -1.0, 14 / 3.6, -1.0, lead(20.0))
   assert c.active
-  outs = [c.update(-3.0, 24 / 3.6, -1.0, False, lead(8.0, v=2.0), True) for _ in range(60)]
+  outs = [c.update(-3.0, 14 / 3.6, -1.0, False, lead(6.0, v=1.0), True) for _ in range(60)]
   assert not c.active
   rates = [-(b - a) / 0.01 for a, b in zip(outs, outs[1:], strict=False)]
   assert rates[0] <= 1.3                                              # light first (~1 m/s^3)
