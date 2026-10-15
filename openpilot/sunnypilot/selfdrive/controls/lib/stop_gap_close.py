@@ -70,7 +70,7 @@ K_A = 1.0                  # (m/s^2)/(m/s^2): decel feedback - tncr: FIRMER ONLY
                            # brake lag; one-sided it still makes up for creep torque the mapping underestimates)
 ROOM_END = 0.4             # m: this close to the target point ...
 V_END = 0.7 / 3.6          # m/s: ... or this slow, the request is at least END_ACCEL - the owner's end of a stop
-END_ACCEL = -0.35          # m/s^2 (tncr, Corolla Cross end of stop; Altis -0.30)
+END_ACCEL = -0.34          # m/s^2 (tncr, Corolla Cross end of stop, -0.35 -> -0.34 owner 2026-10-15 evening; Altis -0.30)
 D_FILTER_T = 0.3           # s: radar distance filter
 V_FILTER_T = 0.3           # s: speed filter
 # request for a decel at low speed: the hybrid's creep torque eats the first part of the request (route 00000159:

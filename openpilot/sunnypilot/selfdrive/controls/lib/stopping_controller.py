@@ -110,7 +110,8 @@ class StoppingController:
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
   END_HI = -0.65  # m/s^2 at END_V_HI (~1200 N); -0.60 -> -0.65 2026-10-08, see END_CURVE_A
-  END_LO = -0.35  # m/s^2 at 0 km/h. tncr (Corolla Cross, owner 2026-10-15): -0.35 (~840 N), the owner's Cross stop template
+  END_LO = -0.34  # m/s^2 at 0 km/h. tncr (Corolla Cross): -0.35 -> -0.34 (owner 2026-10-15 evening road test: "better,
+  # right direction, take the normal stop end a further 0.01 lighter"). -0.35 (~840 N) was the owner's Cross stop template
   # (route 00000063 22:56:14, 2026-10-05: -0.36 in the last km/h, stopped at 800-840 N, no nod); a light request gives the
   # Cross's duller brake only ~700 N (-0.25 crept at 0.7 km/h for 1.6 s, 22:53:30). Altis (tnpb3) keeps -0.30.
   # Driver 2026-10-04 (route 000000f2): "between 5 and 0 km/h not linear but parabolic: steeper from 5 to 2, flat from
