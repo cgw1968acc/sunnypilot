@@ -92,7 +92,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
     self.engage_onset = EngageOnsetShaper(DT_CTRL * 3, ACCEL_WINDUP_LIMIT / (DT_CTRL * 3))
     self.brake_corrections = BrakeCommandCorrections(DT_CTRL * 3)  # sunnypilot: see brake_onset.py
     self.engage_close = EngageCloseStop()  # sunnypilot: see engage_close_stop.py
-    self.door_unlock = DoorUnlockOnPark()  # sunnypilot: unlock all doors on shifting into P
+    self.door_unlock = DoorUnlockOnPark()  # sunnypilot: unlock all doors on shifting into P, lock above 10 km/h
     # *** end long control state ***
 
     self.packer = CANPacker(dbc_names[Bus.pt])
@@ -226,7 +226,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     self.last_standstill = CS.out.standstill
 
-    can_sends.extend(self.door_unlock.update(CS.out.gearShifter, self.frame))  # sunnypilot hook
+    can_sends.extend(self.door_unlock.update(CS.out.gearShifter, self.frame, CS.out.vEgo, CS.out.doorOpen))  # sunnypilot hook
 
     if self.auto_brake_hold.enabled:
       can_sends.extend(self.auto_brake_hold.update(CS, self.frame, self.packer, pitch_deg=math.degrees(self.pitch.x)))

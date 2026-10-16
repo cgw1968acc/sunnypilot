@@ -1,4 +1,7 @@
+import pytest
+
 from openpilot.cereal import log
+import openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_close as stop_gap_close
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_close import StopGapClose
 from openpilot.sunnypilot.selfdrive.controls.lib.end_force_limit import EndForceLimit
 
@@ -43,32 +46,46 @@ def sim(v, d, plain=-0.6, creep=0.27, tau=0.6, delay=0.2, t_max=30.0):
 def test_passes_through_when_the_stop_is_not_far():
   assert run(StopGapClose(), 200, -0.8, 8 / 3.6, -0.8, lead(5.0)) == -0.8           # 5 - 3.1 = 1.9 m
   assert run(StopGapClose(), 200, -0.5, 8 / 3.6, -0.5, lead(15.0, v=2.0)) == -0.5   # moving lead
-  assert run(StopGapClose(), 200, -0.5, 20 / 3.6, -0.5, lead(30.0)) == -0.5         # above 12 km/h
+  assert run(StopGapClose(), 200, -0.5, 35 / 3.6, -0.5, lead(60.0)) == -0.5         # above 30 km/h
   assert run(StopGapClose(), 200, -2.5, 8 / 3.6, -2.5, lead(12.0)) == -2.5          # hard brake
 
 
 def test_a_mid_stop_decel_does_not_predict_far():
-  c = StopGapClose()  # route 00000159 09:14:41: -1.14 at 12 km/h, 9.3 m; with the 0.9 cap it predicts 3.1 m
+  c = StopGapClose()  # route 00000159 09:14:41: -1.14 at 12 km/h, 9.3 m; with the 0.9 cap it predicts 3.1 m (< GAP_TRIGGER 3.5)
   run(c, 100, -1.14, 12 / 3.6, -1.4, lead(9.3))
   assert not c.active
 
 
 def test_far_stop_rolls_on_steadily_into_the_window():
   # 19:35:35 on route 0000015c (stopped 5.5 m out) and others; robust to PCM lag and creep torque spread
-  for v0, d, plain in ((11.2, 16.5, -0.57), (12.0, 12.1, -0.88), (6.0, 9.0, -0.7), (4.1, 7.5, -0.65)):
+  for v0, d, plain in ((11.2, 16.5, -0.57), (12.0, 12.1, -0.88), (10.1, 8.9, -1.05), (11.0, 16.0, -0.5),
+                       (20.0, 21.9, -1.0), (25.0, 30.6, -1.0), (30.0, 41.2, -1.0),  # tncr: starts up to 30 km/h
+                       (6.0, 9.0, -0.7), (4.1, 7.5, -0.65)):
     for tau in (0.35, 0.6, 0.9):
       for creep in (0.20, 0.25, 0.30):
-        gap, hist = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
-        assert 3.0 <= gap <= 4.4, (v0, tau, creep, gap)
-        assert len(hist) < 1200, (v0, tau, creep)  # it does stop (no endless crawl)
+        gap, hist = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau, t_max=40.0)
+        if v0 > 8.0:
+          # tncr: held while it ends 3.35-3.8 m; the slowest plant overshoots a bit. Altis: the 7 -> 2 km/h hand-over into
+          # this sim's CONSTANT plain request (-0.5 with the strongest creep torque) ends 2.84 m; the real plain request
+          # below 5 km/h is the stopping controller's end curve (-0.65 at 5 km/h), firmer than that
+          assert 2.8 <= gap <= 4.5, (v0, tau, creep, gap)
+        else:  # tncr: a late trigger eases at only 0.3 m/s^3 - it closes less, but never ends farther than without it
+          stop_gap_close.ENABLED = False
+          gap_off, _ = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
+          stop_gap_close.ENABLED = True
+          assert 3.0 <= gap <= gap_off + 0.05, (v0, tau, creep, gap, gap_off)
+        assert len(hist) < (1200 if v0 <= 12.0 and v0 > 8.0 else 1700), (v0, tau, creep)  # it does stop (no endless crawl; tncr's slow
+        # ease makes a 6 km/h late trigger with the strongest creep torque take up to ~15 s at the -0.34 end)
         lo, rise = 99.0, 0.0
         for v, _, _ in hist:  # fast-slow-fast: how much the speed rises again after a dip
           lo = min(lo, v)
           rise = max(rise, v - lo)
-        assert rise < 0.15 / 3.6, (v0, tau, creep, rise * 3.6)
+        # tncr: a late (4-6 km/h) trigger with the strongest creep crawls ~0.9 km/h to the point and may drift up
+        # 0.16 km/h over ~6 s (steady creep, not fast-slow)
+        assert rise < (0.15 if v0 > 8.0 else 0.2) / 3.6, (v0, tau, creep, rise * 3.6)
 
 
-def test_end_is_minus_030_at_zero():
+def test_end_is_minus_030_at_zero():  # Altis -0.30 (tncr / Corolla Cross -0.34)
   for creep in (0.20, 0.30):
     _, hist = sim(6 / 3.6, 9.0, plain=-0.7, creep=creep)
     assert -0.305 <= hist[-1][1] <= -0.28
@@ -103,3 +120,116 @@ def test_reset_at_standstill_and_disengage():
   assert not c.active and c.out is None
   run(c, 60, -0.7, 6 / 3.6, -0.7, lead(9.0))
   assert run(c, 1, -0.7, 6 / 3.6, -0.7, lead(9.0), active=False) == -0.7 and not c.active
+
+
+def test_off_passes_the_request_through(monkeypatch):
+  monkeypatch.setattr(stop_gap_close, "ENABLED", False)
+  c = StopGapClose()
+  for _ in range(200):  # route 00000069 00:40:20.7: -1.05 at 10 km/h, 8.9 m behind a stopped lead
+    assert c.update(-1.05, 10.0 / 3.6, -1.1, False, lead(8.9), True) == -1.05
+  assert not c.active
+
+
+def test_tncr_eases_slowly_and_never_coasts():
+  # route 00000069 00:40:20.7: -1.05 at 10 km/h, 8.9 m. f908530 eased -1.06 -> -0.58 in 0.4 s; now at most 0.3 m/s^3
+  for tau in (0.35, 0.6, 0.9):
+    _, hist = sim(10.1 / 3.6, 8.9, plain=-1.05, tau=tau)
+    above = [(v, cmd) for v, cmd, _ in hist if v > 2.0 / 3.6]
+    for (_, c0), (_, c1) in zip(above, above[1:], strict=False):
+      assert c1 - c0 <= stop_gap_close.RELEASE_RATE * 0.01 + 1e-9
+    assert min(cmd for _, cmd in above) <= -0.3 and max(cmd for _, cmd in above) <= -0.3 + 1e-9  # no coast above 2 km/h
+
+
+def test_tncr_feedback_only_firms_up():
+  # decelerating harder than needed must not lighten the request (that pumped on route 0000006a 00:48:24)
+  c1, c2 = StopGapClose(), StopGapClose()
+  run(c1, 60, -0.6, 11 / 3.6, -0.6, lead(16.0))
+  run(c2, 60, -0.6, 11 / 3.6, -0.6, lead(16.0))
+  out_hard = run(c1, 100, -0.6, 11 / 3.6, -1.2, lead(16.0))   # car decelerates much more than b
+  out_plain = run(c2, 100, -0.6, 11 / 3.6, -0.45, lead(16.0)) # about b
+  assert c1.active and c2.active
+  assert abs(out_hard - out_plain) < 0.02
+
+
+def test_tncr_far_gap_holds_the_present_force():
+  # owner 2026-10-15: too far -> hold the present force longer, neither release nor add brake. Route 0000006a 00:48:25:
+  # 11 km/h, 15.5 m, -0.48 asked: holding -0.40 ends ~3.6 m -> the request stays put while the car slows as asked
+  c = StopGapClose()
+  run(c, 60, -0.45, 11.4 / 3.6, -0.45, lead(16.2))
+  assert c.active
+  outs = []
+  v, d = 11.1 / 3.6, 15.5
+  for _ in range(100):
+    b_hold = 0.40
+    outs.append(c.update(-0.50, v, -b_hold, False, lead(d), True))
+    d -= v * 0.01
+    v -= b_hold * 0.01
+  steady = outs[50:]
+  assert max(steady) - min(steady) < 0.02
+
+
+def test_tncr_takes_over_only_below_18kph_and_keeps_its_limit():
+  # route 0000006b (2026-10-15 true 09:09:10 / 09:15:17): taking over at 30 km/h eased below a plan that would have
+  # eased by itself, the car slid and then firmed to -1.5 at the end (owner: 1 bookmark each). The 3-bookmark stops
+  # that day all began it at <= 17.5 km/h. From 25 km/h the plain plan brakes alone down to V_MAX, then it closes.
+  gap, hist = sim(25.0 / 3.6, 30.0, plain=-1.2, t_max=40.0)
+  assert 3.2 <= gap <= 3.6, gap
+  assert not any(a for v, _, a in hist if v > stop_gap_close.V_MAX + 0.01)  # never above 18 km/h
+  above = [cmd for v, cmd, _ in hist if v > 2.0 / 3.6]
+  assert all(c1 - c0 <= stop_gap_close.RELEASE_RATE * 0.01 + 1e-9 for c0, c1 in zip(above, above[1:], strict=False))
+  assert all(a for v, _, a in hist if 3 / 3.6 < v < 17 / 3.6)             # never handed back mid-stop
+
+
+def test_tncr_cut_in_firms_light_first_then_linear():
+  # supreme principle: even when a car cuts in and the plan goes hard, the firming starts light (1 m/s^3) and builds
+  # linearly (to 5 m/s^3 for an urgent plan by 0.3 s) - never a step
+  c = StopGapClose()
+  run(c, 60, -1.0, 15 / 3.6, -1.0, lead(22.0))
+  run(c, 100, -1.0, 14 / 3.6, -1.0, lead(20.0))
+  assert c.active
+  outs = [c.update(-3.0, 14 / 3.6, -1.0, False, lead(6.0, v=1.0), True) for _ in range(60)]
+  assert not c.active
+  rates = [-(b - a) / 0.01 for a, b in zip(outs, outs[1:], strict=False)]
+  assert rates[0] <= 1.3                                              # light first (~1 m/s^3)
+  assert all(r2 >= r1 - 1e-6 for r1, r2 in zip(rates[:25], rates[1:26], strict=False))  # then a linear build-up
+  assert max(rates) <= 5.0 + 1e-6
+  assert outs[-1] < -2.0                                              # and it gets there within 0.6 s
+
+
+def test_tncr_firm_return_rate_scales_with_the_plan():
+  # handed back because the stop can no longer be done lightly: starts at 1 m/s^3, grows to 2.4 (plan -1.2) / 5 (-2.6)
+  for plan, top in ((-1.2, 2.4), (-2.6, 5.0)):
+    c = StopGapClose()
+    c.out, c.active = -0.8, False
+    outs = [c.update(plan, 10 / 3.6, -0.8, False, lead(20.0), True) for _ in range(40)]
+    rates = [-(b - a) / 0.01 for a, b in zip([-0.8] + outs, outs, strict=False)]
+    assert rates[0] <= 1.2 and max(rates) <= top + 1e-6 and max(rates) > top - 0.3
+
+
+def _approach(c, plain, v0, v1, d0, d1, n=90):
+  for i in range(n):  # the lead distance closes gradually (a step of >= JUMP_D would count as a flickering lead)
+    c.update(plain, (v0 + (v1 - v0) * i / (n - 1)) / 3.6, plain, False, lead(d0 + (d1 - d0) * i / (n - 1)), True)
+
+
+def test_altis_hands_over_to_the_lighter_plain_request_from_7_to_2kph():
+  # route 00000160 05:52:09: the law held -0.84 while the stopping controller's end curve was already -0.76 at 4.7 km/h
+  # and -0.60 at 2 km/h; the Altis blends into that curve from 7 to 2 km/h instead of dropping it all in the last 0.6 s
+  c = StopGapClose()
+  run(c, 60, -0.9, 8 / 3.6, -0.9, lead(9.5))
+  _approach(c, -0.9, 8.0, 4.5, 9.5, 5.0)
+  assert c.active and c.out is not None
+  # the law itself asks ~-0.54 here (ends 3.35 m); a plain -0.50 would end ~3.0 m (>= HANDOVER_GAP_MIN): blend halfway
+  outs = [c.update(-0.50, 4.5 / 3.6, -0.8, False, lead(5.0 - 0.005 * i), True) for i in range(40)]
+  assert abs(outs[-1] - (0.5 * c.out + 0.5 * -0.50)) < 0.01 and c.out + 1e-3 < outs[-1] < -0.50 - 1e-3
+  out2 = None
+  for i in range(60):  # slowing to 2 km/h (the speed/distance filters lag a step)
+    out2 = c.update(-0.45, (4.5 - 2.5 * i / 59) / 3.6, -0.8, False, lead(4.8 - 0.3 * i / 59), True)
+  assert abs(out2 - -0.45) < 1e-6                                                      # at 2 km/h: the plain request
+  held = c.out
+  assert c.update(-0.95, 4.5 / 3.6, -0.8, False, lead(4.5), True) <= held + 0.02       # a FIRMER plain request: no blend
+  c = StopGapClose()
+  run(c, 60, -0.9, 8 / 3.6, -0.9, lead(9.5))
+  _approach(c, -0.9, 8.0, 4.5, 9.5, 4.2)
+  assert c.active
+  outs = [c.update(-0.3, 4.5 / 3.6, -0.8, False, lead(4.2 - 0.005 * i), True) for i in range(40)]  # plain -0.3 would end ~0 m: no blend
+  assert abs(outs[-1] - c.out) < 1e-6
