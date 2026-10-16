@@ -86,7 +86,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
     self.long_pid = get_long_tune(self.CP, self.CP_SP, self.params)
     self.delivery_trim = DeliveryTrim()  # sunnypilot hook (tncr): measured delivery residual, see delivery_trim.py
     self.aego = FirstOrderFilter(0.0, 0.45, DT_CTRL * 3)
-    self.door_unlock = DoorUnlockOnPark()  # sunnypilot: unlock all doors on shifting into P (tnpb3 f908530a1e, ported 10-16)
+    self.door_unlock = DoorUnlockOnPark()  # sunnypilot: unlock all doors on shifting into P (tnpb3 f908530a1e, ported 10-16), lock above 10 km/h
     self.pitch = FirstOrderFilter(0, 0.5, DT_CTRL)
     self.pitch_hp = HighPassFilter(0.0, 0.25, 1.5, DT_CTRL)
 
@@ -231,7 +231,7 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     if self.auto_brake_hold.enabled:
       can_sends.extend(self.auto_brake_hold.update(CS, self.frame, self.packer, pitch_deg=math.degrees(self.pitch.x)))
-    can_sends.extend(self.door_unlock.update(CS.out.gearShifter, self.frame))  # sunnypilot hook: door_unlock.py
+    can_sends.extend(self.door_unlock.update(CS.out.gearShifter, self.frame, CS.out.vEgo, CS.out.doorOpen))  # sunnypilot hook: door_unlock.py
 
     # handle UI messages
     fcw_alert = hud_control.visualAlert == VisualAlert.fcw
