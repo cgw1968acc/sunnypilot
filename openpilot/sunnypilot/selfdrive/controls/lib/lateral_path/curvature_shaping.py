@@ -144,7 +144,7 @@ class PlanAverageSmoother:
 # unwound, a request to the OTHER side is capped at EXIT_COUNTER_MAX; the cap is released smoothly at the end of the
 # window. A real S-bend is left alone: when the model's own plan 1-3 s ahead asks for more than EXIT_SBEND_MIN to the
 # other side, nothing is capped. Off above 55 km/h, during lane changes and when lateral control is inactive.
-EXIT_ENABLED = False  # tncr (Corolla Cross), owner 2026-10-15 night: not in tncr19, off; Altis/tnpb3: True
+EXIT_ENABLED = True  # tncr: owner 2026-10-17 night ON again (route 00000088 22:14:10 turn-exit sway); was off since 10-15 (tncr19 tune)
 EXIT_TURN_MIN = 1.0  # m/s^2 of model lateral accel that counts as a turn
 EXIT_UNWOUND = 0.3  # m/s^2: the turn has unwound below this
 EXIT_WINDOW_T = [0.0, 2.0, 3.0]  # s since unwinding
