@@ -37,6 +37,11 @@ W_RATE = 1.0        # 1/s: blend weight change rate
 T_CURVE = 3.0       # s
 CURVE_A_LO = 0.10   # m/s^2
 CURVE_A_HI = 0.20   # m/s^2
+# Owner 2026-10-17 night: "widen the straight-mode angle by one degree" -> both edges move by 1 deg of steering wheel
+# angle on top (Corolla Cross: wheelbase 2.67 m x steer ratio 13.9 = 37.1 m per rad of wheel angle): straight below
+# ~1.3 deg wheel at 100 km/h (was 0.3), ~1.2 deg at 120, ~1.6 at 70; the 21:40 curve of route 00000084 (0.6-1.3 deg)
+# is now mostly straight mode. Shared with straight_mode.py so the two never overlap.
+STRAIGHT_EXTRA_CURV = float(np.radians(1.0)) / (2.67 * 13.9)  # 1/m
 
 
 def plan_curvature(model_v2, t_hi: float = T_HI) -> float | None:
@@ -49,6 +54,12 @@ def plan_curvature(model_v2, t_hi: float = T_HI) -> float | None:
   if not window.any():
     return None
   return float(np.mean(yaw_rate[window] / np.maximum(vx[window], 1.0)))
+
+
+def curve_weight(k_road: float, v_ego: float) -> float:
+  """0 on a straight, 1 in a curve, from the road curvature the model plans 0.3-T_CURVE s ahead"""
+  extra = STRAIGHT_EXTRA_CURV * v_ego ** 2
+  return float(np.interp(abs(k_road) * v_ego ** 2, [CURVE_A_LO + extra, CURVE_A_HI + extra], [0.0, 1.0]))
 
 
 class HighwayPlanCurvature:
@@ -68,7 +79,7 @@ class HighwayPlanCurvature:
     diff = desired_curvature - k_plan
     self.bias = diff if self.bias is None else self.bias + (diff - self.bias) * self.dt / BIAS_TAU
     k_road = plan_curvature(model_v2, T_CURVE)
-    curve = float(np.interp(abs(k_road) * v_ego ** 2, [CURVE_A_LO, CURVE_A_HI], [0.0, 1.0]))  # 0 on a straight
+    curve = curve_weight(k_road, v_ego)  # 0 on a straight
     w_target = float(np.interp(v_ego, [V_LO, V_HI], [0.0, 1.0])) * curve if lane_change_off else 0.0
     self.w = float(np.clip(w_target, self.w - W_RATE * self.dt, self.w + W_RATE * self.dt))
     if self.w <= 0.0:

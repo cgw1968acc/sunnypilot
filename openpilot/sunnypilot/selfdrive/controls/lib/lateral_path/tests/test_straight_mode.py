@@ -26,7 +26,8 @@ def run(s, n, road, v=V, active=True, lc=False):
 
 def test_straight_and_curve():
   assert run(StraightMode(DT), 150, 0.05) == 1.0
-  assert run(StraightMode(DT), 150, 0.35) == 0.0
+  assert run(StraightMode(DT), 150, 0.30) == 1.0  # 0.30 m/s^2 at 80 km/h (~1.0 deg wheel): straight since the +1 deg
+  assert run(StraightMode(DT), 150, 0.80) == 0.0
   assert run(StraightMode(DT), 150, 0.05, v=60.0 / 3.6) == 0.0  # below 65 km/h: normal
 
 

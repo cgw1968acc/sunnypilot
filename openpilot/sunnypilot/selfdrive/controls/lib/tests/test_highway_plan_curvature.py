@@ -42,22 +42,22 @@ def test_steady_curve_is_kept_in_full():
 
 def test_fast_action_swing_is_reduced_with_no_lag():
   c = HighwayPlanCurvature()
-  run(c, 3000, 0.0005, 0.0005)
+  run(c, 3000, 0.0012, 0.0012)  # a curve (0.85 m/s^2 at 96 km/h; since 10-17 the straight edge is +1 deg of wheel)
   outs = []
   for i in range(700):  # action swings +-0.0003 at ~0.29 Hz, the plan stays steady
-    k = 0.0005 + 0.0003 * math.sin(2 * math.pi * i * 0.01 / 3.5)
-    outs.append(c.update(k, model(0.0005), V, True, True))
+    k = 0.0012 + 0.0003 * math.sin(2 * math.pi * i * 0.01 / 3.5)
+    outs.append(c.update(k, model(0.0012), V, True, True))
   swing = max(outs[-350:]) - min(outs[-350:])
   assert swing < 0.6 * 0.0006
 
 
 def test_lane_change_fades_out_at_the_rate():
   c = HighwayPlanCurvature()
-  run(c, 300, 0.0008, 0.0004)
-  base = c.update(0.0010, model(0.0004), V, True, True)
-  out = c.update(0.0010, model(0.0004), V, True, False)
+  run(c, 300, 0.0014, 0.0010)
+  base = c.update(0.0016, model(0.0010), V, True, True)
+  out = c.update(0.0016, model(0.0010), V, True, False)
   assert c.w < 1.0 and out > base  # one step toward the action, not a jump
-  assert run(c, 120, 0.0010, 0.0004, lc_off=False) == 0.0010
+  assert run(c, 120, 0.0016, 0.0010, lc_off=False) == 0.0016
 
 
 def test_inactive_or_disabled_passes_through(monkeypatch):
@@ -78,8 +78,17 @@ def test_straight_uses_the_original():
 def test_entering_a_curve_blends_in_over_a_second():
   c = HighwayPlanCurvature()
   run(c, 300, 0.0, 0.0)
-  k_curve = 0.35 / V ** 2
+  k_curve = 0.85 / V ** 2
   run(c, 50, k_curve, k_curve)
   assert 0.4 < c.w < 0.6
   run(c, 60, k_curve, k_curve)
   assert c.w == 1.0
+
+
+def test_straight_edge_is_one_more_degree_of_wheel():
+  from openpilot.sunnypilot.selfdrive.controls.lib.highway_plan_curvature import curve_weight
+  v = 100.0 / 3.6
+  deg = math.radians(1.0) / (2.67 * 13.9)
+  assert curve_weight(math.radians(1.2) / (2.67 * 13.9), v) == 0.0   # 1.2 deg wheel at 100 km/h: straight now
+  assert curve_weight(math.radians(1.7) / (2.67 * 13.9), v) == 1.0   # 1.7 deg: curve
+  assert curve_weight(0.10 / v ** 2 + deg, v) == 0.0 and curve_weight(0.20 / v ** 2 + deg, v) > 0.999
