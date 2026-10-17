@@ -24,6 +24,8 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 from openpilot.sunnypilot.models.helpers import get_active_bundle
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedRamp
+from openpilot.sunnypilot.selfdrive.controls.lib.slope_cruise import SlopeCruise
+from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.accel_controller import AccelProfile
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
@@ -86,6 +88,7 @@ class LongitudinalPlannerSP:
     self._sp_v_cruise_prev = 0.0
     self._sp_t_set_speed_up = SET_SPEED_INTENT_T  # s since the last set-speed increase
     self.set_speed_ramp = SetSpeedRamp()
+    self.slope_cruise = SlopeCruise(mpc.dt)  # tncr: relaxed + eco highway slope speed band, see slope_cruise.py
     self._sp_set_speed_up = False
 
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
@@ -258,6 +261,14 @@ class LongitudinalPlannerSP:
     self._sp_v_cruise_prev = v_cruise if v_cruise_initialized else 0.0
     set_speed_intent = self._sp_t_set_speed_up < SET_SPEED_INTENT_T and v_ego < v_cruise
     return allow_throttle or set_speed_intent
+
+  def slope_cruise_sp(self, sm: messaging.SubMaster, v_ego: float, v_cruise: float) -> float:
+    """tncr: on a highway slope, in relaxed + eco, the cruise target moves within set speed +-10 km/h (slope_cruise.py)"""
+    cc = sm['carControl']
+    pitch = cc.orientationNED[1] if len(cc.orientationNED) == 3 else None
+    active = bool(cc.longActive and self.accel_controller.is_enabled() and self.accel_controller.profile == AccelProfile.eco
+                  and sm['selfdriveState'].personality == log.LongitudinalPersonality.relaxed)
+    return self.slope_cruise.update(v_cruise, v_ego, pitch, active)
 
   def reset_sp(self) -> None:
     self.lead_start_assist.reset()
