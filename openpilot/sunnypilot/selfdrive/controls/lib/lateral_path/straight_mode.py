@@ -14,9 +14,9 @@ from openpilot.sunnypilot.selfdrive.controls.lib.highway_plan_curvature import c
 # limits: the desired-curvature jerk cap (1.0 m/s^3 above 80 km/h) and the highway lane centering (3 cm dead band, 0.5 s
 # filter on the measured offset, 0.5 m/s^3 rate limit). On a straight above 70 km/h they go to their fastest:
 # jerk cap 8 m/s^3 (its own low-speed value, i.e. effectively off), centering dead band 1.5 cm (the Altis value),
-# filter 0.25 s, rate 1.0 m/s^3. Straight = the road the model plans 0.3-3 s ahead needs less than ~0.1 m/s^2 (+1 deg of wheel angle) of
+# filter 0.25 s, rate 1.0 m/s^3. Straight = the road the model plans 0.3-3 s ahead needs less than ~0.1 m/s^2 (+0.5 deg of wheel angle) of
 # lateral accel (same split as highway_plan_curvature: route 00000084 straights < 0.10, curves > 0.2 m/s^2; since
-# 10-17 night widened by 1 deg of wheel angle, see highway_plan_curvature.curve_weight). The weight
+# 10-17 night widened by 0.5 deg of wheel angle, see highway_plan_curvature.curve_weight). The weight
 # moves at RATE, so entering / leaving a curve blends over 1 s. Not simulated closed loop - road test.
 ENABLED = True
 V_BP = [65.0 / 3.6, 70.0 / 3.6]  # m/s

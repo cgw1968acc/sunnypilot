@@ -85,10 +85,10 @@ def test_entering_a_curve_blends_in_over_a_second():
   assert c.w == 1.0
 
 
-def test_straight_edge_is_one_more_degree_of_wheel():
+def test_straight_edge_is_half_a_degree_more_of_wheel():
   from openpilot.sunnypilot.selfdrive.controls.lib.highway_plan_curvature import curve_weight
   v = 100.0 / 3.6
-  deg = math.radians(1.0) / (2.67 * 13.9)
-  assert curve_weight(math.radians(1.2) / (2.67 * 13.9), v) == 0.0   # 1.2 deg wheel at 100 km/h: straight now
-  assert curve_weight(math.radians(1.7) / (2.67 * 13.9), v) == 1.0   # 1.7 deg: curve
+  deg = math.radians(0.5) / (2.67 * 13.9)
+  assert curve_weight(math.radians(0.75) / (2.67 * 13.9), v) == 0.0  # 0.75 deg wheel at 100 km/h: straight now
+  assert curve_weight(math.radians(1.2) / (2.67 * 13.9), v) == 1.0   # 1.2 deg: curve
   assert curve_weight(0.10 / v ** 2 + deg, v) == 0.0 and curve_weight(0.20 / v ** 2 + deg, v) > 0.999
