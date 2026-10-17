@@ -79,6 +79,16 @@ V_FILTER_T = 0.3           # s: speed filter
 CREEP_V = [3.0 / 3.6, 6.0 / 3.6]  # m/s
 CREEP_OFF = [0.27, 0.0]           # m/s^2
 CREEP_GAIN = [1.2, 1.0]
+# tncr 2026-10-17 (route 00000084, true time 21:15:04, owner: "at 10-6 km/h a very slight brake release is still felt"):
+# the Cross gives LESS than asked at 9-13 km/h (delivery map 10-15: median +0.21..+0.23 steady, +0.30 while the
+# command is easing; ~+0.05 at 6-9 and 13-20 km/h). The ease from -1.03 to -0.65 at 17 -> 12 km/h became a decel drop
+# -0.85 -> -0.39, then the gap feedback firmed back to -0.86 and -0.89 at 5-2 km/h (ease - firm - ease - firm). The
+# mapping now asks that much more in the band, so the decel it plans is the decel the car gives. Closed-loop sim of the
+# stop: decel 13 -> 5 km/h -0.89..-0.42 -> -0.68..-0.59, no re-firm, gap 3.24 -> 3.25 m (second stop 3.26 -> 3.38 m).
+# Zero below 5 km/h: the end of the stop (end_force_limit) is untouched. Only this stage plans with it (gap_request);
+# stop_gap_hold's roll guard keeps the plain mapping.
+DELIVERY_V = [5.0 / 3.6, 9.0 / 3.6, 11.0 / 3.6, 13.0 / 3.6, 20.0 / 3.6]  # m/s
+DELIVERY_HOLE = [0.0, 0.15, 0.22, 0.15, 0.0]                              # m/s^2 the Cross gives less than asked
 HOLD_BAND = 0.15           # m: tncr - the present force is held while the stop ends within GAP_TARGET + TAPER_ROLL and
                            # this much beyond it (3.35-3.5 m; owner 10-15: beyond 3.5 m ease slowly / creep-adjust)
 RELEASE_RATE = 0.3         # m/s^3: lighter (owner: linear release; tncr 1.0 -> 0.3, no release feel at 10-5 km/h). Owner 10-15
@@ -106,6 +116,19 @@ def decel_request(b: float, v_ego: float) -> float:
 
 def decel_from_request(req: float, v_ego: float) -> float:
   return -req * float(np.interp(v_ego, CREEP_V, CREEP_GAIN)) - float(np.interp(v_ego, CREEP_V, CREEP_OFF))
+
+
+def delivery_hole(v_ego: float) -> float:
+  return float(np.interp(v_ego, DELIVERY_V, DELIVERY_HOLE))
+
+
+# the mapping this stage plans with (the shared ones above stay as they are for stop_gap_hold's roll guard)
+def gap_request(b: float, v_ego: float) -> float:
+  return decel_request(b, v_ego) - delivery_hole(v_ego)
+
+
+def gap_decel_from_request(req: float, v_ego: float) -> float:
+  return decel_from_request(req + delivery_hole(v_ego), v_ego)
 
 
 class StopGapClose:
@@ -164,28 +187,28 @@ class StopGapClose:
       # stop with the decel the present command asks for (b_out, the inverse of decel_request - not the measured decel,
       # which lags and would make easing feed on itself): b is the decel that ends at GAP_TARGET (+ the taper roll),
       # b_far the one that ends HOLD_BAND beyond that.
-      b_out = decel_from_request(self.out, v_ego)
+      b_out = gap_decel_from_request(self.out, v_ego)
       b_far = self.v_f ** 2 / (2.0 * max(self.d_f - GAP_TARGET - TAPER_ROLL - HOLD_BAND, ROOM_MIN))
       # firm toward b; decelerating less than b firms more (proportional decel feedback, firmer only - two-sided it
       # pumped against the Cross brake lag)
-      firm = decel_request(b, v_ego) + K_A * min(-b - self.a_f, 0.0)
+      firm = gap_request(b, v_ego) + K_A * min(-b - self.a_f, 0.0)
       if b_out < b:
         target = firm                               # would end too close: firm up
       elif b_out <= b_far:
         target = min(self.out, firm)                # ends within 3.35-3.8 m: hold the present force (firmer only if the
                                                     # car is not decelerating as asked)
       else:
-        target = max(decel_request(b_far, v_ego), self.out - RELEASE_RATE * DT_CTRL)  # clearly too far even holding:
+        target = max(gap_request(b_far, v_ego), self.out - RELEASE_RATE * DT_CTRL)  # clearly too far even holding:
                                                     # ease slowly, only down to the edge of the hold band
       b_max = self.b_max
       if b > b_max and accel < target:  # can no longer be done lightly and the plan brakes firmer: it takes over
         self._hand_back()
       else:
-        target = min(max(target, decel_request(b_max, v_ego)), 0.0)
+        target = min(max(target, gap_request(b_max, v_ego)), 0.0)
         if self.d_f - GAP_TARGET < ROOM_END or self.v_f < V_END:  # the stop itself: at least the owner's end -0.35
           target = min(target, END_ACCEL)
         if v_ego > V_FLOOR:  # tncr: never a coast above 2 km/h
-          target = min(target, max(accel, decel_request(B_FLOOR, v_ego)))
+          target = min(target, max(accel, gap_request(B_FLOOR, v_ego)))
         self.out = float(np.clip(target, self.out - FIRM_RATE * DT_CTRL, self.out + RELEASE_RATE * DT_CTRL))
         return self.out
 

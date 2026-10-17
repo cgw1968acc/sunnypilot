@@ -27,9 +27,9 @@ def run(c, n, accel, v, a_ego, l, standstill=False, active=True):
   return out
 
 
-def sim(v, d, plain=-0.6, creep=0.27, tau=0.6, delay=0.2, t_max=30.0):
+def sim(v, d, plain=-0.6, creep=0.27, tau=0.6, delay=0.2, t_max=30.0, hole=True):
   """car: aEgo follows the command (+ creep torque below 5 km/h) after a transport delay and a first-order lag;
-  stopped lead d ahead; the chain is stop_gap_close -> end_force_limit as in controlsd"""
+  the delivery hole at 9-13 km/h; stopped lead d ahead; the chain is stop_gap_close -> end_force_limit as in controlsd"""
   c, e = StopGapClose(), EndForceLimit()
   run(c, 60, plain, v, plain, lead(d))  # braking for 0.6 s
   a, x, hist, buf = plain, 0.0, [], [plain] * int(delay / 0.01)
@@ -41,6 +41,8 @@ def sim(v, d, plain=-0.6, creep=0.27, tau=0.6, delay=0.2, t_max=30.0):
     # below 5 km/h the hybrid's creep torque: BRAKE_FORCE ~ 480 + 1200 * |cmd| N against ~750 N of creep on ~1000 kg
     # effective -> decel ~ 1.2 * |cmd| - creep (route 00000159: -0.55 -> -0.44, -0.30 -> ~0)
     a_tgt = (1.2 * u + creep) if (v < 5 / 3.6 and u < 0.0) else u
+    if hole and u < 0.0:  # the Cross gives less than asked at 9-13 km/h (delivery map 10-15)
+      a_tgt += stop_gap_close.delivery_hole(v)
     a += (a_tgt - a) * 0.01 / tau
     v = max(v + a * 0.01, 0.0)
     x += v * 0.01
@@ -164,7 +166,8 @@ def test_tncr_far_gap_holds_the_present_force():
   v, d = 11.1 / 3.6, 15.5
   for _ in range(100):
     b_hold = 0.40
-    outs.append(c.update(-0.50, v, -b_hold, False, lead(d), True))
+    # the decel the request stands for (10-17: the request itself follows the 9-13 km/h delivery hole as v falls)
+    outs.append(stop_gap_close.gap_decel_from_request(c.update(-0.50, v, -b_hold, False, lead(d), True), v))
     d -= v * 0.01
     v -= b_hold * 0.01
   steady = outs[50:]
@@ -207,3 +210,14 @@ def test_tncr_firm_return_rate_scales_with_the_plan():
     outs = [c.update(plan, 10 / 3.6, -0.8, False, lead(20.0), True) for _ in range(40)]
     rates = [-(b - a) / 0.01 for a, b in zip([-0.8] + outs, outs, strict=False)]
     assert rates[0] <= 1.2 and max(rates) <= top + 1e-6 and max(rates) > top - 0.3
+
+
+def test_tncr_delivery_hole_no_ease_firm_pump():
+  # route 00000084 21:15:04: eased into the Cross's 9-13 km/h delivery hole, the decel dropped and the gap feedback
+  # firmed back (ease - firm - ease - firm). With the hole in the mapping the request falls monotonically below 13 km/h
+  gap, hist = sim(17.0 / 3.6, 20.0, plain=-1.0)
+  assert 3.0 <= gap <= 3.6, gap
+  band = [cmd for v, cmd, active in hist if 5.0 / 3.6 <= v <= 13.0 / 3.6]
+  firmed = max(band[i] - band[i + 1] for i in range(len(band) - 1))
+  assert firmed < 0.011, firmed  # never firmer by more than one FIRM_RATE step and no sustained re-firm
+  assert stop_gap_close.delivery_hole(4.0 / 3.6) == 0.0  # the end of the stop is untouched
