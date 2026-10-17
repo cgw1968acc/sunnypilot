@@ -65,3 +65,21 @@ def test_inactive_or_disabled_passes_through(monkeypatch):
   assert run(c, 300, 0.0008, 0.0002, active=False) == 0.0008
   monkeypatch.setattr(hpc, "ENABLED", False)
   assert run(HighwayPlanCurvature(), 300, 0.0008, 0.0002) == 0.0008
+
+
+def test_straight_uses_the_original():
+  # owner 10-17: the averaged curvature swayed slowly on straights -> on a straight the action is sent unchanged
+  c = HighwayPlanCurvature()
+  k_straight = 0.05 / V ** 2  # 0.05 m/s^2 of road curve: a straight
+  assert run(c, 300, 0.0002, k_straight) == 0.0002
+  assert c.w == 0.0
+
+
+def test_entering_a_curve_blends_in_over_a_second():
+  c = HighwayPlanCurvature()
+  run(c, 300, 0.0, 0.0)
+  k_curve = 0.35 / V ** 2
+  run(c, 50, k_curve, k_curve)
+  assert 0.4 < c.w < 0.6
+  run(c, 60, k_curve, k_curve)
+  assert c.w == 1.0

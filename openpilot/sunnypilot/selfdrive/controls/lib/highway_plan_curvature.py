@@ -22,6 +22,11 @@ from openpilot.common.realtime import DT_CTRL
 # Owner 2026-10-17 night: "lower it to above 70 km/h" -> faded in 65 -> 70 km/h (was 85 -> 90). Same replay, 70-80 km/h
 # (84 s): 0.3-1 Hz -47%, 0.1-0.3 Hz -32%, slow curves -4%, largest difference 0.08 m/s^2; 80-90 km/h (69 s): -39% / -25%
 # / -2%, 0.13 m/s^2.
+# Owner 2026-10-17 night road test: "on straights the averaged curvature sways slowly left and right; on a straight go
+# back to the original". So it is used only in a curve: the lateral accel of the road the model plans T_LO..T_CURVE
+# ahead must reach CURVE_A_HI for the full blend and is zero below CURVE_A_LO (route 00000084 > 70 km/h: straights
+# below 0.10 m/s^2, curves above 0.2 - the 21:40 curve 0.22..0.45, median 0.38; 42% of the time below 0.10). The weight
+# still moves at W_RATE, so entering and leaving a curve is a 1 s blend, not a step.
 ENABLED = True
 V_LO = 65.0 / 3.6   # m/s
 V_HI = 70.0 / 3.6   # m/s
@@ -29,15 +34,18 @@ T_LO = 0.3          # s
 T_HI = 1.5          # s
 BIAS_TAU = 2.0      # s
 W_RATE = 1.0        # 1/s: blend weight change rate
+T_CURVE = 3.0       # s
+CURVE_A_LO = 0.10   # m/s^2
+CURVE_A_HI = 0.20   # m/s^2
 
 
-def plan_curvature(model_v2) -> float | None:
+def plan_curvature(model_v2, t_hi: float = T_HI) -> float | None:
   t = np.asarray(model_v2.orientationRate.t, dtype=float)
   yaw_rate = np.asarray(model_v2.orientationRate.z, dtype=float)
   vx = np.asarray(model_v2.velocity.x, dtype=float)
   if len(t) == 0 or len(t) != len(yaw_rate) or len(t) != len(vx):
     return None
-  window = (t >= T_LO) & (t <= T_HI)
+  window = (t >= T_LO) & (t <= t_hi)
   if not window.any():
     return None
   return float(np.mean(yaw_rate[window] / np.maximum(vx[window], 1.0)))
@@ -59,7 +67,9 @@ class HighwayPlanCurvature:
       return desired_curvature
     diff = desired_curvature - k_plan
     self.bias = diff if self.bias is None else self.bias + (diff - self.bias) * self.dt / BIAS_TAU
-    w_target = float(np.interp(v_ego, [V_LO, V_HI], [0.0, 1.0])) if lane_change_off else 0.0
+    k_road = plan_curvature(model_v2, T_CURVE)
+    curve = float(np.interp(abs(k_road) * v_ego ** 2, [CURVE_A_LO, CURVE_A_HI], [0.0, 1.0]))  # 0 on a straight
+    w_target = float(np.interp(v_ego, [V_LO, V_HI], [0.0, 1.0])) * curve if lane_change_off else 0.0
     self.w = float(np.clip(w_target, self.w - W_RATE * self.dt, self.w + W_RATE * self.dt))
     if self.w <= 0.0:
       return desired_curvature
