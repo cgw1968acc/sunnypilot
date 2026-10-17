@@ -7,6 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 import numpy as np
 
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.straight_mode import STRAIGHT_CURV_JERK, blend
 
 # Lateral jerk cap on the model's desired curvature. The MACROSTIFF model's path corrections felt a bit stiff to the
 # driver (route 53, 2026-09-26). Measured above 60 km/h outside lane changes on 2026-09-25/26: |d(desired curvature)/dt|
@@ -35,11 +36,12 @@ class DesiredCurvatureJerkLimiter:
     self.dt = dt
     self.prev = 0.0
 
-  def update(self, desired_curvature: float, v_ego: float, active: bool, lane_changing: bool) -> float:
+  def update(self, desired_curvature: float, v_ego: float, active: bool, lane_changing: bool, straight: float = 0.0) -> float:
     if not active or lane_changing:
       self.prev = desired_curvature
       return desired_curvature
     max_jerk = float(np.interp(v_ego, DESIRED_CURVATURE_JERK_FADE_BP, DESIRED_CURVATURE_JERK_FADE_V))
+    max_jerk = blend(max_jerk, STRAIGHT_CURV_JERK, straight)  # tncr straight mode: fastest on a straight
     step = max_jerk / max(v_ego, DESIRED_CURVATURE_JERK_MIN_SPEED) ** 2 * self.dt
     self.prev = float(np.clip(desired_curvature, self.prev - step, self.prev + step))
     return self.prev

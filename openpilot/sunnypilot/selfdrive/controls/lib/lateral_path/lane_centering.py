@@ -9,6 +9,8 @@ import math
 import numpy as np
 
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.straight_mode import STRAIGHT_CENTER_DEADBAND, \
+  STRAIGHT_CENTER_JERK, STRAIGHT_CENTER_TAU, blend
 
 # Lane centering feedback, ported from tncr18 (Corolla Cross) on 2026-09-30 for the Altis: rlog 2026-09-27 (6 routes,
 # Macrostiff) above 100 km/h the car sat 0.10 m left of the lane centre on average with a 0.23 m std (22% of the time more
@@ -123,11 +125,15 @@ class LaneCentering:
     c2, c1, c0 = np.polyfit(x[:n], centre, 2)
     return float(c0), float(math.atan(c1))
 
-  def update(self, model_v2, v_ego: float, active: bool, steering_pressed: bool) -> float:
-    """Curvature to ADD to the desired curvature (positive = right)."""
+  def update(self, model_v2, v_ego: float, active: bool, steering_pressed: bool, straight: float = 0.0) -> float:
+    """Curvature to ADD to the desired curvature (positive = right). straight: tncr straight mode weight (0..1)"""
     meas = self.measure(model_v2) if active and not steering_pressed and v_ego > LANE_CENTER_MIN_SPEED else None
     self.last_meas = meas
-    step = LANE_CENTER_JERK / max(v_ego, LANE_CENTER_MIN_SPEED) ** 2 * self.dt
+    tau = blend(LANE_CENTER_FILTER_TAU, STRAIGHT_CENTER_TAU, straight)
+    self.offset_filter.update_alpha(tau)
+    self.heading_filter.update_alpha(tau)
+    deadband = blend(LANE_CENTER_DEADBAND, STRAIGHT_CENTER_DEADBAND, straight)
+    step = blend(LANE_CENTER_JERK, STRAIGHT_CENTER_JERK, straight) / max(v_ego, LANE_CENTER_MIN_SPEED) ** 2 * self.dt
     if meas is None:
       # lines lost or driver steering: wind the correction back to zero at the same jerk instead of snapping (the
       # snap showed up as a 3.9 m/s^3 spike when replaying route 53 seg 15)
@@ -141,7 +147,7 @@ class LaneCentering:
     self.valid = True
     self.offset = self.offset_filter.update(meas[0])
     self.heading = self.heading_filter.update(meas[1])
-    error = self.offset - float(np.clip(self.offset, -LANE_CENTER_DEADBAND, LANE_CENTER_DEADBAND))  # deadband
+    error = self.offset - float(np.clip(self.offset, -deadband, deadband))  # deadband
     lateral_speed = v_ego * math.sin(self.heading)  # positive = drifting LEFT
 
     self.integral = float(np.clip(self.integral + LANE_CENTER_KI * error * self.dt, -LANE_CENTER_I_LIMIT, LANE_CENTER_I_LIMIT))

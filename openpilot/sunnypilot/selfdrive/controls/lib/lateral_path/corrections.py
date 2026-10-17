@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.curve_bias import apply_curve_outward_bias
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.straight_mode import StraightMode
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering import LaneCentering, LaneTrimLowSpeed
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering_low_speed import LaneCenteringLowSpeed, \
   LOW_CENTER_ENABLED
@@ -25,15 +26,17 @@ class LateralPathCorrections:
     self.highway_smoother = HighwayCurvatureSmoother(dt)
     self.turn_exit_limiter = TurnExitSwingLimiter(dt) if EXIT_ENABLED else None
     self.plan_average = PlanAverageSmoother(dt) if PLAN_AVG_ENABLED else None
+    self.straight_mode = StraightMode(dt)
 
   def update(self, desired_curvature: float, CS, active: bool, model_v2, set_path_correction=None) -> float:
     lane_changing = model_v2 is not None and model_v2.meta.laneChangeState != 0
+    straight = self.straight_mode.update(model_v2, CS.vEgo, active, lane_changing)  # tncr: fastest corrections on a straight
     if self.plan_average is not None:
       # highway: replace the model action's fast wobble by the average of its own plan ahead (forward-looking)
       desired_curvature = self.plan_average.update(desired_curvature, model_v2, CS.vEgo, active, lane_changing)
     model_curvature = desired_curvature
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
-    desired_curvature += self.lane_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed)
+    desired_curvature += self.lane_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed, straight)
     if self.low_centering is not None:
       desired_curvature += self.low_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed,
                                                      getattr(CS, 'leftBlinker', False) or getattr(CS, 'rightBlinker', False),
@@ -47,6 +50,6 @@ class LateralPathCorrections:
       # NNLC builds its feedforward from the model's own future lateral accelerations, which carry none of the
       # corrections above; hand it the same correction so its future inputs describe the corrected path
       set_path_correction(model_curvature, desired_curvature, CS.vEgo)
-    desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing)
+    desired_curvature = self.curvature_jerk_limiter.update(desired_curvature, CS.vEgo, active, lane_changing, straight)
     desired_curvature = self.highway_smoother.update(desired_curvature, CS.vEgo, active, lane_changing)
     return desired_curvature
