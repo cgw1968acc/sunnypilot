@@ -143,6 +143,22 @@ CAP_DT = 0.05           # s: the planner runs at 20 Hz
 ACCEL_MIN_MPC = -3.5    # m/s^2: the stock limit (opendbc ACCEL_MIN), used when no cap applies
 
 
+# Relaxed (far) highway gap (tncr, owner 2026-10-17 night): "for far following add following distance from 60 km/h up
+# to 130 km/h, +20 m at 130 km/h, interpolated below" - only with the distance button at relaxed (owner's choice). On
+# top of everything else (the trim table, the night +5 m). T_FOLLOW stays untouched (owner rule): the metres go through
+# the same per-node obstacle shift as the night gap, at the planned speed of each node. Steady gap at 130 km/h in
+# relaxed ~69 -> ~89 m (+0.55 s), at 95 km/h +10 m.
+FAR_GAP_BP = [60.0 / 3.6, 130.0 / 3.6]  # m/s
+FAR_GAP_V = [0.0, 20.0]                 # m added to the desired distance
+
+
+def get_far_gap_extra(v_plan, personality) -> np.ndarray:
+  """metres to ADD to the desired distance per node (relaxed only)"""
+  if personality != log.LongitudinalPersonality.relaxed:
+    return np.zeros_like(np.asarray(v_plan, dtype=float))
+  return np.interp(np.maximum(v_plan, 0.0), FAR_GAP_BP, FAR_GAP_V)
+
+
 def get_light_onset_margin(v):
   v = np.maximum(v, 0.0)
   return v * np.interp(v, LIGHT_ONSET_BP, LIGHT_ONSET_T_V)
@@ -238,14 +254,15 @@ class LongMpcObstacleExt:
     self.emerg_trim = float(np.clip(target, self.emerg_trim - EMERG_RATE_OFF * EMERG_DT, self.emerg_trim + EMERG_RATE_ON * EMERG_DT))
     return self.emerg_trim
 
-  def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan, t1: float = 0.0, t_idxs=None):
+  def adjust(self, x_obstacles, lead_xv_0, lead_xv_1, v_plan, t1: float = 0.0, t_idxs=None, personality=None):
     x_obstacle_raw = float(np.min(x_obstacles[0]))  # the real obstacle (lead + its stopping distance), before any margin
     x_obstacles = x_obstacles + np.column_stack([get_light_onset_margin(lead_xv_0[:, 1]), get_light_onset_margin(lead_xv_1[:, 1])])
     self.night_gap.update()
     emerg = self.update_emergency(lead_xv_0, v_plan, t1, t_idxs) if t1 > 0.0 else 0.0
     dyn = self.update_dynamic_gap(lead_xv_0, v_plan, t1) if t1 > 0.0 else 0.0
     dyn_gap = dyn * np.interp(np.maximum(v_plan, 0.0), DYN_GAP_BP, DYN_GAP_V)
-    x_obstacles = x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan) + emerg - dyn_gap)[:, None]
+    far = get_far_gap_extra(v_plan, personality)
+    x_obstacles = x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan) - far + emerg - dyn_gap)[:, None]
     if t1 > 0.0 and t_idxs is not None:
       self.update_onset_cap(x_obstacle_raw, v_plan, t1, t_idxs, float(v_plan[0]) - float(lead_xv_0[0, 1]), dyn)
     return x_obstacles

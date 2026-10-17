@@ -1,0 +1,24 @@
+import numpy as np
+
+from openpilot.cereal import log
+from openpilot.sunnypilot.selfdrive.controls.lib.long_mpc_ext import LongMpcObstacleExt, get_far_gap_extra
+
+LP = log.LongitudinalPersonality
+
+
+def test_far_gap_table_relaxed_only():
+  v = np.array([50.0, 60.0, 95.0, 130.0, 150.0]) / 3.6
+  assert np.allclose(get_far_gap_extra(v, LP.relaxed), [0.0, 0.0, 10.0, 20.0, 20.0])
+  assert np.allclose(get_far_gap_extra(v, LP.standard), 0.0)
+  assert np.allclose(get_far_gap_extra(v, LP.aggressive), 0.0)
+  assert np.allclose(get_far_gap_extra(v, None), 0.0)
+
+
+def test_adjust_moves_the_obstacle_closer_by_the_extra():
+  n = 13
+  v_plan = np.full(n, 130.0 / 3.6)
+  lead = np.column_stack([np.full(n, 70.0), np.full(n, 130.0 / 3.6)])
+  x = np.full((n, 2), 120.0)
+  a = LongMpcObstacleExt().adjust(x.copy(), lead, lead, v_plan, personality=LP.standard)
+  b = LongMpcObstacleExt().adjust(x.copy(), lead, lead, v_plan, personality=LP.relaxed)
+  assert np.allclose(a - b, 20.0)
