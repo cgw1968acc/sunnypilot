@@ -150,13 +150,20 @@ ACCEL_MIN_MPC = -3.5    # m/s^2: the stock limit (opendbc ACCEL_MIN), used when 
 # relaxed ~69 -> ~89 m (+0.55 s), at 95 km/h +10 m.
 FAR_GAP_BP = [60.0 / 3.6, 130.0 / 3.6]  # m/s
 FAR_GAP_V = [0.0, 20.0]                 # m added to the desired distance
+# Standard (owner 2026-10-18): "standard distance mode: add distance from 80 km/h, +10 m at 130 km/h, interpolated".
+# Steady gap in standard at 130 km/h ~58 -> ~68 m (+0.28 s), at 105 km/h +5 m. Aggressive unchanged.
+STD_GAP_BP = [80.0 / 3.6, 130.0 / 3.6]  # m/s
+STD_GAP_V = [0.0, 10.0]                 # m
 
 
 def get_far_gap_extra(v_plan, personality) -> np.ndarray:
-  """metres to ADD to the desired distance per node (relaxed only)"""
-  if personality != log.LongitudinalPersonality.relaxed:
-    return np.zeros_like(np.asarray(v_plan, dtype=float))
-  return np.interp(np.maximum(v_plan, 0.0), FAR_GAP_BP, FAR_GAP_V)
+  """metres to ADD to the desired distance per node (relaxed and standard; aggressive none)"""
+  v = np.maximum(np.asarray(v_plan, dtype=float), 0.0)
+  if personality == log.LongitudinalPersonality.relaxed:
+    return np.interp(v, FAR_GAP_BP, FAR_GAP_V)
+  if personality == log.LongitudinalPersonality.standard:
+    return np.interp(v, STD_GAP_BP, STD_GAP_V)
+  return np.zeros_like(v)
 
 
 def get_light_onset_margin(v):
