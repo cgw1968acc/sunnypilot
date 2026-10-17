@@ -30,7 +30,7 @@ def exit_profile():
 def test_counter_swing_capped_after_a_turn():
   p = exit_profile()
   out = run(p)
-  assert np.max(out[300:500]) <= EXIT_COUNTER_CAP_V[0] + 1e-9   # +0.33 -> 0.15
+  assert np.max(out[300:500]) <= EXIT_COUNTER_CAP_V[0] + 1e-9   # +0.33 -> the cap (tncr 0.05)
   assert np.max(p[300:500]) > 0.3
   np.testing.assert_allclose(out[:300], p[:300])                # the turn itself and its unwinding are untouched
   assert np.min(out[450:600]) < -0.15                           # the swing back toward the turn side is not capped

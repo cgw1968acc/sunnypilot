@@ -148,7 +148,11 @@ EXIT_ENABLED = True  # tncr: owner 2026-10-17 night ON again (route 00000088 22:
 EXIT_TURN_MIN = 1.0  # m/s^2 of model lateral accel that counts as a turn
 EXIT_UNWOUND = 0.3  # m/s^2: the turn has unwound below this
 EXIT_WINDOW_T = [0.0, 2.0, 3.0]  # s since unwinding
-EXIT_COUNTER_CAP_V = [0.15, 0.15, 2.0]  # m/s^2 allowed to the other side (released over the last second)
+EXIT_COUNTER_CAP_V = [0.05, 0.05, 2.0]  # m/s^2 allowed to the other side (released over the last second)
+# tncr 2026-10-18 (route 00000089 22:25:52 / 22:26:00, owner: "a little counter-swing left, much less than 22:14"): the
+# cap held the setpoint at -0.15 (model -0.53 / -0.44), but the wheel unwinding from -48 deg at full torque ran past
+# it to -0.37 / -0.41 m/s^2 (+12 deg) - ~0.25 of overshoot. Owner chose the smallest change: 0.15 -> 0.05 (expected
+# peak ~-0.30). Altis/tnpb3 keeps 0.15.
 EXIT_SPEED_BP = [45.0 / 3.6, 55.0 / 3.6]  # m/s: full below 45 km/h, off above 55
 EXIT_SBEND_MIN = 0.5  # m/s^2 to the other side in the model's plan 1-3 s ahead = a real S-bend
 EXIT_SBEND_T = (1.0, 1.5, 2.0, 2.5, 3.0)  # s ahead
