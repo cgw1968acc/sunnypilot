@@ -22,6 +22,7 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.sunnypilot.selfdrive.controls.lib.stopping_controller import StoppingController
 from openpilot.sunnypilot.selfdrive.controls.lib.cruise_smoother import CruiseSmoother
+from openpilot.sunnypilot.selfdrive.controls.lib.highway_plan_curvature import HighwayPlanCurvature
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
@@ -61,6 +62,7 @@ class Controls(ControlsExt):
     self.LoC = LongControl(self.CP, self.CP_SP)
     self.stopping_controller = StoppingController(self.CP.stopAccel)
     self.cruise_smoother = CruiseSmoother()  # sunnypilot: steady-cruise ripple, see cruise_smoother.py
+    self.highway_plan_curvature = HighwayPlanCurvature()  # sunnypilot: highway curvature swing, see highway_plan_curvature.py
     self.VM = VehicleModel(self.CP)
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
@@ -179,6 +181,9 @@ class Controls(ControlsExt):
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
     new_desired_curvature = self.lane_change_start_rate_sp(new_desired_curvature, self.desired_curvature,
                                                         model_v2.meta.laneChangeState, CS.vEgo)  # sunnypilot hook
+    new_desired_curvature = self.highway_plan_curvature.update(new_desired_curvature, model_v2, CS.vEgo,
+                                                               CC.latActive and not self.sm.valid['lateralManeuverPlan'],
+                                                               model_v2.meta.laneChangeState == LaneChangeState.off)  # sunnypilot hook
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
