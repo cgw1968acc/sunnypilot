@@ -19,9 +19,12 @@ from openpilot.common.realtime import DT_CTRL
 # 1-3 Hz -27%, slow curves (< 0.1 Hz) 1.00, lag 0. Not a low-pass of the curvature itself (the 0.5 s smoother of 10-08
 # weaved at 80 km/h because it lagged). Faded in from V_LO to V_HI; faded out at W_RATE during a lane change, without
 # lateral control or with a maneuver plan.
+# Owner 2026-10-17 night: "lower it to above 70 km/h" -> faded in 65 -> 70 km/h (was 85 -> 90). Same replay, 70-80 km/h
+# (84 s): 0.3-1 Hz -47%, 0.1-0.3 Hz -32%, slow curves -4%, largest difference 0.08 m/s^2; 80-90 km/h (69 s): -39% / -25%
+# / -2%, 0.13 m/s^2.
 ENABLED = True
-V_LO = 85.0 / 3.6   # m/s
-V_HI = 90.0 / 3.6   # m/s
+V_LO = 65.0 / 3.6   # m/s
+V_HI = 70.0 / 3.6   # m/s
 T_LO = 0.3          # s
 T_HI = 1.5          # s
 BIAS_TAU = 2.0      # s

@@ -29,9 +29,9 @@ def test_plan_curvature_window():
   assert plan_curvature(log.ModelDataV2.new_message()) is None
 
 
-def test_below_85_kph_passes_through():
+def test_below_65_kph_passes_through():
   c = HighwayPlanCurvature()
-  assert run(c, 300, 0.0008, 0.0002, v=80.0 / 3.6) == 0.0008
+  assert run(c, 300, 0.0008, 0.0002, v=60.0 / 3.6) == 0.0008
 
 
 def test_steady_curve_is_kept_in_full():
