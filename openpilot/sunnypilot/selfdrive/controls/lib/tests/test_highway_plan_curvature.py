@@ -78,7 +78,7 @@ def test_straight_uses_the_original():
 def test_entering_a_curve_blends_in_over_a_second():
   c = HighwayPlanCurvature()
   run(c, 300, 0.0, 0.0)
-  k_curve = 0.85 / V ** 2
+  k_curve = 0.70 / V ** 2  # a gentle curve: above the straight edge, below the sharp-curve fade (0.8)
   run(c, 50, k_curve, k_curve)
   assert 0.4 < c.w < 0.6
   run(c, 60, k_curve, k_curve)
@@ -92,3 +92,11 @@ def test_straight_edge_is_half_a_degree_more_of_wheel():
   assert curve_weight(math.radians(0.75) / (2.67 * 13.9), v) == 0.0  # 0.75 deg wheel at 100 km/h: straight now
   assert curve_weight(math.radians(1.2) / (2.67 * 13.9), v) == 1.0   # 1.2 deg: curve
   assert curve_weight(0.10 / v ** 2 + deg, v) == 0.0 and curve_weight(0.20 / v ** 2 + deg, v) > 0.999
+
+
+def test_sharp_curve_uses_the_original():
+  # route 0000008b 23:44:45: a 2.9 m/s^2 exit-ramp bend - the plan average turned in short; above 1.2 m/s^2 it is off
+  c = HighwayPlanCurvature()
+  k_sharp = 1.5 / V ** 2
+  assert run(c, 300, k_sharp * 1.2, k_sharp) == k_sharp * 1.2
+  assert c.w == 0.0

@@ -42,6 +42,14 @@ CURVE_A_HI = 0.20   # m/s^2
 # 0.5 deg only": straight below ~0.8 deg wheel at 100 km/h (was 0.3), ~0.7 deg at 120, ~1.1 at 70. Shared with
 # straight_mode.py so the two never overlap.
 STRAIGHT_EXTRA_CURV = float(np.radians(0.5)) / (2.67 * 13.9)  # 1/m (owner, same night: "cancel, +0.5 deg only")
+# Gentle curves only (tncr, owner 2026-10-18 after route 0000008b 23:44:43-51, 87 km/h exit-ramp S-bend, "a small flaw"):
+# in a sharp curve (model up to -2.9 m/s^2) the plan average turned in 16% short (-2.45 for -2.92) and the 2 s bias
+# carried that into the exit (-1.30 sent for -0.94), 0.52 m/s^2 apart at most; the car drifted ~0.5 m in the lane.
+# The plan average is built for gentle curves (route 00000084's 21:40 curve <= 0.49 m/s^2): it fades out between
+# SHARP_A_LO and SHARP_A_HI of road lateral accel, back to the model's own action. Route 0000008b > 70 km/h: 22% of the
+# time above 0.8; route 00000084 > 70 km/h: never.
+SHARP_A_LO = 0.8   # m/s^2
+SHARP_A_HI = 1.2   # m/s^2
 
 
 def plan_curvature(model_v2, t_hi: float = T_HI) -> float | None:
@@ -80,6 +88,7 @@ class HighwayPlanCurvature:
     self.bias = diff if self.bias is None else self.bias + (diff - self.bias) * self.dt / BIAS_TAU
     k_road = plan_curvature(model_v2, T_CURVE)
     curve = curve_weight(k_road, v_ego)  # 0 on a straight
+    curve *= float(np.interp(abs(k_road) * v_ego ** 2, [SHARP_A_LO, SHARP_A_HI], [1.0, 0.0]))  # gentle curves only
     w_target = float(np.interp(v_ego, [V_LO, V_HI], [0.0, 1.0])) * curve if lane_change_off else 0.0
     self.w = float(np.clip(w_target, self.w - W_RATE * self.dt, self.w + W_RATE * self.dt))
     if self.w <= 0.0:
