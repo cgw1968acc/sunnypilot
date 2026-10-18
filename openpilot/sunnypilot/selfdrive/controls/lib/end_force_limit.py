@@ -35,6 +35,7 @@ RESTOP_STAND_T = 0.5      # s standing that arms it
 RESTOP_WINDOW = 5.0       # s since moving off (owner: no longer than 5 s)
 RESTOP_V_MAX = 5.0 / 3.6  # m/s (owner: the creep never above 5 km/h)
 RESTOP_LEAD_D = 8.0       # m: a lead this close counts (creeping up behind it; owner: within 8 m)
+RESTOP_CHECK_V = 1.0 / 3.6  # m/s: the 5 s limit is checked down to here (owner: from 1 km/h, not 2)
 
 
 class EndForceLimit:
@@ -44,6 +45,7 @@ class EndForceLimit:
     self.restop_t = None  # time since moving off after a standstill (None = not a re-stop)
     self.restop_vmax = 0.0
     self.restop_lead = False
+    self.restop_on = False
 
   def _update_restop(self, v_ego, standstill, long_active, lead_d):
     if not long_active:
@@ -57,9 +59,9 @@ class EndForceLimit:
       if self.restop_t is not None:
         self.restop_t += DT_CTRL
         self.restop_vmax = max(self.restop_vmax, v_ego)
-        # the time limit is only checked above V_LINE: once on the last 2 km/h the end is decided, so a stop that runs
-        # past 5 s can never switch to the firmer -0.30 in its last moment (item 0)
-        if self.restop_vmax >= RESTOP_V_MAX or (self.restop_t > RESTOP_WINDOW and v_ego >= V_LINE):
+        # the time limit is checked down to RESTOP_CHECK_V; below it the end is decided, so a slow stop can never
+        # switch to the firmer -0.30 in its last moment (item 0)
+        if self.restop_vmax >= RESTOP_V_MAX or (self.restop_t > RESTOP_WINDOW and v_ego >= RESTOP_CHECK_V):
           self.restop_t = None
     if self.restop_t is not None and lead_d is not None and lead_d <= RESTOP_LEAD_D:
       self.restop_lead = True
@@ -74,7 +76,12 @@ class EndForceLimit:
   def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0,
              lead_d: float | None = None) -> float:
     # lead_d: distance to the lead in metres, None without a lead
-    end_accel = RESTOP_END_ACCEL if self._update_restop(v_ego, standstill, long_active, lead_d) else END_ACCEL
+    restop = self._update_restop(v_ego, standstill, long_active, lead_d)
+    end_accel = RESTOP_END_ACCEL if restop else END_ACCEL
+    if self.restop_on and not restop and not standstill and v_ego < V_LINE and self.a_line is not None:
+      # the re-stop ran out between 1 and 2 km/h: the -0.30 line starts from the current command and speed, no step
+      self.a_line, self.v_line = (self.out if self.out is not None else accel), max(v_ego, STALL_V)
+    self.restop_on = restop
     if not long_active or accel >= 0.0:
       self.reset()
       return accel

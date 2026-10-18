@@ -95,11 +95,28 @@ def test_restop_only_behind_a_lead():
   assert e.update(-0.6, 0.0, False, True, -1.0, None) == RESTOP_END_ACCEL
 
 
-def test_restop_end_is_not_firmed_when_5_s_pass_on_the_last_2_kph():
+def test_restop_end_is_not_firmed_when_5_s_pass_below_1_kph():
   e = EndForceLimit()
   _stand_then_creep(e, 4.0 / 3.6)                                  # 1 s of creeping
   e.update(-0.6, 2.0 / 3.6, False, True, -1.0, 4.0)
-  for _ in range(450):                                             # 4.5 s more crawling below 2 km/h
-    out = e.update(-0.6, 1.0 / 3.6, False, True, -1.0, 4.0)
-  assert abs(out - (RESTOP_END_ACCEL + (-0.6 - RESTOP_END_ACCEL) * 0.5)) < 1e-9
+  for _ in range(450):                                             # 4.5 s more crawling below 1 km/h
+    out = e.update(-0.6, 0.5 / 3.6, False, True, -1.0, 4.0)
+  assert abs(out - (RESTOP_END_ACCEL + (-0.6 - RESTOP_END_ACCEL) * 0.25)) < 1e-9
   assert e.update(-0.6, 0.0, False, True, -1.0, 4.0) == RESTOP_END_ACCEL
+
+
+def test_restop_running_out_at_1_to_2_kph_has_no_step():
+  e = EndForceLimit()
+  _stand_then_creep(e, 4.0 / 3.6)                                  # 1 s of creeping
+  e.update(-0.6, 2.0 / 3.6, False, True, -1.0, 4.0)
+  prev = None
+  for _ in range(450):                                             # 4.5 s crawling at 1.5 km/h: runs out at 5 s
+    out = e.update(-0.6, 1.5 / 3.6, False, True, -1.0, 4.0)
+    assert prev is None or abs(out - prev) < 1e-9                  # no step when it switches to -0.30
+    prev = out
+  assert e.restop_t is None
+  for v in (1.2, 0.8, 0.4):
+    out = e.update(-0.6, v / 3.6, False, True, -1.0, 4.0)
+    assert out >= prev - 0.1                                       # continues smoothly along the new line
+    prev = out
+  assert e.update(-0.6, 0.0, False, True, -1.0, 4.0) == END_ACCEL
