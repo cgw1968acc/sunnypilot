@@ -51,11 +51,11 @@ def test_stall_lets_the_line_go_and_reanchors():
   assert e.update(-0.8, 0.0, False, True, -0.4) == END_ACCEL
 
 
-def _stand_then_creep(e, v_peak):
+def _stand_then_creep(e, v_peak, lead_d=4.0):
   for _ in range(60):                                              # stood 0.6 s
-    e.update(-1.2, 0.0, True, True)
+    e.update(-1.2, 0.0, True, True, -1.0, lead_d)
   for _ in range(100):                                             # creeps off
-    e.update(0.3, v_peak, False, True)
+    e.update(0.3, v_peak, False, True, -1.0, lead_d)
 
 
 def test_restop_after_a_creep_ends_on_minus_026():
@@ -78,3 +78,18 @@ def test_restop_not_after_a_real_launch_or_a_long_creep():
     e.update(0.1, 4.0 / 3.6, False, True)
   e.update(-0.6, 2.0 / 3.6, False, True)
   assert e.update(-0.6, 0.0, False, True) == END_ACCEL
+
+
+def test_restop_only_behind_a_lead():
+  e = EndForceLimit()
+  _stand_then_creep(e, 4.0 / 3.6, lead_d=None)                     # no lead (e.g. edging up at a light)
+  e.update(-0.6, 2.0 / 3.6, False, True)
+  assert e.update(-0.6, 0.0, False, True) == END_ACCEL
+  e = EndForceLimit()
+  _stand_then_creep(e, 4.0 / 3.6, lead_d=30.0)                     # a lead far ahead does not count
+  e.update(-0.6, 2.0 / 3.6, False, True, -1.0, 30.0)
+  assert e.update(-0.6, 0.0, False, True, -1.0, 30.0) == END_ACCEL
+  e = EndForceLimit()
+  _stand_then_creep(e, 4.0 / 3.6)                                  # lead seen, then it flickers out: stays -0.26
+  e.update(-0.6, 2.0 / 3.6, False, True, -1.0, None)
+  assert e.update(-0.6, 0.0, False, True, -1.0, None) == RESTOP_END_ACCEL

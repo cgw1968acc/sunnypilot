@@ -21,7 +21,9 @@ from openpilot.common.realtime import DT_CTRL
 # Re-stop (owner 2026-10-18: "stopped, crept forward, stopped again - the force can still be a little lighter; only
 # this case -0.30 -> -0.26"): once the car has stood RESTOP_STAND_T, a stop made within RESTOP_WINDOW of moving off
 # again without reaching RESTOP_V_MAX (the stopping controller's creep-follow window, CF_WINDOW / CF_V_MAX) ends on
-# RESTOP_END_ACCEL instead. Every other stop keeps END_ACCEL.
+# RESTOP_END_ACCEL instead - only behind a lead (owner: "only with a lead, not in any other normal stop"): a lead
+# within RESTOP_LEAD_D must have been seen since moving off (latched, so a flickering lead cannot firm the line back up).
+# Every other stop, with or without a lead, keeps END_ACCEL.
 V_LINE = 2.0 / 3.6     # m/s
 END_ACCEL = -0.30      # m/s^2 at 0 km/h
 HOLD_RATE = 0.5        # m/s^3: after the stop, toward the standstill hold
@@ -32,6 +34,7 @@ RESTOP_END_ACCEL = -0.26  # m/s^2 at 0 km/h for a re-stop after a creep
 RESTOP_STAND_T = 0.5      # s standing that arms it
 RESTOP_WINDOW = 10.0      # s since moving off
 RESTOP_V_MAX = 8.0 / 3.6  # m/s
+RESTOP_LEAD_D = 15.0      # m: a lead this close counts (creeping up behind it)
 
 
 class EndForceLimit:
@@ -40,14 +43,15 @@ class EndForceLimit:
     self.stand_t = 0.0
     self.restop_t = None  # time since moving off after a standstill (None = not a re-stop)
     self.restop_vmax = 0.0
+    self.restop_lead = False
 
-  def _update_restop(self, v_ego, standstill, long_active):
+  def _update_restop(self, v_ego, standstill, long_active, lead_d):
     if not long_active:
       self.stand_t, self.restop_t = 0.0, None
     elif standstill:
       self.stand_t += DT_CTRL
       if self.stand_t >= RESTOP_STAND_T:
-        self.restop_t, self.restop_vmax = 0.0, 0.0
+        self.restop_t, self.restop_vmax, self.restop_lead = 0.0, 0.0, False
     else:
       self.stand_t = 0.0
       if self.restop_t is not None:
@@ -55,7 +59,9 @@ class EndForceLimit:
         self.restop_vmax = max(self.restop_vmax, v_ego)
         if self.restop_t > RESTOP_WINDOW or self.restop_vmax >= RESTOP_V_MAX:
           self.restop_t = None
-    return self.restop_t is not None
+    if self.restop_t is not None and lead_d is not None and lead_d <= RESTOP_LEAD_D:
+      self.restop_lead = True
+    return self.restop_t is not None and self.restop_lead
 
   def reset(self):
     self.a_line = None   # request at the line's anchor (crossing V_LINE, or the end of a stall)
@@ -63,8 +69,10 @@ class EndForceLimit:
     self.out = None      # last limited output (None = not limiting)
     self.stall_t = 0.0
 
-  def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0) -> float:
-    end_accel = RESTOP_END_ACCEL if self._update_restop(v_ego, standstill, long_active) else END_ACCEL
+  def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0,
+             lead_d: float | None = None) -> float:
+    # lead_d: distance to the lead in metres, None without a lead
+    end_accel = RESTOP_END_ACCEL if self._update_restop(v_ego, standstill, long_active, lead_d) else END_ACCEL
     if not long_active or accel >= 0.0:
       self.reset()
       return accel
