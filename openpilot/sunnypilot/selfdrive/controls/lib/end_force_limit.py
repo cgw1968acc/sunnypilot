@@ -20,7 +20,7 @@ from openpilot.common.realtime import DT_CTRL
 # and request once it slows again: a stall is not "the stop", and it still ends on -0.30 at 0 km/h.
 # Re-stop (owner 2026-10-18: "stopped, crept forward, stopped again - the force can still be a little lighter; only
 # this case -0.30 -> -0.26"): once the car has stood RESTOP_STAND_T, a stop made within RESTOP_WINDOW of moving off
-# again without reaching RESTOP_V_MAX (the stopping controller's creep-follow window, CF_WINDOW / CF_V_MAX) ends on
+# again without reaching RESTOP_V_MAX (tighter than the stopping controller's creep-follow window) ends on
 # RESTOP_END_ACCEL instead - only behind a lead (owner: "only with a lead, not in any other normal stop"): a lead
 # within RESTOP_LEAD_D must have been seen since moving off (latched, so a flickering lead cannot firm the line back up).
 # Every other stop, with or without a lead, keeps END_ACCEL.
@@ -32,8 +32,8 @@ STALL_A = -0.1         # m/s^2
 STALL_T = 0.3          # s
 RESTOP_END_ACCEL = -0.26  # m/s^2 at 0 km/h for a re-stop after a creep
 RESTOP_STAND_T = 0.5      # s standing that arms it
-RESTOP_WINDOW = 10.0      # s since moving off
-RESTOP_V_MAX = 8.0 / 3.6  # m/s
+RESTOP_WINDOW = 5.0       # s since moving off (owner: no longer than 5 s)
+RESTOP_V_MAX = 5.0 / 3.6  # m/s (owner: the creep never above 5 km/h)
 RESTOP_LEAD_D = 8.0       # m: a lead this close counts (creeping up behind it; owner: within 8 m)
 
 
@@ -57,7 +57,9 @@ class EndForceLimit:
       if self.restop_t is not None:
         self.restop_t += DT_CTRL
         self.restop_vmax = max(self.restop_vmax, v_ego)
-        if self.restop_t > RESTOP_WINDOW or self.restop_vmax >= RESTOP_V_MAX:
+        # the time limit is only checked above V_LINE: once on the last 2 km/h the end is decided, so a stop that runs
+        # past 5 s can never switch to the firmer -0.30 in its last moment (item 0)
+        if self.restop_vmax >= RESTOP_V_MAX or (self.restop_t > RESTOP_WINDOW and v_ego >= V_LINE):
           self.restop_t = None
     if self.restop_t is not None and lead_d is not None and lead_d <= RESTOP_LEAD_D:
       self.restop_lead = True

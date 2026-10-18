@@ -69,12 +69,12 @@ def test_restop_after_a_creep_ends_on_minus_026():
 
 def test_restop_not_after_a_real_launch_or_a_long_creep():
   e = EndForceLimit()
-  _stand_then_creep(e, 9.0 / 3.6)                                  # went past 8 km/h: an ordinary stop again
+  _stand_then_creep(e, 6.0 / 3.6)                                  # went past 5 km/h: an ordinary stop again
   e.update(-0.6, 2.0 / 3.6, False, True)
   assert e.update(-0.6, 0.0, False, True) == END_ACCEL
   e = EndForceLimit()
   _stand_then_creep(e, 4.0 / 3.6)
-  for _ in range(1000):                                            # more than 10 s of moving
+  for _ in range(450):                                             # more than 5 s of moving
     e.update(0.1, 4.0 / 3.6, False, True)
   e.update(-0.6, 2.0 / 3.6, False, True)
   assert e.update(-0.6, 0.0, False, True) == END_ACCEL
@@ -93,3 +93,13 @@ def test_restop_only_behind_a_lead():
   _stand_then_creep(e, 4.0 / 3.6)                                  # lead seen, then it flickers out: stays -0.26
   e.update(-0.6, 2.0 / 3.6, False, True, -1.0, None)
   assert e.update(-0.6, 0.0, False, True, -1.0, None) == RESTOP_END_ACCEL
+
+
+def test_restop_end_is_not_firmed_when_5_s_pass_on_the_last_2_kph():
+  e = EndForceLimit()
+  _stand_then_creep(e, 4.0 / 3.6)                                  # 1 s of creeping
+  e.update(-0.6, 2.0 / 3.6, False, True, -1.0, 4.0)
+  for _ in range(450):                                             # 4.5 s more crawling below 2 km/h
+    out = e.update(-0.6, 1.0 / 3.6, False, True, -1.0, 4.0)
+  assert abs(out - (RESTOP_END_ACCEL + (-0.6 - RESTOP_END_ACCEL) * 0.5)) < 1e-9
+  assert e.update(-0.6, 0.0, False, True, -1.0, 4.0) == RESTOP_END_ACCEL
