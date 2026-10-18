@@ -86,9 +86,9 @@ def test_restop_only_behind_a_lead():
   e.update(-0.6, 2.0 / 3.6, False, True)
   assert e.update(-0.6, 0.0, False, True) == END_ACCEL
   e = EndForceLimit()
-  _stand_then_creep(e, 4.0 / 3.6, lead_d=30.0)                     # a lead far ahead does not count
-  e.update(-0.6, 2.0 / 3.6, False, True, -1.0, 30.0)
-  assert e.update(-0.6, 0.0, False, True, -1.0, 30.0) == END_ACCEL
+  _stand_then_creep(e, 4.0 / 3.6, lead_d=10.0)                     # a lead beyond 8 m does not count
+  e.update(-0.6, 2.0 / 3.6, False, True, -1.0, 10.0)
+  assert e.update(-0.6, 0.0, False, True, -1.0, 10.0) == END_ACCEL
   e = EndForceLimit()
   _stand_then_creep(e, 4.0 / 3.6)                                  # lead seen, then it flickers out: stays -0.26
   e.update(-0.6, 2.0 / 3.6, False, True, -1.0, None)

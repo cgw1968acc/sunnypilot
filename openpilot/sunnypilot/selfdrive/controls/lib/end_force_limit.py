@@ -34,7 +34,7 @@ RESTOP_END_ACCEL = -0.26  # m/s^2 at 0 km/h for a re-stop after a creep
 RESTOP_STAND_T = 0.5      # s standing that arms it
 RESTOP_WINDOW = 10.0      # s since moving off
 RESTOP_V_MAX = 8.0 / 3.6  # m/s
-RESTOP_LEAD_D = 15.0      # m: a lead this close counts (creeping up behind it)
+RESTOP_LEAD_D = 8.0       # m: a lead this close counts (creeping up behind it; owner: within 8 m)
 
 
 class EndForceLimit:
