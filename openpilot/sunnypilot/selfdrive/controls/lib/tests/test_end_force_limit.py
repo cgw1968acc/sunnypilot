@@ -1,4 +1,4 @@
-from openpilot.sunnypilot.selfdrive.controls.lib.end_force_limit import EndForceLimit, V_LINE, END_ACCEL
+from openpilot.sunnypilot.selfdrive.controls.lib.end_force_limit import EndForceLimit, V_LINE, END_ACCEL, RESTOP_END_ACCEL
 
 
 def test_line_from_2kph_to_minus_030():
@@ -49,3 +49,32 @@ def test_stall_lets_the_line_go_and_reanchors():
   out = e.update(-0.8, 0.7 / 3.6, False, True, -0.4)
   assert abs(out - (END_ACCEL + (-0.8 - END_ACCEL) * 0.7 / 1.5)) < 1e-6
   assert e.update(-0.8, 0.0, False, True, -0.4) == END_ACCEL
+
+
+def _stand_then_creep(e, v_peak):
+  for _ in range(60):                                              # stood 0.6 s
+    e.update(-1.2, 0.0, True, True)
+  for _ in range(100):                                             # creeps off
+    e.update(0.3, v_peak, False, True)
+
+
+def test_restop_after_a_creep_ends_on_minus_026():
+  e = EndForceLimit()
+  _stand_then_creep(e, 4.0 / 3.6)
+  e.update(-0.6, 2.0 / 3.6, False, True)
+  out = e.update(-0.6, 1.0 / 3.6, False, True)
+  assert abs(out - (RESTOP_END_ACCEL + (-0.6 - RESTOP_END_ACCEL) * 0.5)) < 1e-9
+  assert e.update(-0.6, 0.0, False, True) == RESTOP_END_ACCEL
+
+
+def test_restop_not_after_a_real_launch_or_a_long_creep():
+  e = EndForceLimit()
+  _stand_then_creep(e, 9.0 / 3.6)                                  # went past 8 km/h: an ordinary stop again
+  e.update(-0.6, 2.0 / 3.6, False, True)
+  assert e.update(-0.6, 0.0, False, True) == END_ACCEL
+  e = EndForceLimit()
+  _stand_then_creep(e, 4.0 / 3.6)
+  for _ in range(1000):                                            # more than 10 s of moving
+    e.update(0.1, 4.0 / 3.6, False, True)
+  e.update(-0.6, 2.0 / 3.6, False, True)
+  assert e.update(-0.6, 0.0, False, True) == END_ACCEL

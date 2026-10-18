@@ -18,17 +18,44 @@ from openpilot.common.realtime import DT_CTRL
 # Safety valve: if below V_LINE the car is not slowing (aEgo above STALL_A for STALL_T while still rolling above
 # STALL_V - the hybrid's creep torque can beat a light request), the line is let go and re-anchored at the current speed
 # and request once it slows again: a stall is not "the stop", and it still ends on -0.30 at 0 km/h.
+# Re-stop (owner 2026-10-18: "stopped, crept forward, stopped again - the force can still be a little lighter; only
+# this case -0.30 -> -0.26"): once the car has stood RESTOP_STAND_T, a stop made within RESTOP_WINDOW of moving off
+# again without reaching RESTOP_V_MAX (the stopping controller's creep-follow window, CF_WINDOW / CF_V_MAX) ends on
+# RESTOP_END_ACCEL instead. Every other stop keeps END_ACCEL.
 V_LINE = 2.0 / 3.6     # m/s
 END_ACCEL = -0.30      # m/s^2 at 0 km/h
 HOLD_RATE = 0.5        # m/s^3: after the stop, toward the standstill hold
 STALL_V = 0.5 / 3.6    # m/s
 STALL_A = -0.1         # m/s^2
 STALL_T = 0.3          # s
+RESTOP_END_ACCEL = -0.26  # m/s^2 at 0 km/h for a re-stop after a creep
+RESTOP_STAND_T = 0.5      # s standing that arms it
+RESTOP_WINDOW = 10.0      # s since moving off
+RESTOP_V_MAX = 8.0 / 3.6  # m/s
 
 
 class EndForceLimit:
   def __init__(self):
     self.reset()
+    self.stand_t = 0.0
+    self.restop_t = None  # time since moving off after a standstill (None = not a re-stop)
+    self.restop_vmax = 0.0
+
+  def _update_restop(self, v_ego, standstill, long_active):
+    if not long_active:
+      self.stand_t, self.restop_t = 0.0, None
+    elif standstill:
+      self.stand_t += DT_CTRL
+      if self.stand_t >= RESTOP_STAND_T:
+        self.restop_t, self.restop_vmax = 0.0, 0.0
+    else:
+      self.stand_t = 0.0
+      if self.restop_t is not None:
+        self.restop_t += DT_CTRL
+        self.restop_vmax = max(self.restop_vmax, v_ego)
+        if self.restop_t > RESTOP_WINDOW or self.restop_vmax >= RESTOP_V_MAX:
+          self.restop_t = None
+    return self.restop_t is not None
 
   def reset(self):
     self.a_line = None   # request at the line's anchor (crossing V_LINE, or the end of a stall)
@@ -37,6 +64,7 @@ class EndForceLimit:
     self.stall_t = 0.0
 
   def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0) -> float:
+    end_accel = RESTOP_END_ACCEL if self._update_restop(v_ego, standstill, long_active) else END_ACCEL
     if not long_active or accel >= 0.0:
       self.reset()
       return accel
@@ -60,8 +88,8 @@ class EndForceLimit:
       if self.stall_t >= STALL_T:
         self.out = None
         return accel
-    a_top = min(self.a_line, END_ACCEL)
-    floor = END_ACCEL + (a_top - END_ACCEL) * min(max(v_ego, 0.0) / self.v_line, 1.0)
+    a_top = min(self.a_line, end_accel)
+    floor = end_accel + (a_top - end_accel) * min(max(v_ego, 0.0) / self.v_line, 1.0)
     if accel < floor:
       self.out = floor
       return floor
