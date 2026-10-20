@@ -307,7 +307,12 @@ class LongitudinalPlannerSP:
     long_allowed = (not long_control_off and not force_decel and not sm['carState'].brakePressed and
                     not sm['carState'].gasPressed)
     assist_allowed = long_allowed and not (is_e2e and output_should_stop_e2e)
-    a_start = self.lead_start_assist.update(assist_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, lead_one.vRel)
+    # tncr 2026-10-20: the floor may go up to the accel profile's own limit (uphill factor included)
+    from openpilot.selfdrive.controls.lib.longitudinal_planner import get_max_accel
+    a_max = self.max_accel_sp(self.get_max_accel_override(v_ego, sm['carStateSP'].engineOff), sm)
+    a_max = get_max_accel(v_ego) if a_max is None else a_max
+    a_start = self.lead_start_assist.update(assist_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, lead_one.vRel,
+                                            a_max=a_max)
     if a_start is not None and a_start > output_a_target:
       return a_start, False
     return output_a_target, output_should_stop
