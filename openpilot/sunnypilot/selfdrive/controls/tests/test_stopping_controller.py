@@ -145,9 +145,10 @@ class TestHoldRelease:
       if t_hi is None and out >= StoppingController.RELEASE_BAND_HI:
         t_hi = t
       assert out <= 0.8 + 1e-9
-    assert t_lo is not None and t_lo < 0.6           # 0.2 s debounce, then -2.0 -> -0.6 at the fast rate (0.35 s)
-    assert t_hi is not None and 1.15 < t_hi < 1.3    # then -0.6 -> +0.4 at 1.5 m/s^3 (0.67 s)
-    assert abs(out - 0.8) < 1e-9 and not sc.releasing  # then +0.4 -> +0.8 at LAUNCH_RATE (0.4 s)
+    # tncr 2026-10-20: 0.05 s debounce, then the stock 4 m/s^3 all the way (-2.0 -> +0.8 in 0.7 s)
+    assert t_lo is not None and 0.38 < t_lo < 0.45   # -2.0 -> -0.6 (0.35 s)
+    assert t_hi is not None and 0.62 < t_hi < 0.7    # -0.6 -> +0.4 (0.25 s)
+    assert abs(out - 0.8) < 1e-9 and not sc.releasing
 
   def test_launch_builds_at_launch_rate_up_to_the_plan(self):
     # route 00000159 09:04:44: +0.39 -> +0.96 in 0.1 s and +1.70 within 0.4 s, the car lurched to +2.5
@@ -160,7 +161,7 @@ class TestHoldRelease:
     above = [o for o in outs if StoppingController.RELEASE_BAND_HI <= o < 1.7 - 1e-9]
     assert max(b - a for a, b in zip(outs, outs[1:], strict=False)) <= StoppingController.RELEASE_FAST * DT_CTRL + 1e-9
     assert all(b - a <= StoppingController.LAUNCH_RATE * DT_CTRL + 1e-9 for a, b in zip(above, above[1:], strict=False))
-    assert 1.25 * 100 <= len(above) <= 1.35 * 100   # +0.4 -> +1.7 at 1.0 m/s^3 = 1.3 s
+    assert 0.30 * 100 <= len(above) <= 0.35 * 100   # +0.4 -> +1.7 at 4.0 m/s^3 = 0.33 s (tncr 2026-10-20, was 1.3 s)
     assert abs(outs[-1] - 1.7) < 1e-9 and not sc.releasing
 
   def test_a_plan_that_drops_again_ends_the_release(self):

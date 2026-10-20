@@ -73,7 +73,11 @@ class StoppingController:
   STANDSTILL_HOLD_DELAY_LEAD = 1.0  # s
   STANDSTILL_HOLD_DELAY_NO_LEAD = 1.0  # s
   STOPPING_FREEZE_MAX = 2.0  # s
-  STOPPING_EXIT_DEBOUNCE = 0.2  # s
+  # tncr, owner 2026-10-20: "the launch delay is too long, remove the limits that cause it". Routes 84/89/8b (10-17,
+  # 15 launches behind a lead): lead moves -> wheels move 1.3-2.1 s; of that 0.2 s was this debounce, ~0.7 s the slow
+  # release band and LAUNCH_RATE below, ~0.6 s the PCM itself after a positive request. Debounce 0.2 -> 0.05 s (keeps
+  # only a few-frame filter against a one-frame plan blip), RELEASE_SLOW and LAUNCH_RATE -> the stock 4.0 m/s^3 windup.
+  STOPPING_EXIT_DEBOUNCE = 0.05  # s (was 0.2)
   # Engaging at a standstill (driver 2026-10-06, route 0000010a 23:58:49: "pulling away with no lead, just before the car
   # really moves there is a very short hard brake, then it goes"). The car stood in the auto hold (1360 N); engaging
   # dropped the hold to 0 N, the plan's first frame still said stop, so the stopping state started the standstill hold
@@ -172,7 +176,7 @@ class StoppingController:
   # the clamp falls off and the creep torque takes over: RELEASE_FAST up to RELEASE_BAND_LO, RELEASE_SLOW from there
   # up to RELEASE_BAND_HI, then the plan again. The first motion comes ~0.1 s later than before, the lurch is gone.
   RELEASE_FAST = 4.0  # m/s^3 (the stock windup limit)
-  RELEASE_SLOW = 1.5  # m/s^3
+  RELEASE_SLOW = 4.0  # m/s^3 (tncr 2026-10-20: was 1.5 - no slow band any more, see STOPPING_EXIT_DEBOUNCE)
   RELEASE_BAND_LO = -0.6  # m/s^2
   RELEASE_BAND_HI = 0.4  # m/s^2
   # Above RELEASE_BAND_HI the plan used to take over at once. Route 00000159 (2026-10-14, true time 09:04:44, 09:09:04,
@@ -182,7 +186,7 @@ class StoppingController:
   # Now the release goes on above the band at LAUNCH_RATE until it meets the plan: +0.4 -> +1.7 takes 1.3 s and the car
   # starts on a lighter command. Owner (10-14): "smooth first, then try faster" - this launches a little later than
   # the immediate response asked for on 10-04, a deliberate trade for now.
-  LAUNCH_RATE = 1.0  # m/s^3
+  LAUNCH_RATE = 4.0  # m/s^3 (tncr 2026-10-20: was 1.0 - the plan is followed at the stock windup)
 
   # The tnpb2 additions below run on every car.
   # B - re-roll at a standstill. Route 0000010e 17:38:48: the car stood behind the lead at the
