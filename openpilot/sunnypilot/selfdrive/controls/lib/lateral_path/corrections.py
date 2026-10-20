@@ -10,11 +10,12 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering_low
   LOW_CENTER_ENABLED
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.curvature_shaping import DesiredCurvatureJerkLimiter, \
   HighwayCurvatureSmoother, TurnExitSwingLimiter, PlanAverageSmoother, PLAN_AVG_ENABLED
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.low_speed_straight_hold import LowSpeedStraightHold
 
 
 class LateralPathCorrections:
   """Everything tnpb2 does to the model's desired curvature before the torque controller sees it, in this order:
-  highway plan averaging, curve outward bias, highway lane centering, low-speed lane centering (or the older trim),
+  highway plan averaging, low-speed straight hold, curve outward bias, highway lane centering, low-speed lane centering (or the older trim),
   turn-exit counter-swing limit, (NNLC path correction hand-off), desired-curvature jerk cap, highway smoothing. See
   each module for the reasons and data."""
   def __init__(self, dt: float):
@@ -25,12 +26,15 @@ class LateralPathCorrections:
     self.highway_smoother = HighwayCurvatureSmoother(dt)
     self.turn_exit_limiter = TurnExitSwingLimiter(dt)
     self.plan_average = PlanAverageSmoother(dt) if PLAN_AVG_ENABLED else None
+    self.low_straight = LowSpeedStraightHold(dt)
 
   def update(self, desired_curvature: float, CS, active: bool, model_v2, set_path_correction=None) -> float:
     lane_changing = model_v2 is not None and model_v2.meta.laneChangeState != 0
     if self.plan_average is not None:
       # highway: replace the model action's fast wobble by the average of its own plan ahead (forward-looking)
       desired_curvature = self.plan_average.update(desired_curvature, model_v2, CS.vEgo, active, lane_changing)
+    # low speed, surely straight: keep the wheel still instead of following the action's hops around zero
+    desired_curvature = self.low_straight.update(desired_curvature, model_v2, CS, active, lane_changing)
     model_curvature = desired_curvature
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
     desired_curvature += self.lane_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed)
