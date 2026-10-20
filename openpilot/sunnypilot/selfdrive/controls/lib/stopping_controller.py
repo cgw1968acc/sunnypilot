@@ -107,8 +107,14 @@ class StoppingController:
   # Driver 2026-10-03 afternoon, after the -0.50 / -0.40 / -0.35 flat ends: "from 5 km/h to 0 use a formula: -0.5 at
   # 5 km/h, -0.3 at 0 km/h, interpolated - firmer at 5 km/h, then easing as the car comes to rest". So the line is
   # now piecewise linear through (BLEND_V, a_entry) -> (END_V_HI, END_HI) -> (0, END_LO); a_entry is at least END_HI.
-  BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
-  END_V_HI = 5.0 / 3.6  # m/s
+  # tncr, owner 2026-10-20: "move the point where the end firms up about 3 km/h higher, then ease smoothly to 0": the
+  # firm top END_HI moves 5 -> 8 km/h (and the line's start 10 -> 13 km/h with it), and the ease from it to END_LO is
+  # spread over 8 km/h instead of 4 (quarter-sine, steady: 8..0 km/h -0.65/-0.64/-0.63/-0.60/-0.56/-0.51/-0.46/-0.38/
+  # -0.34; was -0.65 flat to 4 km/h, then -0.60/-0.56/-0.38(ceiling)/-0.34). Every point stays inside end_force_limit's
+  # ceiling. Estimate at delivered = sent: a stop from 8 km/h on the line 3.93 -> 4.24 m, 3.9 -> 4.3 s. The no-lead
+  # ceiling below END_V_HI moves to 8 km/h with it (owner accepted with the proposal).
+  BLEND_V = 13.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment (was 10 km/h)
+  END_V_HI = 8.0 / 3.6  # m/s (was 5 km/h)
   END_HI = -0.65  # m/s^2 at END_V_HI (~1200 N); -0.60 -> -0.65 2026-10-08, see END_CURVE_A
   END_LO = -0.34  # m/s^2 at 0 km/h. tncr (Corolla Cross): -0.35 -> -0.34 (owner 2026-10-15 evening road test: "better,
   # right direction, take the normal stop end a further 0.01 lighter"). -0.35 (~840 N) was the owner's Cross stop template
@@ -119,7 +125,7 @@ class StoppingController:
   # (-0.50/-0.47/-0.40/-0.29/-0.25/-0.24) was "not better" and reverted. Then the driver gave his own points, close to
   # the parabola but a touch lighter in the middle: 4 km/h -0.40, 3 -0.33, 2 -0.27, 1 -0.25, 0 -0.25. Held as a table,
   # linearly interpolated at the actual speed every 10 ms (continuous curve).
-  END_CURVE_V = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6]  # m/s
+  # (END_CURVE_V / END_CURVE_A: see 2026-10-20 below, now 0..8 km/h)
   # Driver 2026-10-06 (route 00000100, seven manual stops 19:45-19:59, averages 5->2 km/h 0.83, 2->0.3 km/h 0.45 m/s^2;
   # the lightest steady one, 19:56:19, 0.56 / 0.37): "the manual stops are still a touch heavy; give 5-2 km/h a little
   # more, but already be light at 1 km/h, or reaching -0.25 only at 0 km/h may still nod; keep 1-0 as it was". So a
@@ -136,7 +142,9 @@ class StoppingController:
   # better"): 2 km/h -0.56, then a straight line to -0.30 at 0 km/h (1 km/h -0.43). Back on 2026-10-11 without the
   # stop-gap governor it came with: route 00000139 23:40-23:44 at the old 1-0 km/h -0.30 the hybrid's creep torque
   # left only -0.13..-0.17 of decel, the car crept at 0.6-1 km/h and then stopped with a jolt (owner: "a clear jolt at 0").
-  END_CURVE_A = [END_LO, (END_LO + -0.56) / 2, -0.56, -0.60, -0.65, END_HI]  # m/s^2
+  # (2026-10-08 .. 10-19: END_CURVE_A = [END_LO, (END_LO + -0.56) / 2, -0.56, -0.60, -0.65, END_HI] on 0..5 km/h)
+  END_CURVE_V = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6, 6.0 / 3.6, 7.0 / 3.6, 8.0 / 3.6]  # m/s
+  END_CURVE_A = [END_LO, -0.38, -0.46, -0.51, -0.56, -0.60, -0.63, -0.64, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   # The line is for the END of a stop. tncr, owner 2026-10-15 night (route 00000075 20:59:40, stopped 7.5 m out, bookmark 1):
   # at 9.6 km/h the lead was still 12 m ahead rolling to its stop; the plan eased to -0.3 (roll on to 3 m), but the line

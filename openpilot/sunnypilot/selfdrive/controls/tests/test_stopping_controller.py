@@ -33,23 +33,37 @@ def blend(sc, v_kph):
 
 
 class TestEndOfStop:
-  def test_the_line_runs_from_the_entry_request_through_5kph_to_the_rest_value(self):
+  def test_the_line_runs_from_the_entry_request_through_8kph_to_the_rest_value(self):
+    # tncr 2026-10-20: the firm top moved 5 -> 8 km/h, the line's start 10 -> 13 km/h
     sc = StoppingController(-2.0)
-    out = run(sc, PID, cs(9.9), -1.20, -1.20, 0.2)
+    out = run(sc, PID, cs(12.9), -1.20, -1.20, 0.2)
     assert sc.end_active and abs(sc.a_entry - (-1.20)) < 1e-6
-    # 7.5 km/h: halfway between the entry request and END_HI; the planner has eased to -0.30, the line is sent
-    out = run(sc, PID, cs(7.5), -0.30, out, 0.6)
-    assert abs(blend(sc, 7.5) - (-1.20 + (END_HI - -1.20) * 0.5)) < 1e-6
-    assert abs(out - blend(sc, 7.5)) < 1e-6
-    # 5 km/h: END_HI; below it a parabola: steep first, flat toward the rest value; the wheel stop: END_LO
-    out = run(sc, PID, cs(5.0), -0.20, out, 0.4)
+    # 10.5 km/h: halfway between the entry request and END_HI; the planner has eased to -0.30, the line is sent
+    out = run(sc, PID, cs(10.5), -0.30, out, 0.6)
+    assert abs(blend(sc, 10.5) - (-1.20 + (END_HI - -1.20) * 0.5)) < 1e-6
+    assert abs(out - blend(sc, 10.5)) < 1e-6
+    # 8 km/h: END_HI; below it a steady ease over 8 km/h down to the rest value; the wheel stop: END_LO
+    out = run(sc, PID, cs(8.0), -0.20, out, 0.4)
     assert abs(out - END_HI) < 1e-6
     out = run(sc, PID, cs(2.5), -0.20, out, 0.4)
-    assert abs(out - (-0.56 + -0.60) / 2) < 1e-6
-    assert abs(blend(sc, 4.0) - (-0.65)) < 1e-6 and abs(blend(sc, 1.0) - (END_LO + -0.56) / 2) < 1e-6
-    assert abs(blend(sc, 0.5) - (END_LO + (END_LO + -0.56) / 2) / 2) < 1e-6   # 1-0 km/h: straight line down to END_LO
+    assert abs(out - (-0.46 + -0.51) / 2) < 1e-6
+    assert abs(blend(sc, 5.0) - (-0.60)) < 1e-6 and abs(blend(sc, 4.0) - (-0.56)) < 1e-6
+    assert abs(blend(sc, 1.0) - (-0.38)) < 1e-6
+    assert abs(blend(sc, 0.5) - (END_LO + -0.38) / 2) < 1e-6   # 1-0 km/h: straight line down to END_LO
     out = run(sc, PID, cs(0.0), -0.20, out, 0.4)
     assert abs(out - END_LO) < 1e-6
+
+  def test_the_end_curve_eases_monotonically_and_stays_inside_the_end_ceiling(self):
+    from openpilot.sunnypilot.selfdrive.controls.lib.end_force_limit import CEIL_BP, CEIL_A
+    import numpy as np
+    sc = StoppingController(-2.0)
+    prev = None
+    for v10 in range(81):
+      a = blend(sc, v10 / 10)
+      assert a >= float(np.interp(v10 / 36, CEIL_BP, CEIL_A)) - 1e-9
+      if prev is not None:
+        assert a <= prev + 1e-9   # firmer (or equal) as the speed rises
+      prev = a
 
   def test_the_line_is_a_floor_a_firmer_plan_still_passes(self):
     sc = StoppingController(-2.0)
@@ -62,10 +76,10 @@ class TestEndOfStop:
   def test_a_light_plan_at_entry_starts_the_line_at_end_hi(self):
     sc = StoppingController(-2.0)
     light = END_HI + 0.1
-    out = run(sc, PID, cs(7.0), light, light, 0.5)
+    out = run(sc, PID, cs(10.0), light, light, 0.5)
     assert abs(sc.a_entry - END_HI) < 1e-6
     assert abs(out - END_HI) < 1e-6
-    # the planner's own curve eases off below 5 km/h: the request follows the line, never the plan
+    # the planner's own curve eases off below 8 km/h: the request follows the line, never the plan
     out = run(sc, PID, cs(2.5), -0.10, out, 0.5)
     assert abs(out - blend(sc, 2.5)) < 1e-6
 
@@ -89,7 +103,7 @@ class TestEndOfStop:
 
   def test_above_blend_v_nothing_changes(self):
     sc = StoppingController(-2.0)
-    out = run(sc, PID, cs(12.0), -0.40, -0.40, 0.5)
+    out = run(sc, PID, cs(14.0), -0.40, -0.40, 0.5)
     assert abs(out - (-0.40)) < 1e-6
     assert not sc.end_active
 
