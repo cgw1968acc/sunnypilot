@@ -1,7 +1,7 @@
 import unittest
 
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import (
-  LeadStartAssist, ARM_TIME, FLOOR_MIN, T_MATCH, ACTIVE_TIMEOUT, GAP_MIN_ACTIVE, LEAD_D_MIN)
+  LeadStartAssist, ARM_TIME, FLOOR_MIN, T_MATCH, ACTIVE_TIMEOUT, GAP_MIN_ACTIVE, LEAD_D_MIN, VISION_GO_V, RADAR_GO_V)
 
 DT = 0.05
 
@@ -105,6 +105,26 @@ class TestLeadStartAssist(unittest.TestCase):
     settle(assist)
     assist.update(True, 0.5, True, 3.0, 0.0, -0.5)
     self.assertFalse(assist.armed)
+
+  def test_vision_and_radar_together_start_at_once(self):
+    # owner 2026-10-20: both judge the lead moving -> release on that very frame, no hold time
+    assist = LeadStartAssist(DT)
+    settle(assist)
+    out = assist.update(True, 0.0, True, 3.0, RADAR_GO_V, RADAR_GO_V, a_max=1.65, v_lead_vision=VISION_GO_V)
+    self.assertIsNotNone(out)
+    self.assertTrue(assist.active)
+
+  def test_one_source_alone_does_not_start(self):
+    # radar speed noise with a still camera lead (route 93 22:20:12), and a camera spike with a still radar lead
+    for vr, vv in ((0.30, 0.03), (0.05, 0.19)):
+      assist = LeadStartAssist(DT)
+      settle(assist)
+      for _ in range(40):
+        self.assertIsNone(assist.update(True, 0.0, True, 3.0, vr, vr, a_max=1.65, v_lead_vision=vv))
+    assist = LeadStartAssist(DT)
+    settle(assist)
+    for _ in range(40):  # no confident camera lead: radar speed alone never starts it
+      self.assertIsNone(assist.update(True, 0.0, True, 3.0, 0.4, 0.4, a_max=1.65, v_lead_vision=None))
 
 
 if __name__ == "__main__":

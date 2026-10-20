@@ -24,14 +24,22 @@ accel profile."
 - 22:20:58-22:21:01: the same noise kept the old arming (lead below 0.2 m/s for 0.2 s) from ever completing, so the
   assist never armed; the lead left (0.4 -> 3 m/s) and the stock MPC took 2 s to ask for +0.1, then +0.5..0.7.
 So now: arming needs only ego stopped (any lead speed); the departure is the GAP really opening - filtered gap above
-its minimum since the stop by GO_GAP with the lead speed at least CONFIRM_V, or a clear lead speed (STRONG_V) with the
-gap at least not closing (STRONG_GAP) - held GO_HOLD. On route 93 this rejects 22:20:12 (no false start; the stands
-there show <= 0.05 m of filtered gap noise) and fires 22:20:58.3, 2.3 s before the old plan did; the other four
+its minimum since the stop by GO_GAP with the lead speed at least CONFIRM_V, held GO_HOLD (now the backup, see
+below). On route 93 this rejects 22:20:12 (no false start; the stands there show <= 0.05 m of filtered gap
+noise) and fires 22:20:58.3, 2.3 s before the old plan did; the other four
 launches fire 0.25-0.35 s later than the speed-only trigger did.
 Once it fires the floor is no longer a gentle 0.35-0.5: it asks for the speed difference to the lead over T_MATCH,
 between FLOOR_MIN and the accel profile's own maximum (a_max, from the planner: AccelPersonality, uphill factor), so a
 lead that leaves briskly is followed briskly and one that creeps is followed gently; it hands back to the MPC once ego
 has reached the lead's speed (the gap no longer grows), on a timeout, or if the gap closes.
+
+Owner, same evening: "release the brake the instant BOTH vision and radar judge the lead moving - shortest time, and
+confirmed, no false start". The camera model's own lead speed (modelV2.leadsV3[0].v[0]) is clean on a still lead
+(route 93 p95 <= 0.03 m/s, single-frame spikes to 0.19) where the radar's wanders at 0.15-0.30; the two never crossed
+their thresholds on the same frame while the lead stood. So the primary trigger is now INSTANT: vision >= VISION_GO_V
+and radar >= RADAR_GO_V on the same frame. Route 93 (s): 22:18:14.85 (old speed-only 14.97), 22:20:12 no start,
+22:20:58.00 (old 22:21:00.57), 22:22:15.65 (old 16.11); 22:18:53 vision saw it late (53.55, old 52.92), so the radar gap
+rule above stays as the backup (53.24) and whichever comes first starts the car. The radar-speed-only path is gone.
 """
 from collections import deque
 
@@ -46,13 +54,18 @@ LEAD_JUMP = 1.0  # m, a gap that closes this much in one frame is a different ca
 GAP_TAU = 0.2  # s, low-pass on the radar gap
 GO_GAP = 0.15  # m, filtered gap growth since the stop that counts as a departure ...
 CONFIRM_V = 0.2  # m/s ... with the lead speed at least this
-STRONG_V = 0.45  # m/s, or a lead speed this clear (still-lead radar noise on route 93: <= 0.30) ...
-STRONG_GAP = 0.05  # m ... with the gap at least not closing
-GO_HOLD = 0.1  # s, the departure must hold this long
+VISION_GO_V = 0.12  # m/s, camera lead speed that counts as moving ...
+RADAR_GO_V = 0.15  # m/s ... together with the radar lead speed on the same frame: start at once
+VISION_PROB_MIN = 0.5  # the camera lead must be this certain
+GO_HOLD = 0.1  # s, the gap rule (the backup) must hold this long
 GROWTH_WINDOW = 1.5  # s: growth is measured from the smallest gap of this last window, so a slow drift over a long
                      # stand (route 93 22:20:16-59: 0.4 m in 40 s) never adds up to a departure
 GAP_MIN_ACTIVE = 2.3  # m, release the floor if the (filtered) gap gets this small ...
-GAP_MIN_START = 2.4  # m ... and start only from this (one radar dip must not cut a launch that just began)
+GAP_MIN_START = 2.4  # m ... and start only from this (one radar dip must not cut a launch that just began) -
+                     # for the gap rule; when camera AND radar both see the lead move, any gap from LEAD_D_MIN starts
+                     # it (route 93 22:20:58: stopped 2.1 m back) and only a gap that shrinks GAP_SHRINK below the
+                     # one at the start (or below LEAD_D_MIN) ends it
+GAP_SHRINK = 0.2  # m
 LEAD_CLOSING_V_REL = -0.25  # m/s, release once ego is clearly faster than the lead
 T_MATCH = 0.5  # s, floor = (lead speed - ego speed) / T_MATCH ...
 FLOOR_MIN = 0.5  # m/s^2 ... at least this while ego is still slower than the lead ...
@@ -74,16 +87,18 @@ class LeadStartAssist:
     self.t_go = 0.0
     self.d_prev: float | None = None
     self.t_active: float | None = None
+    self.d_start = 0.0
 
   @property
   def active(self) -> bool:
     return self.t_active is not None
 
   def update(self, allowed: bool, v_ego: float, lead_present: bool, d_rel: float, v_lead: float, v_rel: float,
-             a_max: float | None = None) -> float | None:
+             a_max: float | None = None, v_lead_vision: float | None = None) -> float | None:
     """Returns the acceleration floor to apply this cycle, or None when the assist has nothing to say.
 
-    v_rel follows radarState: positive when the lead is faster than ego. a_max: the accel profile's limit."""
+    v_rel follows radarState: positive when the lead is faster than ego. a_max: the accel profile's limit.
+    v_lead_vision: the camera model's lead speed (None when it has no confident lead)."""
     lead_jumped = self.d_prev is not None and self.d_prev - d_rel > LEAD_JUMP
     if not allowed or not lead_present or not (LEAD_D_MIN <= d_rel <= LEAD_D_MAX) or lead_jumped or v_ego > V_EGO_MAX:
       self.reset()
@@ -96,7 +111,7 @@ class LeadStartAssist:
       self.t_active += self.dt
       # release once ego has caught the lead's speed, timed out, the gap is too small or shrinking (pushing INTO a
       # lead that did not really depart)
-      if (v_ego >= v_lead or self.t_active > ACTIVE_TIMEOUT or self.d_f < GAP_MIN_ACTIVE or
+      if (v_ego >= v_lead or self.t_active > ACTIVE_TIMEOUT or self.d_f < min(GAP_MIN_ACTIVE, self.d_start - GAP_SHRINK) or
           v_rel < LEAD_CLOSING_V_REL or d_rel < self.d_stop - 0.3):
         self.reset()
         return None
@@ -117,10 +132,12 @@ class LeadStartAssist:
     # armed: ego has stood, watch for the gap to really open
     self._track_gap()
     growth = self.d_f - self.d_stop
-    departing = (growth >= GO_GAP and v_lead >= CONFIRM_V) or (v_lead >= STRONG_V and growth >= STRONG_GAP)
-    self.t_go = self.t_go + self.dt if departing else 0.0
-    if self.t_go >= GO_HOLD - 1e-6 and self.d_f >= GAP_MIN_START:
+    both_see_it = v_lead_vision is not None and v_lead_vision >= VISION_GO_V and v_lead >= RADAR_GO_V
+    gap_departure = growth >= GO_GAP and v_lead >= CONFIRM_V
+    self.t_go = self.t_go + self.dt if gap_departure else 0.0
+    if (both_see_it and self.d_f >= LEAD_D_MIN) or (self.t_go >= GO_HOLD - 1e-6 and self.d_f >= GAP_MIN_START):
       self.t_active = 0.0
+      self.d_start = self.d_f
       return self._floor(v_ego, v_lead, a_max)
     return None
 

@@ -23,6 +23,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolve
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 from openpilot.sunnypilot.models.helpers import get_active_bundle
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
+from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import VISION_PROB_MIN as LEAD_START_VISION_PROB
 from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedRamp
 from openpilot.sunnypilot.selfdrive.controls.lib.slope_cruise import SlopeCruise
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.accel_controller import AccelProfile
@@ -311,8 +312,11 @@ class LongitudinalPlannerSP:
     from openpilot.selfdrive.controls.lib.longitudinal_planner import get_max_accel
     a_max = self.max_accel_sp(self.get_max_accel_override(v_ego, sm['carStateSP'].engineOff), sm)
     a_max = get_max_accel(v_ego) if a_max is None else a_max
+    leads_v3 = sm['modelV2'].leadsV3
+    v_lead_vision = float(leads_v3[0].v[0]) if len(leads_v3) and len(leads_v3[0].v) and \
+      leads_v3[0].prob >= LEAD_START_VISION_PROB else None
     a_start = self.lead_start_assist.update(assist_allowed, v_ego, lead_one.present, lead_one.dRel, lead_one.vLead, lead_one.vRel,
-                                            a_max=a_max)
+                                            a_max=a_max, v_lead_vision=v_lead_vision)
     if a_start is not None and a_start > output_a_target:
       return a_start, False
     return output_a_target, output_should_stop
