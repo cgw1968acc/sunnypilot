@@ -168,6 +168,10 @@ class Controls(ControlsExt):
     accel_shaped = self.lead_brake_boost.update(accel_shaped, CS.vEgo, CS.standstill, lead_one, CC.longActive,
                                                 pid_accel_limits[0], a_ego=CS.aEgo,
                                                 hold_off=self.stop_gap_hold.roll_out is not None)
+    # tncr: +0.2 m/s^2 on braking 30-10 km/h (gone by 6 km/h, before the end ceiling below)
+    accel_shaped = self.mid_speed_brake_add.update(accel_shaped, CS.vEgo, CS.standstill, CC.longActive, pid_accel_limits[0],
+                                                   hold_off=self.stop_gap_hold.roll_out is not None or
+                                                   self.stop_gap_close.active)
     # owner's end-force rule, last: never firmer than the end ceiling (Cross: -2.0 at 5 km/h -> -0.34 at 0, and the
     # anchored line below 2 km/h), whatever asked for more - the roll guard included (2026-10-15 evening: its exemption
     # put 4120 N on at 2.7 km/h and the car stopped with a jolt); the standstill hold then firms up at HOLD_RATE
