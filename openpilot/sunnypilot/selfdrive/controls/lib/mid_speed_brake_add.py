@@ -20,7 +20,7 @@ from openpilot.common.realtime import DT_CTRL
 # request. Off while the stop-gap roll guard or the gap-close crawl drives the request, and never below accel_min.
 # Runs before end_force_limit, which stays the last stage.
 ENABLED = True
-ADD = 0.2                                    # m/s^2
+ADD = 0.1                                    # m/s^2. Owner, same day after 0.2: "a bit too heavy, halve it"
 V_BP = [6.0 / 3.6, 10.0 / 3.6, 30.0 / 3.6, 35.0 / 3.6]  # m/s
 V_W = [0.0, 1.0, 1.0, 0.0]
 REQ_LO = -0.3                                # m/s^2: lighter than this, no add
