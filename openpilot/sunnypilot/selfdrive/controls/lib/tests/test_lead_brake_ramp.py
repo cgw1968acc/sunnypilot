@@ -51,7 +51,18 @@ def test_braking_lead_starts_soft_then_builds_steadily_to_the_need():
   assert max(steps) <= R.J_ON * DT_CTRL + 1e-9 and min(steps) >= -1e-9   # monotonic, no release on the way
 
 
-def test_a_firmer_plan_passes_up_to_the_cap_and_a_lighter_one_is_firmed():
+def test_cap_is_off_a_firmer_plan_always_passes():
+  # route 000000a3 21:08:55: the cap sent -1.81 for a -2.08 plan and the stop ended 1.2 m behind the lead
+  assert R.CAP is False
+  c = R.LeadBrakeRamp()
+  ld = lead(24.0, 12.5, -3.0)
+  run(c, 300, 0.0, 12.5, ld)
+  for plan in (-1.8, -2.0, -2.5, -2.9):                                      # all firmer than the need (1.66)
+    assert c.update(plan, 12.5, False, ld, True, -3.5) == plan
+
+
+def test_a_firmer_plan_passes_up_to_the_cap_and_a_lighter_one_is_firmed(monkeypatch):
+  monkeypatch.setattr(R, "CAP", True)
   c = R.LeadBrakeRamp()
   ld = lead(24.0, 12.5, -3.0)
   need = R.brake_need(12.5, 24.0, 12.5, -3.0)
@@ -62,7 +73,8 @@ def test_a_firmer_plan_passes_up_to_the_cap_and_a_lighter_one_is_firmed():
   assert c.update(-3.2, 12.5, False, ld, True, -3.5) == -3.2                # an emergency is never held back
 
 
-def test_disarming_opens_the_cap_gradually():
+def test_disarming_opens_the_cap_gradually(monkeypatch):
+  monkeypatch.setattr(R, "CAP", True)
   # route 0000009e 20:11:04: the cap vanished at the disarm and the request stepped 0.15 firmer
   c = R.LeadBrakeRamp()
   ld = lead(24.0, 12.5, -3.0)

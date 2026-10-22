@@ -48,7 +48,12 @@ J_OFF = 0.5                # m/s^3: easing while armed when the need gets lighte
 J_REL = 1.5                # m/s^3: letting go once disarmed
 V_ON = 20.0 / 3.6          # m/s: arms only above this
 V_FADE = [6.0 / 3.6, 10.0 / 3.6]  # m/s: hands the stop to the stop chain
-CAP = True                 # also hold a firmer plan back to the need (x CAP_K + CAP_ADD)
+# CAP OFF (route 000000a3 21:08:53-57, true time, owner bookmark 21:09 "the end lacked force, almost hit the lead"): the
+# lead stopped from 30 km/h in ~4 s, harder than its filtered aLeadK (-1.6..-2.4) said, so the need was underestimated
+# and the cap held the plan back by ~0.2 for 4 s (plan -1.95..-2.08, sent -1.72..-1.88; e.g. 21:08:55.01 cap -1.82, sent
+# -1.81). The car reached 3.5 km/h only 2.8 m behind, the end ceiling (-0.37 at 2-3 km/h) could not stop it on the creep
+# and the driver braked at 1.2 m. Never send less than the planner asks: the layer may only start earlier / be firmer.
+CAP = False                # (was True) also hold a firmer plan back to the need (x CAP_K + CAP_ADD)
 CAP_K = 1.15
 CAP_ADD = 0.2              # m/s^2
 # The cap is a level that moves at limited rates, never a switch (route 0000009e 20:11:04, true time: when the lead
