@@ -50,19 +50,6 @@ CEIL_TOP = CEIL_A[-1]
 STALL_V = 0.5 / 3.6    # m/s
 STALL_A = -0.1         # m/s^2
 STALL_T = 0.3          # s
-# Short-gap safety exception (owner 2026-10-22 night, "try the safety exception"). Route 000000a3 21:08:59-21:09:01 (true
-# time, bookmark 21:09): the car reached 3.5 km/h only 2.8 m behind a stopped lead; the plan asked -0.69..-0.93 but the
-# ceiling held -0.37, the Cross kept ~2 km/h on its creep (aEgo ~0) from 2.5 m to 1.2 m and the driver had to brake
-# (stopped 1.0 m back). Only when the car is still rolling and, at the decel it is actually getting, would stop closer
-# than SAFE_GAP to the lead, the request may go firmer than the ceiling - built from the ceiling at EXC_RATE (no bite),
-# never firmer than the request itself nor EXC_MAX - until the car stands or the predicted stop is back beyond
-# SAFE_GAP_OFF. Ordinary stops (3-3.5 m, the car already decelerating) never meet it.
-SAFE_GAP = 2.0         # m: predicted stop gap that opens the exception
-SAFE_GAP_OFF = 2.5     # m: ... and closes it again
-EXC_B_MIN = 0.3        # m/s^2: the decel assumed when the car is barely slowing (what -0.37 normally gives)
-EXC_D_MAX = 3.0        # m: and only once the lead is this close (crawls 4-5 m out are stop_gap_close's job)
-EXC_RATE = 2.0         # m/s^3: how fast the exception may firm beyond the ceiling
-EXC_MAX = -1.2         # m/s^2
 
 
 class EndForceLimit:
@@ -74,10 +61,8 @@ class EndForceLimit:
     self.v_line = V_LINE # speed at the anchor
     self.out = None      # last limited output (None = not limiting)
     self.stall_t = 0.0
-    self.exc = None      # short-gap exception: the firmest request it allows now (None = closed)
 
-  def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0,
-             lead_d: float | None = None) -> float:
+  def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0) -> float:
     if not long_active or accel >= 0.0:
       self.reset()
       return accel
@@ -91,26 +76,6 @@ class EndForceLimit:
         return accel
       return self.out
 
-    limited = self._limit(accel, v_ego, a_ego)
-    return self._short_gap(accel, limited, v_ego, a_ego, lead_d)
-
-  def _short_gap(self, request: float, limited: float, v_ego: float, a_ego: float, lead_d: float | None) -> float:
-    if lead_d is None or v_ego > CEIL_V:
-      self.exc = None
-      return limited
-    stop_gap = lead_d - v_ego ** 2 / (2.0 * max(-a_ego, EXC_B_MIN))
-    if self.exc is None and (request >= limited or stop_gap >= SAFE_GAP or lead_d >= EXC_D_MAX):
-      return limited
-    if self.exc is not None and stop_gap > SAFE_GAP_OFF:
-      self.exc = None
-      return limited
-    start = limited if self.exc is None else self.exc
-    # firms from the ceiling at EXC_RATE up to the request; follows a lighter request (the plan eases smoothly)
-    self.exc = max(start - EXC_RATE * DT_CTRL, request, EXC_MAX)
-    self.out = self.exc
-    return self.exc
-
-  def _limit(self, accel: float, v_ego: float, a_ego: float) -> float:
     ceil_in = accel
     if v_ego <= CEIL_V:  # the fixed ceiling line (never firmer, whatever asked for it)
       ceil = float(np.interp(max(v_ego, 0.0), CEIL_BP, CEIL_A))

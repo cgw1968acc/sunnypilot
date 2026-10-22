@@ -64,13 +64,9 @@ DESIRED_DIST_TRIM_V = [1.0, 0.0, 0.0, -2.5]  # m taken OFF the desired distance 
 # soon as the lead is nearly stopped (below DYN_V_LEAD_OFF: the stop point is known, the car still has 15-20 km/h to
 # settle to the normal 3-3.5 m without creeping), when the lead pulls away, or when we stop. Why dynamic: the static
 # +2..+5 m made every stop start early and the slow-lead stops end 5-6 m out (sim 6b 09:19:54: 6.07 m), and the Cross
-# cannot creep that in. Owner 2026-10-22: halved (+2/+5 -> +1/+2.5 m), the follow behind a braking lead was too loose.
-# Owner, same night: "braking at mid/high speed feels odd - tonight's changes must not touch 50 km/h and up" -> the
-# halving stays below 50 km/h only; from the 50 km/h node up the original +5 m (fading to 0 at 70) is back.
+# cannot creep that in.
 DYN_GAP_BP = [20.0 / 3.6, 30.0 / 3.6, 40.0 / 3.6, 50.0 / 3.6, 70.0 / 3.6]  # m/s planned ego speed per node
-# Owner 2026-10-22 22:09 bookmark: "the stop is not as smooth as before, bring back this morning's perfect stop feel"
-# -> back to the cross-hybrid-baseline-2 values (the halving below 50 km/h is undone too).
-DYN_GAP_V = [0.0, 2.0, 5.0, 5.0, 0.0]  # m ADDED at full urgency (= baseline-2)
+DYN_GAP_V = [0.0, 2.0, 5.0, 5.0, 0.0]  # m ADDED at full urgency
 DYN_A0 = -0.8        # m/s^2 lead decel: no add while the lead brakes lighter than this
 DYN_A1 = -2.0        # m/s^2: full add from here
 DYN_RATE_ON = 4.0    # 1/s: 0.25 s to full

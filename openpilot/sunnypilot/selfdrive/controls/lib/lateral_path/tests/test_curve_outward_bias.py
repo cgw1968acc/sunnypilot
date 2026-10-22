@@ -39,10 +39,8 @@ class TestCurveOutwardBias(unittest.TestCase):
 
   def test_schedule_is_monotonic_and_bounded(self):
     self.assertEqual(list(CURVE_OUTWARD_V_BP), sorted(CURVE_OUTWARD_V_BP))
-    # monotonic except 60 -> 70 km/h: the owner raised 50-60 by 0.01 on 2026-10-22 (60: 0.095, 70 stays 0.09)
-    f = list(CURVE_OUTWARD_FRAC_V)
-    self.assertTrue(all(b >= a for i, (a, b) in enumerate(zip(f, f[1:], strict=False)) if i != 3))
-    self.assertEqual([round(f, 3) for f in CURVE_OUTWARD_FRAC_V], [-0.05, 0.02, 0.07, 0.095, 0.09, 0.155, 0.155, 0.155])  # 10-22: 50-60 +0.01
+    self.assertEqual(list(CURVE_OUTWARD_FRAC_V), sorted(CURVE_OUTWARD_FRAC_V))
+    self.assertEqual([round(f, 3) for f in CURVE_OUTWARD_FRAC_V], [-0.05, 0.02, 0.06, 0.085, 0.09, 0.155, 0.155, 0.155])
     self.assertGreaterEqual(min(CURVE_OUTWARD_FRAC_V), -0.1)
     self.assertLessEqual(max(CURVE_OUTWARD_FRAC_V), 0.25)
     for k in (0.05, -0.05):

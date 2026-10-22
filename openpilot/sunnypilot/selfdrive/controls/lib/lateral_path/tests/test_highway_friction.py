@@ -18,13 +18,10 @@ def _params(friction=0.1):
 
 
 def test_schedule():
-  # tncr 2026-10-22: starts at 80 km/h (was 60); 1.4 at 90 (was 70); 100/110 unchanged
   assert get_highway_friction_scale(50 / 3.6) == 1.0
-  assert get_highway_friction_scale(70 / 3.6) == 1.0
-  assert get_highway_friction_scale(80 / 3.6) == 1.0
-  assert abs(get_highway_friction_scale(85 / 3.6) - 1.2) < 1e-9
-  assert get_highway_friction_scale(90 / 3.6) == 1.4
-  assert abs(get_highway_friction_scale(95 / 3.6) - 1.45) < 1e-9
+  assert abs(get_highway_friction_scale(65 / 3.6) - 1.2) < 1e-9
+  assert get_highway_friction_scale(70 / 3.6) == 1.4
+  assert abs(get_highway_friction_scale(85 / 3.6) - 1.45) < 1e-9
   assert get_highway_friction_scale(100 / 3.6) == 1.5
   assert abs(get_highway_friction_scale(105 / 3.6) - 1.55) < 1e-9
   assert get_highway_friction_scale(110 / 3.6) == 1.6
