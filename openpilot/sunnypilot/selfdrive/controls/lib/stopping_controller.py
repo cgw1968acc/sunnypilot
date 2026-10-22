@@ -152,7 +152,10 @@ class StoppingController:
   # end_force_limit ceiling. Then (owner: "not even a little feeling of the brake letting go") 8 -> 3 km/h is one
   # straight ease END_HI -> -0.37 (was -0.65/-0.64/-0.63/-0.60/-0.56 then -0.37: -0.19 in the last 1 km/h, ~0.34 m/s^3;
   # now ~0.056 per km/h, ~0.1 m/s^3 at -0.5)
-  END_CURVE_A = [END_LO, -0.36, -0.37, -0.37, -0.43, -0.48, -0.54, -0.59, END_HI]  # m/s^2
+  # Owner after driving it: "the part you proposed is too heavy - lighter, but not back to the old one". 8 km/h stays the
+  # firm point END_HI; 7..4 km/h lighter by 0.02-0.04, the ease a little faster just below 8 km/h and gentler toward
+  # 3 km/h (steps 0.08 / 0.07 / 0.05 / 0.05 / 0.03 per km/h, at most ~0.15 m/s^3 at -0.5; the old 4 -> 3 step was 0.19)
+  END_CURVE_A = [END_LO, -0.36, -0.37, -0.37, -0.40, -0.45, -0.50, -0.57, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   # The line is for the END of a stop. tncr, owner 2026-10-15 night (route 00000075 20:59:40, stopped 7.5 m out, bookmark 1):
   # at 9.6 km/h the lead was still 12 m ahead rolling to its stop; the plan eased to -0.3 (roll on to 3 m), but the line
