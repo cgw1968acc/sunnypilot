@@ -52,7 +52,8 @@ LEAD_V_MAX = 0.5           # m/s: lead treated as stopped
 GAP_TRIGGER = 3.5          # m (radar dRel): predicted stop beyond this -> close the gap (tncr 4.0 -> 3.5, owner 10-15:
                            # ideal 3-3.5 m, beyond 3.5 ease slowly / creep-adjust)
 GAP_TARGET = 3.1           # m: aim of the final stop (owner: 3-3.5 m; the sim ends ~0.2 m beyond it)
-TAPER_ROLL = 0.25          # m: the 2 -> 0 km/h taper to -0.30 (end_force_limit) rolls a little further: aim short of it
+TAPER_ROLL = 0.75          # m: the 2 -> 0 km/h taper to -0.30 (end_force_limit) rolls a little further: aim short of it
+                           # (0.25 -> 0.75 2026-10-22 with the owner's -0.37 end line below 3 km/h: sim min gap 2.11 -> 2.62 m)
 B_MIN = 0.3                # m/s^2: floor of the decel used in the prediction
 B_PRED_MAX = 0.9           # m/s^2: and its cap (route 00000159 09:14:41: -1.14 at 12 km/h and 9.3 m predicted 4.4 m,
                            # the stop ended 2.8 m)

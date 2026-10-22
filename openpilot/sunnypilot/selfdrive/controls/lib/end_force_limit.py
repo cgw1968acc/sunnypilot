@@ -39,8 +39,12 @@ HOLD_RATE = 0.5        # m/s^3: after the stop, toward the standstill hold
 # -1.2 at 3, -0.60 at 2, -0.38 at 1, -0.34 at 0 (1.4 km/h -0.47, 0.5 km/h -0.36). Note the -1.67 on 17:16 was not a
 # request: the request was already -0.75 -> -0.37 over the last 1.4 km/h; it was the pressure left from the 4120 N
 # spike at 2.7 km/h (the guard, now capped at 3 km/h to -1.2 ~ 1700 N) that the PCM could not release in 0.3 s.
+# tncr 2026-10-22, owner after ed30444a37 (sim of a stop: -0.39 at 3, -0.45 at 2, -0.38 at 1 km/h): "3 km/h -0.37, 2 km/h
+# -0.37, 1 km/h -0.36, 0 km/h -0.34 - put it in, I want to see the effect". The ceiling below 3 km/h is now that line
+# (was -1.2 / -0.60 / -0.38 / -0.34); 3 -> 5 km/h still opens to -2.0. A ceiling only: a lighter request stays lighter
+# (item 0 - nothing raises the force before the stop).
 CEIL_BP = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 5.0 / 3.6]  # m/s
-CEIL_A = [-0.34, -0.38, -0.60, -1.2, -2.0]                  # m/s^2 (CEIL_A[0] must equal END_ACCEL)
+CEIL_A = [-0.34, -0.36, -0.37, -0.37, -2.0]                 # m/s^2 (CEIL_A[0] must equal END_ACCEL)
 CEIL_V = CEIL_BP[-1]
 CEIL_TOP = CEIL_A[-1]
 STALL_V = 0.5 / 3.6    # m/s

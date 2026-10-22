@@ -73,12 +73,13 @@ def test_far_stop_rolls_on_steadily_into_the_window():
       for creep in (0.20, 0.25, 0.30):
         gap, hist = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau, t_max=40.0)
         if v0 > 8.0:
-          assert 3.0 <= gap <= 4.5, (v0, tau, creep, gap)  # tncr: held while it ends 3.35-3.8 m; the slowest plant overshoots a bit
+          # 2026-10-22 owner end line -0.37 below 3 km/h: lower bound 3.0 -> 2.5; tncr:
+          assert 2.5 <= gap <= 4.5, (v0, tau, creep, gap)  # held while it ends 3.35-3.8 m; the slowest plant overshoots a bit
         else:  # tncr: a late trigger eases at only 0.3 m/s^3 - it closes less, but never ends farther than without it
           stop_gap_close.ENABLED = False
           gap_off, _ = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
           stop_gap_close.ENABLED = True
-          assert 3.0 <= gap <= gap_off + 0.05, (v0, tau, creep, gap, gap_off)
+          assert 2.5 <= gap <= gap_off + 0.05, (v0, tau, creep, gap, gap_off)
         assert len(hist) < (1200 if v0 <= 12.0 and v0 > 8.0 else 1600), (v0, tau, creep)  # it does stop (no endless crawl; tncr's slow
         # ease makes a 6 km/h late trigger with the strongest creep torque take up to ~15 s at the -0.34 end)
         lo, rise = 99.0, 0.0
@@ -139,7 +140,8 @@ def test_tncr_eases_slowly_and_never_coasts():
   # route 00000069 00:40:20.7: -1.05 at 10 km/h, 8.9 m. f908530 eased -1.06 -> -0.58 in 0.4 s; now at most 0.3 m/s^3
   for tau in (0.35, 0.6, 0.9):
     _, hist = sim(10.1 / 3.6, 8.9, plain=-1.05, tau=tau)
-    above = [(v, cmd) for v, cmd, _ in hist if v > 2.0 / 3.6]
+    # above 5 km/h: below it the end ceiling (-0.37 from 3 km/h, owner 2026-10-22) may lighten it faster
+    above = [(v, cmd) for v, cmd, _ in hist if v > 5.0 / 3.6]
     for (_, c0), (_, c1) in zip(above, above[1:], strict=False):
       assert c1 - c0 <= stop_gap_close.RELEASE_RATE * 0.01 + 1e-9
     assert min(cmd for _, cmd in above) <= -0.3 and max(cmd for _, cmd in above) <= -0.3 + 1e-9  # no coast above 2 km/h
@@ -197,9 +199,9 @@ def test_tncr_takes_over_only_below_18kph_and_keeps_its_limit():
   # eased by itself, the car slid and then firmed to -1.5 at the end (owner: 1 bookmark each). The 3-bookmark stops
   # that day all began it at <= 17.5 km/h. From 25 km/h the plain plan brakes alone down to V_MAX, then it closes.
   gap, hist = sim(25.0 / 3.6, 30.0, plain=-1.2, t_max=40.0)
-  assert 3.2 <= gap <= 3.6, gap
+  assert 3.1 <= gap <= 3.6, gap
   assert not any(a for v, _, a in hist if v > stop_gap_close.V_MAX + 0.01)  # never above 18 km/h
-  above = [cmd for v, cmd, _ in hist if v > 2.0 / 3.6]
+  above = [cmd for v, cmd, _ in hist if v > 5.0 / 3.6]
   assert all(c1 - c0 <= stop_gap_close.RELEASE_RATE * 0.01 + 1e-9 for c0, c1 in zip(above, above[1:], strict=False))
   assert all(a for v, _, a in hist if 3 / 3.6 < v < 17 / 3.6)             # never handed back mid-stop
 

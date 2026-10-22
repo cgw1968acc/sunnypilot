@@ -8,7 +8,7 @@ def ceil(kph):
 
 def test_line_from_2kph_to_minus_030():
   e = EndForceLimit()
-  assert e.update(-0.92, 2.8 / 3.6, False, True) == -0.92        # above the 2 km/h line, under the ceiling: untouched
+  assert e.update(-0.92, 2.8 / 3.6, False, True) == ceil(2.8)    # above the 2 km/h line: the ceiling (-0.37, owner 10-22)
   assert e.update(-0.80, 2.0 / 3.6, False, True) == ceil(2.0)    # tncr: the ceiling (-0.60) caps it; a_line = -0.60
   out = e.update(-0.70, 1.0 / 3.6, False, True)                  # 18:51: -0.70 at 1.4 km/h asked -> ceiling -0.38
   assert abs(out - max(ceil(1.0), END_ACCEL + (ceil(2.0) - END_ACCEL) * 0.5)) < 1e-9
@@ -61,12 +61,15 @@ def test_fixed_ceiling_from_5kph_caps_everything():  # tncr 2026-10-15 evening: 
   e = EndForceLimit()
   assert e.update(-2.7, 6.0 / 3.6, False, True) == -2.7                       # above 5 km/h: untouched
   # owner: 5 km/h may still need a firm brake; the last 1-0 km/h must be below -0.6, best -0.34
-  for kph, want in ((5.0, -2.0), (4.0, -1.6), (3.0, -1.2), (2.0, -0.60), (1.4, -0.468), (1.0, -0.38), (0.5, -0.36), (0.0, END_ACCEL)):
+  # 2026-10-22 owner: 3 -0.37, 2 -0.37, 1 -0.36, 0 -0.34 (below 2 km/h the line from the 2 km/h anchor: 1 km/h -0.355)
+  for kph, want in ((5.0, -2.0), (4.0, -1.185), (3.0, -0.37), (2.0, -0.37), (1.4, -0.361), (1.0, -0.355), (0.5, -0.3475),
+                    (0.0, END_ACCEL)):
     out = e.update(-2.7, kph / 3.6, False, True)
     assert abs(out - want) < 0.005, (kph, out)
   e2 = EndForceLimit()
   assert e2.update(-0.65, 5.0 / 3.6, False, True) == -0.65                    # an ordinary end (END curve) never touches it
-  assert e2.update(-0.60, 3.0 / 3.6, False, True) == -0.60
+  assert e2.update(-0.60, 3.5 / 3.6, False, True) == -0.60                    # -0.78 ceiling at 3.5 km/h
+  assert e2.update(-0.60, 3.0 / 3.6, False, True) == -0.37                    # owner line from 3 km/h
   e3 = EndForceLimit()                                                        # into the standstill hold without a step
   e3.update(-2.7, 1.0 / 3.6, False, True)
   assert e3.update(-2.7, 0.0, False, True) == END_ACCEL
