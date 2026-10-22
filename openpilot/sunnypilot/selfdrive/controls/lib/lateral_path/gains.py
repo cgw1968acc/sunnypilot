@@ -24,7 +24,9 @@ KP_INTERP_TN = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, KP]  # Altis: [.., 6.0, 3
 # AGAINST the model-driven swing (friction x0.5: +11% 0.3-1 Hz torque, x0 +21%), and friction x1.3 lowered every
 # measure (0.3-1 Hz -7%, 1-3 Hz -8%, torque rate -6%) while adding no lag. Applied on top of whatever friction torqued /
 # the override set, above HWY_FRICTION_BP; centering, gains and the path are untouched.
-HWY_FRICTION_BP = [60.0 / 3.6, 70.0 / 3.6, 100.0 / 3.6, 110.0 / 3.6]  # m/s
+# tncr, owner 2026-10-22 night: "start increasing only from 80 km/h" -> the ramp start moves 60 -> 80 km/h and the
+# first step 70 -> 90 km/h (same slope as before); 100 and 110 km/h unchanged. Up to 80 km/h the friction is torqued's own.
+HWY_FRICTION_BP = [80.0 / 3.6, 90.0 / 3.6, 100.0 / 3.6, 110.0 / 3.6]  # m/s (was 60/70/100/110)
 # 1.3 -> 1.4 (owner 2026-10-08, after the 00:07 "excellent" drive at 1.3 = tag altis-highway-lateral-baseline-1:
 # "raise the highway friction a little, I'll try it"; open-loop 00000110 vs 1.3: 0.3-1 Hz -3%, 1-3 Hz -3%, rate -3%).
 # 70 -> 100 km/h: 1.4 -> 1.5, flat above (owner 2026-10-13 night, after an "ideal" lateral drive: "can friction keep
