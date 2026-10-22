@@ -1,7 +1,20 @@
 import types
 
+import pytest
+
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.controls.lib import lead_brake_ramp as R
+
+
+@pytest.fixture(autouse=True)
+def _enabled(monkeypatch):
+  # the layer ships off (ENABLED = False); the tests check its logic with it on
+  monkeypatch.setattr(R, "ENABLED", True)
+
+
+def test_ships_off():
+  import importlib
+  assert importlib.reload(R).ENABLED is False
 
 
 def lead(d, v, a, present=True):

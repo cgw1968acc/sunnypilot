@@ -34,7 +34,10 @@ from openpilot.common.realtime import DT_CTRL
 #   lead slows 45 -> 25 km/h at -1.5: -1.66 with a 1.87 release-and-brake-again -> -1.34 in one build
 #   lead brake taps (-1.2 for 0.6 s at 45, -1.0 for 1 s at 60): command -0.20/-0.28 -> -0.41/-0.54 briefly, lowest speed
 #   unchanged (42.5 / 56.1 km/h); no case makes the brake firmer again below 10 km/h, the 1-3 km/h end is unchanged.
-ENABLED = True
+# OFF (2026-10-22 ~21:30): with the cap off (see CAP) the early ramp alone ends lead stops too far back in the closed-loop
+# sim (45 km/h lead -2: 4.81 m, 25/-2: 4.55 m, 50/-1.5: 3.91 m, 30/-2.5: 3.77 m vs 3.71/4.03/3.73/3.12 without the layer),
+# and with the cap it stopped 1.2 m behind on the road (route 000000a3 21:09). Off until reworked and road-approved.
+ENABLED = False
 ARM_A = -0.8               # m/s^2: lead decel that arms it (same as the dynamic gap's DYN_A0)
 DISARM_A = -0.3            # m/s^2: a moving lead no longer braking harder than this lets go (a brake tap)
 LEAD_STOPPED_V = 2.0       # m/s: ... but a lead (nearly) stopped keeps it (its aLeadK decays to 0 once it stands)
