@@ -109,10 +109,14 @@ class LeadBrakeRamp:
     w = float(np.interp(v_ego, V_FADE, [0.0, 1.0]))
     if hold_off or w <= 0.0:
       return accel
-    shaped = min(accel, self.ramp)
+    # only a braking ramp may firm the request: ramp == 0 must never touch it (7e45d71/94d2370 took min(accel, 0) and
+    # capped every acceleration above 6 km/h at 0 - route 000000a1 20:54:28-32, plan +0.6..+1.7, sent 0.00 at 10 km/h)
+    shaped = min(accel, self.ramp) if self.ramp < 0.0 else accel
     self._update_cap(shaped, b, accel <= CAP_OFF_A)
     if self.cap is not None:
       shaped = max(shaped, self.cap)
+    if shaped == accel:
+      return accel
     return max(accel + w * (shaped - accel), accel_min)
 
   def _update_cap(self, shaped: float, b: float, emergency: bool) -> None:

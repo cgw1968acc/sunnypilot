@@ -15,6 +15,21 @@ def run(ctrl, n, accel, v, ld):
   return out
 
 
+def test_acceleration_is_never_touched():
+  # route 000000a1 20:54:28-32: the plan asked +0.6..+1.7 at 10 km/h and 0.00 was sent (min(accel, ramp=0))
+  c = R.LeadBrakeRamp()
+  for v in (2.0, 3.0, 5.0, 12.5, 25.0):
+    for a in (0.3, 1.0, 1.7):
+      assert c.update(a, v, False, lead(30.0, v + 3.0, 1.5), True, -3.5) == a       # lead pulling away
+      assert c.update(a, v, False, lead(30.0, v, 0.0), True, -3.5) == a             # steady lead
+      assert c.update(a, v, False, lead(0.0, 0.0, 0.0, present=False), True, -3.5) == a   # no lead
+  # after a braking episode, once disarmed and let go, acceleration passes untouched again
+  ld = lead(24.0, 12.5, -3.0)
+  run(c, 200, -1.0, 12.5, ld)
+  run(c, 300, 0.5, 12.5, lead(30.0, 15.0, 1.0))
+  assert c.update(1.2, 12.5, False, lead(30.0, 15.0, 1.0), True, -3.5) == 1.2
+
+
 def test_steady_follow_does_nothing():
   c = R.LeadBrakeRamp()
   assert run(c, 200, 0.0, 12.5, lead(24.0, 12.5, 0.0)) == 0.0
