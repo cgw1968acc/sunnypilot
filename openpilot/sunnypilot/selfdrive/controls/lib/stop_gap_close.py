@@ -106,6 +106,14 @@ RETURN_FIRM_RATE = [5.0, 2.0]  # m/s^3
 # linearly to the value above over RETURN_FIRM_RAMP_T
 RETURN_FIRM_START = 1.0        # m/s^3
 RETURN_FIRM_RAMP_T = 0.3       # s
+# tncr 2026-10-22, route 00000096 09:19 (engaged at 8.9 km/h, scooter 17.8 m ahead, 1.4 deg uphill; offline replay of the
+# controlsd chain matches the logged command): this stage turned the plan's -0.10 into -0.35 (b = 0.22 for 3.35 m, plus
+# the 9-13 km/h delivery hole 0.15 and the firm-only decel feedback), while below 7 km/h the car gave -0.60..-0.74 for
+# -0.25 - three times the decel it needed - and stopped at 9.7 m. So: never firmer than the plain request while the car
+# ALREADY decelerates at least b (filtered aEgo); it may firm beyond the plan again only once the decel falls
+# ENOUGH_HYST below b. A state gate on the measured decel, not a proportional loop (two-sided feedback pumped on the
+# Cross). The end of the stop (END_ACCEL -0.34 below V_END / ROOM_END) and end_force_limit are unchanged.
+ENOUGH_HYST = 0.03         # m/s^2 (sim: 0.1 held the plan too long on a flat stop, then -0.76 at the end)
 JUMP_D = 1.0               # m: a dRel step this large in one frame = a different / flickering lead
 LEAD_LOST_T = 0.3          # s
 
@@ -146,10 +154,12 @@ class StopGapClose:
     self.v_f = None
     self.d_f = None
     self.a_f = None
+    self.enough = False
 
   def _hand_back(self):
     self.active, self.v_f, self.d_f, self.a_f = False, None, None, None
     self.return_t = 0.0
+    self.enough = False
 
   def update(self, accel: float, v_ego: float, a_ego: float, standstill: bool, lead, long_active: bool) -> float:
     if not ENABLED or not long_active or standstill:
@@ -205,6 +215,12 @@ class StopGapClose:
         self._hand_back()
       else:
         target = min(max(target, gap_request(b_max, v_ego)), 0.0)
+        if -self.a_f >= b:
+          self.enough = True
+        elif -self.a_f < b - ENOUGH_HYST:
+          self.enough = False
+        if self.enough:  # the car already slows enough: no firmer than the plan
+          target = max(target, min(accel, 0.0))
         if self.d_f - GAP_TARGET < ROOM_END or self.v_f < V_END:  # the stop itself: at least the owner's end -0.35
           target = min(target, END_ACCEL)
         if v_ego > V_FLOOR:  # tncr: never a coast above 2 km/h

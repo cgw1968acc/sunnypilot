@@ -6,7 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 import numpy as np
 
-from openpilot.sunnypilot.selfdrive.controls.lib.sticky_radar_lead import StickyRadarLead, STICKY_MAX_T
+from openpilot.sunnypilot.selfdrive.controls.lib.sticky_radar_lead import StickyRadarLead, STICKY_MAX_T, OFF_PATH_T
 
 DT = 0.05
 PATH_X = np.linspace(0.0, 150.0, 33)
@@ -59,8 +59,9 @@ def test_lets_go_when_the_track_leaves_the_path_or_disappears():
   s = StickyRadarLead(DT)
   t = T(1, 20.0)
   s.update(t.get_RadarState(), 20.0, {1: t}, PATH_X, PATH_Y)
-  t.yRel = 2.5  # the lead changed lanes
-  assert s.update(vision(45.0), 20.0, {1: t}, PATH_X, PATH_Y)['radar'] is False
+  t.yRel = 2.5  # the lead changed lanes: let go once it has been off the path for OFF_PATH_T
+  outs = [s.update(vision(45.0), 20.0, {1: t}, PATH_X, PATH_Y)['radar'] for _ in range(int(OFF_PATH_T / DT) + 2)]
+  assert outs[-1] is False
   t2 = T(1, 20.0)
   s.update(t2.get_RadarState(), 20.0, {1: t2}, PATH_X, PATH_Y)
   assert s.update(vision(45.0), 20.0, {}, PATH_X, PATH_Y)['radar'] is False
@@ -74,7 +75,27 @@ def test_far_track_in_a_curve_gets_a_wider_path_tolerance():
   near = T(2, 20.0, y=1.5)  # but 1.5 m off at 20 m is not on the path
   s2 = StickyRadarLead(DT)
   s2.update(near.get_RadarState(), 20.0, {2: near}, PATH_X, PATH_Y)
-  assert s2.update(vision(45.0), 20.0, {2: near}, PATH_X, PATH_Y)['radar'] is False
+  outs = [s2.update(vision(45.0), 20.0, {2: near}, PATH_X, PATH_Y)['radar'] for _ in range(int(OFF_PATH_T / DT) + 2)]
+  assert outs[-1] is False
+
+
+def test_slow_lead_at_the_lane_edge_is_kept():
+  # route 00000096 09:19: a scooter waiting near the kerb, 1.0-1.5 m right of the path at 10-18 m, single frames 2.5 m
+  s = StickyRadarLead(DT)
+  t = T(1, 14.0, y=-1.0, v=0.0, v_ego=2.0)
+  s.update(t.get_RadarState(), 2.0, {1: t}, PATH_X, PATH_Y)
+  t.yRel = -1.6
+  assert s.update(vision(17.0), 2.0, {1: t}, PATH_X, PATH_Y)['radar']
+  t.yRel = -2.5  # one radar angle spike
+  assert s.update(vision(17.0), 2.0, {1: t}, PATH_X, PATH_Y)['radar']
+  t.yRel = -1.3
+  assert s.update(vision(17.0), 2.0, {1: t}, PATH_X, PATH_Y)['dRel'] == 14.0
+  # a car in the next lane moving at our speed keeps the narrow band
+  s2 = StickyRadarLead(DT)
+  c = T(2, 14.0, y=-1.6, v=18.0)
+  s2.update(c.get_RadarState(), 20.0, {2: c}, PATH_X, PATH_Y)
+  outs = [s2.update(vision(30.0), 20.0, {2: c}, PATH_X, PATH_Y)['radar'] for _ in range(int(OFF_PATH_T / DT) + 2)]
+  assert outs[-1] is False
 
 
 def test_gives_up_after_the_max_time_without_a_radar_match():

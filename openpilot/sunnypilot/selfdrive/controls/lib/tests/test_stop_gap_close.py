@@ -164,14 +164,32 @@ def test_tncr_far_gap_holds_the_present_force():
   assert c.active
   outs = []
   v, d = 11.1 / 3.6, 15.5
+  reqs = []
   for _ in range(100):
     b_hold = 0.40
     # the decel the request stands for (10-17: the request itself follows the 9-13 km/h delivery hole as v falls)
-    outs.append(stop_gap_close.gap_decel_from_request(c.update(-0.50, v, -b_hold, False, lead(d), True), v))
+    reqs.append(c.update(-0.50, v, -b_hold, False, lead(d), True))
+    outs.append(stop_gap_close.gap_decel_from_request(reqs[-1], v))
     d -= v * 0.01
     v -= b_hold * 0.01
-  steady = outs[50:]
+  # 2026-10-22: the car already slows as much as needed (0.40 >= b), so the request is not firmed beyond the plan: it
+  # stays put at the plan's -0.50 (before: held in decel terms, the request firming along the delivery hole)
+  steady = reqs[50:]
   assert max(steady) - min(steady) < 0.02
+  assert min(steady) >= -0.50 - 1e-6
+
+
+def test_no_firmer_than_the_plan_while_the_car_already_slows_enough():
+  # route 00000096 09:19 (uphill, engaged at 8.9 km/h): the plan asked -0.25, the car gave -0.65; this stage must not
+  # add brake on top while the measured decel already exceeds what the stop needs
+  c = StopGapClose()
+  v, d = 7.0 / 3.6, 13.0
+  out = []
+  for _ in range(200):
+    out.append(c.update(-0.25, v, -0.65, False, lead(d), True))
+    d -= v * 0.01
+    v = max(v - 0.65 * 0.01, 0.3)
+  assert min(out[60:]) >= -0.25 - 1e-6
 
 
 def test_tncr_takes_over_only_below_18kph_and_keeps_its_limit():

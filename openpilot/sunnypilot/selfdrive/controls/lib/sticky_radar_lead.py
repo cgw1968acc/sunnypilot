@@ -25,6 +25,18 @@ import numpy as np
 # in a left curve, consistently on the outside; the next lane is ~3.5 m away)
 STICKY_Y_TOL_BP = [20.0, 70.0]  # m
 STICKY_Y_TOL_V = [1.0, 2.0]     # m
+# tncr 2026-10-22, route 00000096 09:19 (owner: "why did it stop almost 7 m behind the motorcycle and then creep only
+# to ~5 m?"): a scooter waiting at the front of the motorcycle box, near the kerb, sat 1.0-1.5 m right of the model
+# path (single radar frames 1.9-2.5 m) at 10-18 m. The radar had it at 10-11 m, but every frame it fell out of the
+# 1.0 m band the sticky rule let it go and leadOne became the camera's 15-18 m estimate: 18 jumps 10 <-> 17 m in the
+# last 5 s of the stop, so stop_gap_close restarted 16 times and never eased (the car stopped at 9.7 m). For a SLOW or
+# stopped lead up close the band is wider (a two-wheeler waits at the lane edge; the next lane's cars are ~3.5 m away
+# and a car there moving at our speed is not covered), and a kept track may leave the band for OFF_PATH_T before it is
+# let go (single-frame radar angle spikes). The kept track is still only used when the camera lead is FARTHER.
+STICKY_Y_TOL_SLOW = 1.8         # m: within STICKY_SLOW_D for a lead slower than STICKY_SLOW_V
+STICKY_SLOW_D = 20.0            # m
+STICKY_SLOW_V = 2.0             # m/s
+OFF_PATH_T = 0.3                # s
 STICKY_CONT_D = 3.0       # m: a new radar id this close to where the kept track should be continues it ...
 STICKY_CONT_V = 2.0       # m/s: ... at this speed difference ...
 STICKY_CONT_Y = 1.0       # m: ... and this lateral difference
@@ -41,9 +53,11 @@ class StickyRadarLead:
     self.state: tuple[float, float, float] | None = None  # dRel, yRel, vLead of the kept track
     self.t = 0.0  # s since the last radar match
     self.active = False
+    self.off_t = 0.0
 
   def reset(self) -> None:
     self.track_id, self.state, self.t, self.active = None, None, 0.0, False
+    self.off_t = 0.0
     self.why = ''
 
   @staticmethod
@@ -51,7 +65,10 @@ class StickyRadarLead:
     if path_x is None or len(path_x) < 2:
       return False
     y_path = -float(np.interp(c.dRel + RADAR_TO_CAMERA, path_x, path_y))
-    return abs(c.yRel - y_path) < float(np.interp(c.dRel, STICKY_Y_TOL_BP, STICKY_Y_TOL_V))
+    tol = float(np.interp(c.dRel, STICKY_Y_TOL_BP, STICKY_Y_TOL_V))
+    if c.dRel < STICKY_SLOW_D and abs(c.vLead) < STICKY_SLOW_V:
+      tol = max(tol, STICKY_Y_TOL_SLOW)
+    return abs(c.yRel - y_path) < tol
 
   def _find(self, tracks: dict, v_ego: float):
     if self.track_id in tracks:
@@ -77,12 +94,15 @@ class StickyRadarLead:
       self.track_id = tid if c is not None else None
       self.state = (c.dRel, c.yRel, c.vLead) if c is not None else None
       self.t = 0.0
+      self.off_t = 0.0
       return lead
     if self.state is None:
       return lead
     self.t += self.dt
     c = self._find(tracks, v_ego)
-    if c is None or self.t > STICKY_MAX_T or c.dRel > STICKY_MAX_D or not self._on_path(c, path_x, path_y):
+    on_path = c is not None and self._on_path(c, path_x, path_y)
+    self.off_t = 0.0 if on_path else self.off_t + self.dt
+    if c is None or self.t > STICKY_MAX_T or c.dRel > STICKY_MAX_D or (not on_path and self.off_t > OFF_PATH_T - 1e-6):
       why = 'lost' if c is None else ('time' if self.t > STICKY_MAX_T else ('far' if c.dRel > STICKY_MAX_D else 'path'))
       self.reset()
       self.why = why
