@@ -174,7 +174,9 @@ class StoppingController:
   # at 1 km/h 3.6 m out would have let the line go, -0.36 -> -0.26).
   END_FAR_GAP = 3.5       # m
   END_FAR_B = 0.3         # m/s^2: the lightest decel assumed for the car's own stopping distance (below END_V_HI)
-  END_FAR_B_ENTRY = -END_HI  # m/s^2: ... and from END_V_HI up
+  # Owner 2026-10-22 22:09 bookmark ("bring back this morning's stop feel"): back to the baseline-2 judgement - the
+  # entry band uses END_FAR_B too. Kept as a constant so the 94d2370 idea can be re-tried.
+  END_FAR_B_ENTRY = END_FAR_B  # m/s^2 (94d2370..: -END_HI = 0.65 from END_V_HI up)
   END_FAR_LEAD_B = 1.0    # m/s^2: the lead's assumed decel for its run-out
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
   # Without a lead (experimental mode stopping for a light / sign) the line is also a CEILING below END_V_HI. Owner

@@ -44,12 +44,12 @@ def test_far_gate_uses_the_leads_run_out():
   assert not sc.end_active
 
 
-def test_end_line_does_not_arm_behind_a_rolling_lead_on_a_light_plan():
-  # route 0000009e 20:11:05.9 (true time): 12.1 km/h, plan -0.29, lead 11.1 m ahead still rolling at 11.7 km/h. Judged on
-  # the light plan the line armed (-0.65, car -1.28, then let go and coasted); judged at the line's own firmness it stays off
+def test_entry_judgement_is_back_to_baseline_2():
+  # owner 2026-10-22 22:09: the 94d2370 entry judgement is undone; route 9e 20:11:05.9 arms the line again as on baseline-2
+  assert StoppingController.END_FAR_B_ENTRY == StoppingController.END_FAR_B == 0.3
   sc = StoppingController(-2.0)
-  out = run(sc, 50, 12.1 / 3.6, -0.29, 11.1, 11.7 / 3.6, prev=-0.29)
-  assert not sc.end_active and abs(out - (-0.29)) < 1e-9
+  run(sc, 50, 12.1 / 3.6, -0.29, 11.1, 11.7 / 3.6, prev=-0.29)
+  assert sc.end_active
 
 
 def test_entry_judgement_leaves_the_end_of_a_stop_unchanged():
