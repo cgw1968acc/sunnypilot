@@ -21,6 +21,7 @@ from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import BlinkerPauseLateral
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_brake_boost import LeadBrakeBoost
 from openpilot.sunnypilot.selfdrive.controls.lib.mid_speed_brake_add import MidSpeedBrakeAdd
+from openpilot.sunnypilot.selfdrive.controls.lib.lead_brake_ramp import LeadBrakeRamp
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_hold import StopGapHold
 from openpilot.sunnypilot.selfdrive.controls.lib.creep_stall_guard import CreepStallGuard
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_close import StopGapClose
@@ -62,6 +63,7 @@ class ControlsExt(ModelStateBase):
     self.blinker_pause_lateral = BlinkerPauseLateral()
     self.lead_brake_boost = LeadBrakeBoost()  # tnpb2: 3-30 km/h x1.2 after a hard lead brake, see lead_brake_boost.py
     self.mid_speed_brake_add = MidSpeedBrakeAdd()  # tncr: +0.2 m/s^2 braking 30-10 km/h, see mid_speed_brake_add.py
+    self.lead_brake_ramp = LeadBrakeRamp()  # tncr: early, steadily building brake behind a braking lead
     self.stop_gap_hold = StopGapHold()  # tnpb3: <30 km/h no lighter while the stop gap < 3.5 m, see stop_gap_hold.py
     self.creep_stall_guard = CreepStallGuard()  # tnpb3: 1-5 km/h adds back brake the hybrid creep eats
     self.stop_gap_close = StopGapClose()  # tnpb3: <12 km/h a stop predicted beyond 4 m crawls on at 2.3 km/h to 3.25 m
