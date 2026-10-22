@@ -1,7 +1,7 @@
 import unittest
 
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import (
-  LeadStartAssist, ARM_TIME, FLOOR_MIN, T_MATCH, ACTIVE_TIMEOUT, GAP_MIN_ACTIVE, LEAD_D_MIN, VISION_GO_V, RADAR_GO_V)
+  LeadStartAssist, ARM_TIME, FLOOR_MIN, T_MATCH, ACTIVE_TIMEOUT, GAP_MIN_ACTIVE, LAUNCH_CAP, FADE_V, LEAD_D_MIN, VISION_GO_V, RADAR_GO_V)
 
 DT = 0.05
 
@@ -47,14 +47,20 @@ class TestLeadStartAssist(unittest.TestCase):
     self.assertIsNotNone(depart(assist, v_lead=0.6, frames=10))
     self.assertTrue(assist.active)
 
-  def test_floor_follows_the_speed_difference_up_to_the_profile_max(self):
+  def test_floor_is_a_breakaway_push_only(self):
     assist = LeadStartAssist(DT)
     settle(assist)
     out = depart(assist, v_lead=0.6)
-    self.assertAlmostEqual(out, max(FLOOR_MIN, 0.6 / T_MATCH), places=6)
-    # the lead speeds up: the floor reaches the accel profile max, never above
-    out = assist.update(True, 0.0, True, 4.0, 3.0, 3.0, a_max=1.65)
-    self.assertAlmostEqual(out, 1.65, places=6)
+    self.assertAlmostEqual(out, min(LAUNCH_CAP, 0.6 / T_MATCH), places=6)
+    # a brisk lead: capped at LAUNCH_CAP, never the profile's ceiling (eco 1.65..1.85)
+    out = assist.update(True, 0.0, True, 4.0, 3.0, 3.0, a_max=1.85)
+    self.assertAlmostEqual(out, LAUNCH_CAP, places=6)
+    # and never above a lower profile max
+    self.assertLessEqual(assist.update(True, 0.0, True, 4.0, 3.0, 3.0, a_max=0.6), 0.6 + 1e-6)
+    # fades linearly with ego speed: half at 10 km/h, nothing left at 20 km/h
+    self.assertAlmostEqual(assist.update(True, FADE_V / 2, True, 5.0, 6.0, 6.0 - FADE_V / 2, a_max=1.85), LAUNCH_CAP / 2, places=6)
+    out = assist.update(True, FADE_V - 1e-3, True, 6.0, 7.0, 7.0 - FADE_V, a_max=1.85)
+    self.assertLess(out, 0.01)
     # a creeping lead is followed gently
     assist2 = LeadStartAssist(DT)
     settle(assist2)

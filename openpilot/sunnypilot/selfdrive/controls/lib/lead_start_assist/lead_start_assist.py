@@ -40,6 +40,14 @@ their thresholds on the same frame while the lead stood. So the primary trigger 
 and radar >= RADAR_GO_V on the same frame. Route 93 (s): 22:18:14.85 (old speed-only 14.97), 22:20:12 no start,
 22:20:58.00 (old 22:21:00.57), 22:22:15.65 (old 16.11); 22:18:53 vision saw it late (53.55, old 52.92), so the radar gap
 rule above stays as the backup (53.24) and whichever comes first starts the car. The radar-speed-only path is gone.
+
+Owner 2026-10-22: "the launch-follow accel overshoots, even in eco. All I want is to start moving quickly when the lead
+leaves, and by 20 km/h be fully back on the normal accel mode." The floor went up to the accel profile's ceiling
+(a_max), and in eco with the engine off that ceiling is 1.85 m/s^2 at 0 km/h (1.65 engine on) - far above what the
+profile actually delivers through the MPC - and it stayed there until ego matched the lead speed. So now the floor is
+only a breakaway push: at most LAUNCH_CAP (and never above a_max), scaled down linearly with ego speed to nothing at
+FADE_V = 20 km/h, so the MPC with the chosen accel profile owns the launch from there (output = max(floor, MPC), so
+the hand-over is continuous).
 """
 from collections import deque
 
@@ -69,7 +77,9 @@ GAP_SHRINK = 0.2  # m
 LEAD_CLOSING_V_REL = -0.25  # m/s, release once ego is clearly faster than the lead
 T_MATCH = 0.5  # s, floor = (lead speed - ego speed) / T_MATCH ...
 FLOOR_MIN = 0.5  # m/s^2 ... at least this while ego is still slower than the lead ...
-FLOOR_MAX_DEFAULT = 1.5  # m/s^2 ... and at most the accel profile's max (this when the planner gives none)
+FLOOR_MAX_DEFAULT = 1.5  # m/s^2 ... and at most the accel profile's max (this when the planner gives none) ...
+LAUNCH_CAP = 0.8  # m/s^2 ... and at most this: a breakaway push, not the profile's ceiling (2026-10-22)
+FADE_V = 20.0 / 3.6  # m/s, the floor scales linearly from full at 0 to zero here: the accel profile owns the rest
 ACTIVE_TIMEOUT = 8.0  # s, hand back to the MPC no matter what after this long (normally ego reaching the lead speed ends it)
 
 
@@ -149,5 +159,6 @@ class LeadStartAssist:
 
   @staticmethod
   def _floor(v_ego: float, v_lead: float, a_max: float | None) -> float:
-    hi = FLOOR_MAX_DEFAULT if a_max is None else max(a_max, FLOOR_MIN)
-    return float(np.clip((v_lead - v_ego) / T_MATCH, FLOOR_MIN, hi))
+    hi = min(LAUNCH_CAP, FLOOR_MAX_DEFAULT if a_max is None else max(a_max, FLOOR_MIN))
+    fade = float(np.interp(v_ego, [0.0, FADE_V], [1.0, 0.0]))
+    return float(np.clip((v_lead - v_ego) / T_MATCH, FLOOR_MIN, hi)) * fade
