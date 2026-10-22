@@ -36,6 +36,12 @@ STALL_IOWAIT = 0.05  # iowait share over one sample that counts as a stall (norm
 MIN_GAP = 5.0        # s between two records
 TOP_N = 6
 DISK = "sda"
+KMSG_AFTER = 5.0     # s of continuous stall before the kernel log is captured
+KMSG_WINDOW = 120.0  # s of kernel log kept
+KMSG_REARM = 10.0    # s without a stall before the next stall may capture again
+KMSG_MAX = 40        # lines per record
+KMSG_KEYS = ("ufs", "scsi", "sd ", "sda", "blk", "mmc", "ext4", "jbd2", "i/o error", "timeout", "timed out", "hung_task",
+             "blocked for more than", "reset", "abort", "err")
 
 
 def read_cpu() -> tuple[int, int]:
@@ -81,6 +87,60 @@ def read_dirty() -> tuple[int, int]:
       if k in ("Dirty", "Writeback"):
         d[k] = int(v.split()[0])
   return d.get("Dirty", 0), d.get("Writeback", 0)
+
+
+def parse_kmsg(records: list[str], now_s: float, window: float = KMSG_WINDOW) -> list[str]:
+  """'pri,seq,usec,flags;message' records -> '[t s] message' lines of the last window s that mention the storage stack"""
+  out = []
+  for rec in records:
+    head, _, msg = rec.partition(";")
+    parts = head.split(",")
+    if len(parts) < 3 or not parts[2].isdigit():
+      continue
+    t = int(parts[2]) / 1e6
+    msg = msg.strip()
+    if now_s - t <= window and any(k in msg.lower() for k in KMSG_KEYS):
+      out.append(f"[{t:.1f}] {msg[:200]}")
+  return out[-KMSG_MAX:]
+
+
+def read_kmsg() -> list[str]:
+  """all records currently in the kernel ring buffer (non-blocking)"""
+  recs = []
+  fd = os.open("/dev/kmsg", os.O_RDONLY | os.O_NONBLOCK)
+  try:
+    while True:
+      try:
+        b = os.read(fd, 8192)
+      except BlockingIOError:
+        break
+      except OSError:  # EPIPE: a record was overwritten while reading, go on
+        continue
+      if not b:
+        break
+      recs.append(b.decode(errors="replace"))
+  finally:
+    os.close(fd)
+  return recs
+
+
+def kernel_lines() -> list[str]:
+  with open("/proc/uptime") as f:
+    now_s = float(f.read().split()[0])
+  try:
+    return parse_kmsg(read_kmsg(), now_s)
+  except PermissionError:
+    import subprocess
+    out = subprocess.run(["sudo", "-n", "dmesg", "-r"], capture_output=True, text=True, timeout=5).stdout
+    recs = []
+    for line in out.splitlines():  # '<pri>[  123.456789] message'
+      if "]" in line and "[" in line:
+        t = line[line.index("[") + 1:line.index("]")].strip()
+        try:
+          recs.append(f"0,0,{int(float(t) * 1e6)},-;{line[line.index(']') + 1:]}")
+        except ValueError:
+          pass
+    return parse_kmsg(recs, now_s)
 
 
 def snapshot() -> dict:
@@ -163,6 +223,9 @@ def main():
   snaps = [snapshot()]
   io_prev, tot_prev = read_cpu()
   last_rec = 0.
+  stall_t0 = None      # start of the current continuous stall
+  last_stall = -1e9
+  kmsg_done = False
   while True:
     time.sleep(SAMPLE_DT)
     try:
@@ -170,6 +233,20 @@ def main():
       iowait = (io_now - io_prev) / max(tot_now - tot_prev, 1)
       io_prev, tot_prev = io_now, tot_now
       now = time.monotonic()
+      if iowait > STALL_IOWAIT:
+        stall_t0 = now if stall_t0 is None else stall_t0
+        last_stall = now
+      elif now - last_stall > 1.0:
+        stall_t0 = None
+      if now - last_stall > KMSG_REARM:
+        kmsg_done = False
+      if stall_t0 is not None and not kmsg_done and now - stall_t0 >= KMSG_AFTER:
+        kmsg_done = True
+        try:
+          lines = kernel_lines()
+        except Exception as e:
+          lines = [f"kernel log not readable: {e}"]
+        cloudlog.event("tn_iowatch: kernel log", error=True, stall_s=round(now - stall_t0, 1), lines=lines)
       if iowait > STALL_IOWAIT and now - last_rec > MIN_GAP:
         d_state = d_state_all()
         new = snapshot()

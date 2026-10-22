@@ -23,3 +23,16 @@ def test_record_reports_disk_totals_and_d_state(monkeypatch):
   assert r["d_state"] == ["jbd2/sda12-8", "modeld"]
   assert r["disk_w_mb"] == round(40000 * 512 / 1e6, 2) and r["disk_busy_ms"] == 250
   assert r["dirty_kb"] == 1200 and r["writeback_kb"] == 64
+
+
+def test_parse_kmsg_keeps_recent_storage_lines():
+  recs = [
+    "3,100,1000000000,-;ufshcd-qcom 1d84000.ufshc: ufshcd_abort: Device abort task at tag 7\n",
+    "6,101,1001000000,-;wlan: some wifi chatter\n",
+    "3,102,1002000000,-;INFO: task jbd2/sda12-8:512 blocked for more than 120 seconds.\n",
+    "3,103,10000000,-;sd 0:0:0:0: timing out command, waited 30s\n",   # too old
+    "garbage",
+  ]
+  out = W.parse_kmsg(recs, now_s=1005.0)
+  assert len(out) == 2
+  assert "ufshcd_abort" in out[0] and "jbd2" in out[1]
