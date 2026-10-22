@@ -149,8 +149,10 @@ class StoppingController:
   # (2026-10-08 .. 10-19: END_CURVE_A = [END_LO, (END_LO + -0.56) / 2, -0.56, -0.60, -0.65, END_HI] on 0..5 km/h)
   END_CURVE_V = [0.0, 1.0 / 3.6, 2.0 / 3.6, 3.0 / 3.6, 4.0 / 3.6, 5.0 / 3.6, 6.0 / 3.6, 7.0 / 3.6, 8.0 / 3.6]  # m/s
   # 2026-10-22 owner: 3 km/h -0.37, 2 km/h -0.37, 1 km/h -0.36, 0 km/h -0.34 (was -0.51 / -0.46 / -0.38), matching the
-  # end_force_limit ceiling; 4 km/h and up unchanged
-  END_CURVE_A = [END_LO, -0.36, -0.37, -0.37, -0.56, -0.60, -0.63, -0.64, END_HI]  # m/s^2
+  # end_force_limit ceiling. Then (owner: "not even a little feeling of the brake letting go") 8 -> 3 km/h is one
+  # straight ease END_HI -> -0.37 (was -0.65/-0.64/-0.63/-0.60/-0.56 then -0.37: -0.19 in the last 1 km/h, ~0.34 m/s^3;
+  # now ~0.056 per km/h, ~0.1 m/s^3 at -0.5)
+  END_CURVE_A = [END_LO, -0.36, -0.37, -0.37, -0.43, -0.48, -0.54, -0.59, END_HI]  # m/s^2
   END_PLAN_MIN = -0.25  # m/s^2: the plan must be braking this much at BLEND_V to count as stopping (a crawl-follow hovers near 0)
   # The line is for the END of a stop. tncr, owner 2026-10-15 night (route 00000075 20:59:40, stopped 7.5 m out, bookmark 1):
   # at 9.6 km/h the lead was still 12 m ahead rolling to its stop; the plan eased to -0.3 (roll on to 3 m), but the line
