@@ -179,7 +179,8 @@ class Controls(ControlsExt):
     # owner's end-force rule, last: never firmer than the end ceiling (Cross: -2.0 at 5 km/h -> -0.34 at 0, and the
     # anchored line below 2 km/h), whatever asked for more - the roll guard included (2026-10-15 evening: its exemption
     # put 4120 N on at 2.7 km/h and the car stopped with a jolt); the standstill hold then firms up at HOLD_RATE
-    actuators.accel = float(self.end_force_limit.update(accel_shaped, CS.vEgo, CS.standstill, CC.longActive, CS.aEgo))
+    actuators.accel = float(self.end_force_limit.update(accel_shaped, CS.vEgo, CS.standstill, CC.longActive, CS.aEgo,
+                                                        lead_d=lead_one.dRel if lead_one.present else None))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage

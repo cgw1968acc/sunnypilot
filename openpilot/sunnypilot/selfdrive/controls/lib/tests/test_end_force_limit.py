@@ -75,3 +75,40 @@ def test_fixed_ceiling_from_5kph_caps_everything():  # tncr 2026-10-15 evening: 
   assert e3.update(-2.7, 0.0, False, True) == END_ACCEL
   out = e3.update(-1.2, 0.0, True, True)
   assert abs(out - (END_ACCEL - 0.005)) < 1e-9
+
+
+def _roll(lim, n, req, v, a_ego, lead_d):
+  out = None
+  for _ in range(n):
+    out = lim.update(req, v, False, True, a_ego, lead_d=lead_d)
+  return out
+
+
+def test_short_gap_exception_route_a3():
+  # route 000000a3 21:09:00: 2.2 km/h, lead 2.2 m, aEgo -0.1 (creeping), plan -0.69 -> the ceiling (-0.37) gives way
+  from openpilot.sunnypilot.selfdrive.controls.lib import end_force_limit as E
+  lim = E.EndForceLimit()
+  first = lim.update(-0.69, 2.2 / 3.6, False, True, -0.1, lead_d=2.2)
+  assert -0.37 - E.EXC_RATE * 0.01 - 1e-9 <= first < -0.37                    # starts at the ceiling, no bite
+  out = _roll(lim, 50, -0.69, 2.2 / 3.6, -0.1, 2.2)
+  assert abs(out + 0.69) < 1e-9                                                # reaches the request, not firmer
+  assert _roll(lim, 50, -2.5, 2.2 / 3.6, -0.1, 2.0) >= E.EXC_MAX - 1e-9         # bounded
+
+
+def test_short_gap_exception_never_opens_on_an_ordinary_stop():
+  # route 000000a3 21:05:24: 1.6 km/h, lead 3.7 m, aEgo -0.45 -> predicted stop 3.5 m: the ceiling holds
+  from openpilot.sunnypilot.selfdrive.controls.lib import end_force_limit as E
+  lim = E.EndForceLimit()
+  assert _roll(lim, 30, -0.46, 1.6 / 3.6, -0.45, 3.7) >= -0.37
+  assert lim.exc is None
+  assert _roll(E.EndForceLimit(), 30, -0.9, 3.0 / 3.6, -0.9, 3.2) >= -0.37      # 3 km/h, 3.2 m, braking well
+  assert _roll(E.EndForceLimit(), 30, -0.9, 2.0 / 3.6, -0.1, None) >= -0.37     # no lead: no exception
+
+
+def test_short_gap_exception_eases_with_the_request():
+  from openpilot.sunnypilot.selfdrive.controls.lib import end_force_limit as E
+  lim = E.EndForceLimit()
+  _roll(lim, 60, -0.9, 2.0 / 3.6, -0.1, 2.0)
+  prev = lim.exc
+  out = lim.update(-0.5, 2.0 / 3.6, False, True, -0.3, lead_d=2.0)              # the plan eases
+  assert out == -0.5 and out > prev                                            # follows it, does not jump to -0.37
