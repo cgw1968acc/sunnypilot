@@ -29,10 +29,13 @@ IS_MICI = HARDWARE.get_device_type() == 'mici'
 
 def experimental_mode_switched_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool,
                                      soft_disable_time: int, personality) -> Alert:
-  # tncr 2026-10-22 owner: "Experimental Mode Switched" does not say which mode it is now. The distance-button hold
-  # (cruise_helpers) writes ExperimentalMode just before adding this event, so the param holds the NEW state.
-  from openpilot.common.params import Params
-  on = Params().get_bool("ExperimentalMode")
+  # tncr 2026-10-22 owner: "Experimental Mode Switched" does not say which mode it is now. Show the mode the hold
+  # switched TO, as cruise_helpers recorded it - not read back from the param, whose non-blocking write can land late
+  from openpilot.sunnypilot.selfdrive.car import cruise_helpers
+  on = cruise_helpers.last_experimental_toggle
+  if on is None:
+    from openpilot.common.params import Params
+    on = Params().get_bool("ExperimentalMode")
   return NormalPermanentAlert(f"Experimental Mode {'ON' if on else 'OFF'}", duration=1.5)
 
 

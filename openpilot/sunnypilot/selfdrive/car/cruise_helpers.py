@@ -15,6 +15,11 @@ EventNameSP = custom.OnroadEventSP.EventName
 
 DISTANCE_LONG_PRESS = 50
 
+# tncr 2026-10-22: the mode the last distance-button hold switched to, for the alert text (events.py). The param write
+# below is non-blocking and on the C4's slow storage can land seconds late (personality, routes 7d-7f), so the alert
+# must not read the param back; selfdrived (which runs this and builds the alerts) reads it from here.
+last_experimental_toggle: bool | None = None
+
 
 class CruiseHelper:
   def __init__(self, CP: structs.CarParams):
@@ -47,5 +52,7 @@ class CruiseHelper:
     if self.button_frame_counts[ButtonType.gapAdjustCruise] >= DISTANCE_LONG_PRESS and not self.experimental_mode_switched:
       self._experimental_mode = not experimental_mode
       self.params.put_bool("ExperimentalMode", self._experimental_mode)
+      global last_experimental_toggle
+      last_experimental_toggle = self._experimental_mode
       events.add(EventNameSP.experimentalModeSwitched)
       self.experimental_mode_switched = True
