@@ -43,8 +43,33 @@ def test_a_firmer_plan_passes_up_to_the_cap_and_a_lighter_one_is_firmed():
   run(c, 300, 0.0, 12.5, ld)
   assert abs(c.update(-0.5, 12.5, False, ld, True, -3.5) + need) < 1e-6
   cap = need * R.CAP_K + R.CAP_ADD
-  assert abs(c.update(-3.3, 12.5, False, ld, True, -3.5) + cap) < 1e-6
-  assert c.update(-1.0 - cap, 12.5, False, ld, True, -3.5) >= -cap - 1e-6
+  assert abs(c.update(-2.9, 12.5, False, ld, True, -3.5) + cap) < 1e-6
+  assert c.update(-3.2, 12.5, False, ld, True, -3.5) == -3.2                # an emergency is never held back
+
+
+def test_disarming_opens_the_cap_gradually():
+  # route 0000009e 20:11:04: the cap vanished at the disarm and the request stepped 0.15 firmer
+  c = R.LeadBrakeRamp()
+  ld = lead(24.0, 12.5, -3.0)
+  run(c, 300, -2.6, 12.5, ld)
+  prev = c.update(-2.6, 12.5, False, ld, True, -3.5)
+  assert prev > -2.6                                                        # capped
+  tap_over = lead(24.0, 12.0, 0.0)                                          # the lead stops braking: disarm
+  worst = 0.0
+  for _ in range(300):
+    out = c.update(-2.6, 12.5, False, tap_over, True, -3.5)
+    worst = max(worst, prev - out)
+    prev = out
+  assert not c.armed and abs(prev + 2.6) < 1e-6                             # back to the plan ...
+  assert worst <= R.J_REL * DT_CTRL + 1e-9                                  # ... at J_REL, no step
+
+
+def test_arming_meets_the_request_without_a_step():
+  c = R.LeadBrakeRamp()
+  quiet = lead(24.0, 12.5, 0.0)
+  run(c, 50, -2.0, 12.5, quiet)
+  out = c.update(-2.0, 12.5, False, lead(24.0, 12.5, -3.0), True, -3.5)
+  assert abs(out + 2.0) < 1e-6
 
 
 def test_brake_tap_lets_go():

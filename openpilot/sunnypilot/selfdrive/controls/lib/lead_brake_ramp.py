@@ -51,6 +51,13 @@ V_FADE = [6.0 / 3.6, 10.0 / 3.6]  # m/s: hands the stop to the stop chain
 CAP = True                 # also hold a firmer plan back to the need (x CAP_K + CAP_ADD)
 CAP_K = 1.15
 CAP_ADD = 0.2              # m/s^2
+# The cap is a level that moves at limited rates, never a switch (route 0000009e 20:11:04, true time: when the lead
+# stopped braking the ramp disarmed and the open-loop replay showed the request stepping 0.15 firmer, -0.73 -> -0.88,
+# the instant the cap vanished). It starts at the request it meets (no step when it arms), follows a firmer need at
+# CAP_J_FIRM, a lighter one at CAP_J_LIGHT, and once disarmed (or the need is gone) it opens towards "no cap" at J_REL.
+CAP_J_FIRM = 3.0           # m/s^3
+CAP_J_LIGHT = 1.0          # m/s^3
+CAP_OFF_A = -3.0           # m/s^2: a request this firm (an emergency) is never held back
 
 
 def brake_need(v_ego: float, d_rel: float, v_lead: float, a_lead: float) -> float:
@@ -65,11 +72,13 @@ class LeadBrakeRamp:
     self.armed = False
     self.ramp = 0.0       # m/s^2 (<= 0)
     self.t_build = 0.0
+    self.cap = None       # m/s^2: the cap level (the request is never firmer), None = no cap
 
   def reset(self):
     self.armed = False
     self.ramp = 0.0
     self.t_build = 0.0
+    self.cap = None
 
   def update(self, accel: float, v_ego: float, standstill: bool, lead, long_active: bool, accel_min: float,
              hold_off: bool = False) -> float:
@@ -101,6 +110,23 @@ class LeadBrakeRamp:
     if hold_off or w <= 0.0:
       return accel
     shaped = min(accel, self.ramp)
-    if CAP and self.armed and b >= B_MIN:
-      shaped = max(shaped, -(b * CAP_K + CAP_ADD))
+    self._update_cap(shaped, b, accel <= CAP_OFF_A)
+    if self.cap is not None:
+      shaped = max(shaped, self.cap)
     return max(accel + w * (shaped - accel), accel_min)
+
+  def _update_cap(self, shaped: float, b: float, emergency: bool) -> None:
+    if emergency:
+      self.cap = None
+    elif CAP and self.armed and b >= B_MIN:
+      target = -(b * CAP_K + CAP_ADD)
+      if self.cap is None:
+        self.cap = min(shaped, target)  # meets the request where it is: no step
+      elif target < self.cap:
+        self.cap = max(self.cap - CAP_J_FIRM * DT_CTRL, target)
+      else:
+        self.cap = min(self.cap + CAP_J_LIGHT * DT_CTRL, target)
+    elif self.cap is not None:
+      self.cap -= J_REL * DT_CTRL
+      if self.cap <= shaped:
+        self.cap = None

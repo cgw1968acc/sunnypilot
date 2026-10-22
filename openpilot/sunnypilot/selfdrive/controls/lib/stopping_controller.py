@@ -163,8 +163,18 @@ class StoppingController:
   # make up for stopping too early" -> with a lead the line only arms once the stop point is near: the car's own stopping
   # distance on the plan (at least END_FAR_B of decel) must reach to within END_FAR_GAP of where the lead will stop
   # (its position plus its own run-out at END_FAR_LEAD_B). While the stop point is still far the plain plan is sent.
+  # tncr 2026-10-22 (route 0000009e, true time 20:11:05.9): following a lead that was still rolling at 11.7 km/h 11 m
+  # ahead, the plan asked -0.29 at 12 km/h; judged on that light plan our own stop (19.6 m) looked past the lead's
+  # (16.4 m), so the line armed and floored the request at -0.65 (-0.75 sent, car -1.28), the car fell to 8.4 km/h
+  # below the lead's speed, 0.8 s later the stop looked far again, the line let go (2 s of coasting), and after the lead
+  # stopped the car braked a third time and stopped 6.5 m back. The line is what decelerates the car once armed, so the
+  # car's own stopping distance is now judged at the line's firmness (END_HI) or the plan if firmer: 8.7 m there, 7.7 m
+  # short of the lead's stop point -> stays off, the plan continues smoothly. Only above END_V_HI (where the line arms):
+  # below it the old judgement stays, or the very end of real stops changes (replay of all Cross rlogs: route 00000076
+  # at 1 km/h 3.6 m out would have let the line go, -0.36 -> -0.26).
   END_FAR_GAP = 3.5       # m
-  END_FAR_B = 0.3         # m/s^2: the lightest decel assumed for the car's own stopping distance
+  END_FAR_B = 0.3         # m/s^2: the lightest decel assumed for the car's own stopping distance (below END_V_HI)
+  END_FAR_B_ENTRY = -END_HI  # m/s^2: ... and from END_V_HI up
   END_FAR_LEAD_B = 1.0    # m/s^2: the lead's assumed decel for its run-out
   END_RATE = 2.0  # m/s^3: how fast the request may move toward the line
   # Without a lead (experimental mode stopping for a light / sign) the line is also a CEILING below END_V_HI. Owner
@@ -274,7 +284,8 @@ class StoppingController:
     if lead_d is None or lead_v is None:
       return False
     d_lead_stop = lead_d + max(lead_v, 0.0) ** 2 / (2.0 * self.END_FAR_LEAD_B)
-    d_ego_stop = max(v_ego, 0.0) ** 2 / (2.0 * max(-a_target, self.END_FAR_B))
+    b_min = self.END_FAR_B_ENTRY if v_ego >= self.END_V_HI else self.END_FAR_B
+    d_ego_stop = max(v_ego, 0.0) ** 2 / (2.0 * max(-a_target, b_min))
     return d_lead_stop - d_ego_stop > self.END_FAR_GAP
 
   def _end_request(self, a_target, prev_accel, v_ego, has_lead=True):
