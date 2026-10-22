@@ -55,6 +55,12 @@ def test_adjust_adds_the_gap_by_the_planned_speed_only_while_the_lead_brakes():
   calm = ext.adjust(x.copy(), lead_xv(25.0, 12.5, 0.0), lead_xv(60.0, 12.5, 0.0), v_plan, T[1], T)
   for _ in range(10):
     hard = ext.adjust(x.copy(), lead_xv(25.0, 12.5, -3.0), lead_xv(60.0, 12.5, -3.0), v_plan, T[1], T)
-  assert abs(calm[0, 0] - hard[0, 0] - 2.5) < 1e-6                              # +2.5 m at 45 km/h (obstacle moved closer)
+  assert abs(calm[0, 0] - hard[0, 0] - 3.75) < 1e-6                             # +3.75 m at 45 km/h (2.5 @40, 5 @50) (obstacle moved closer)
   # further down the horizon the lead's own light-onset margin differs too (it is slower), so only the lower bound holds
   assert np.all(calm[1:, 0] - hard[1:, 0] >= np.interp(v_plan[1:], EXT.DYN_GAP_BP, EXT.DYN_GAP_V) - 1e-6)
+
+
+def test_from_50_kmh_up_the_original_gap_is_unchanged():
+  # owner 2026-10-22: tonight's halving must not touch 50 km/h and up
+  for kmh, orig in ((50.0, 5.0), (60.0, 2.5), (70.0, 0.0), (90.0, 0.0)):
+    assert abs(np.interp(kmh / 3.6, EXT.DYN_GAP_BP, EXT.DYN_GAP_V) - orig) < 1e-9
