@@ -109,7 +109,11 @@ RELAXED_JERK_FACTOR = 3.0
 EMERG_A = -1.5           # m/s^2: the lead brakes at least this hard
 EMERG_PLAN_A0 = -2.0     # m/s^2: no trim while the plan is lighter than this
 EMERG_PLAN_A1 = -2.5     # m/s^2: full trim from here
-EMERG_TRIM = 2.5         # m taken off the desired distance at full trim
+# tncr, owner 2026-10-23: the hard-lead stops ended about 2 m out (route 84 10-17 1.84 m, route 73 10-15 2.22 m) -
+# 'a little too close, make it 2.5 m'. 2.5 -> 2.0 m: closed-loop sim (x86 MPC + the tncr chain) hard-lead stops end
+# 2.7-3.35 m (was 2.5-2.8), peak 0.03-0.06 m/s^2 firmer, end of stop unchanged; 1.75/1.5 pushed 60 km/h -3 and
+# 30 km/h -2.5 past 3.5 m (do-not-deploy rule). Stops without a hard-braking lead are bit-identical.
+EMERG_TRIM = 2.0         # m taken off the desired distance at full trim
 EMERG_RATE_ON = 4.0      # m/s
 EMERG_RATE_OFF = 1.0     # m/s
 EMERG_CALM_A = -0.5      # m/s^2
