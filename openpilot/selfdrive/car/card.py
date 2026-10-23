@@ -224,7 +224,7 @@ class Car:
 
     # TODO: mirror the carState.cruiseState struct?
     # vCruise feeds the longitudinal planner (capped at the PCM set speed + headroom on the Toyota software set speed,
-    # see VCruiseHelper.apply_toyota_pcm_set_speed_constraints, tncr18 ce25c42170), vCruiseCluster is the driver's
+    # see VCruiseHelperSP.pcm_ceiling_sp, tncr18 ce25c42170), vCruiseCluster is the driver's
     # target shown on the HUD
     CS.vCruise = float(self.v_cruise_helper.v_cruise_planner_kph)
     CS.vCruiseCluster = float(self.v_cruise_helper.v_cruise_cluster_kph)

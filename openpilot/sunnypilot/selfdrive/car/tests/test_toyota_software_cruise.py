@@ -7,9 +7,9 @@ from opendbc.car import structs
 from opendbc.car.structs import car
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
-from openpilot.selfdrive.car.cruise import (VCruiseHelper, V_CRUISE_UNSET, TOYOTA_VIRTUAL_CRUISE_LONG_PRESS,
-                                            TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, toyota_dial_from_canonical,
-                                            toyota_canonical_from_dial)
+from openpilot.selfdrive.car.cruise import VCruiseHelper, V_CRUISE_UNSET, TOYOTA_VIRTUAL_CRUISE_LONG_PRESS
+from openpilot.sunnypilot.selfdrive.car.cruise_ext import (TOYOTA_PCM_SET_SPEED_HEADROOM_KPH, toyota_dial_from_canonical,
+                                                           toyota_canonical_from_dial)
 
 ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type

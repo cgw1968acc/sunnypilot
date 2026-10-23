@@ -35,12 +35,14 @@ Traditional Chinese; rav4kumar (sunnypilot maintainer) pulls commits from here. 
 | Planner: set-speed ramp, set-speed throttle-gate override, uphill scaling, highway ease, lead start assist | `*_sp` methods of `LongitudinalPlannerSP` (`openpilot/sunnypilot/selfdrive/controls/lib/longitudinal_planner.py`); helpers `set_speed_ramp.py`, `lead_start_assist/` | `longitudinal_planner.py`, 5 hooks |
 | MPC desired distance (trim + light-onset margin) | `long_mpc_ext.py` | `long_mpc.py`, 1 hook |
 | Radar match filters, lead drop-out hold | `radard_ext.py`, `lead_dropout_hold.py` | `radard.py`, 2 hooks |
-| Lane-change start curvature rate | `ControlsExt.lane_change_start_rate_sp()` (`openpilot/sunnypilot/selfdrive/controls/controlsd_ext.py`) | `controlsd.py`, 1 hook |
-| Screen speed, wheel-pulse creep | `*_sp` methods of `CarStateExt` (`opendbc/sunnypilot/car/toyota/carstate_ext.py`); helper `wheel_pulse.py` | `carstate.py`, 4 hooks |
+| Desired curvature: lane-change start rate, highway plan-curvature smoothing | `ControlsExt.desired_curvature_sp()` (`openpilot/sunnypilot/selfdrive/controls/controlsd_ext.py`) | `controlsd.py`, 1 hook |
+| Longitudinal chain: cruise smoother (before LongControl); stopping controller, stop-gap hold/close, creep-stall guard, lead brake boost, mid-speed brake add, end-force ceiling last (after it) | `ControlsExt.long_target_sp()` / `long_accel_sp()`; layer modules in `openpilot/sunnypilot/selfdrive/controls/lib/` | `controlsd.py`, 2 hooks (before and after `LoC.update`) |
+| Toyota software set speed: dial calibration, PCM ceiling + headroom, RES keeps own target, rapid short-press taps | `*_sp` methods of `VCruiseHelperSP` (`openpilot/sunnypilot/selfdrive/car/cruise_ext.py`) | `cruise.py`, 5 hooks (+ `TOYOTA_VIRTUAL_CRUISE_LONG_PRESS` value) |
+| Screen speed, wheel-pulse creep, Corolla Cross stalk buttons (CLUTCH 0x361 RES/SET bits) | `*_sp` methods of `CarStateExt` (`opendbc/sunnypilot/car/toyota/carstate_ext.py`); helper `wheel_pulse.py` | `carstate.py`, 4 hooks |
 | Hybrid detection from CAN | `hybrid_can_messages()` in `opendbc/sunnypilot/car/toyota/fingerprints_ext.py` | `interface.py`, 1 condition |
 | Brake onset shaping (+ creep-follow gas release), overshoot limit (+ moderate band), regen hand-over feed-forward + low-speed PID hold | `opendbc/sunnypilot/car/toyota/brake_onset.py` | `carcontroller.py` (shaper/corrections construction, `condition_pid` before the PID, `apply` after it) |
 | Auto brake hold | `opendbc/sunnypilot/car/toyota/auto_brake_hold.py` | `carcontroller.py` (Kumar's) |
-| End of stop / standstill hold, re-roll hold, flat-ground hold -1.2, creep-follow stop at -0.24, confirmed-stop hold | `openpilot/sunnypilot/selfdrive/controls/lib/stopping_controller.py` | `controlsd.py` (Kumar's; passes `pitch`) |
+| End of stop / standstill hold, re-roll hold, flat-ground hold -1.2, creep-follow stop at -0.24, confirmed-stop hold | `openpilot/sunnypilot/selfdrive/controls/lib/stopping_controller.py` | via `ControlsExt.long_accel_sp()` (Kumar's hook; passes `pitch`) |
 
 Known stock touch points that are fixes, not features: `selfdrived.py` (micd/qcomgpsd ignored), `system/micd.py`,
 `system/qcomgpsd/qcomgpsd.py`, `system/timed.py` (a dead mic/GPS must not block engagement; clock restore),
