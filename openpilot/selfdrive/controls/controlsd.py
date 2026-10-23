@@ -20,9 +20,6 @@ from openpilot.selfdrive.controls.lib.latcontrol_curvature import LatControlCurv
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
-from openpilot.sunnypilot.selfdrive.controls.lib.stopping_controller import StoppingController
-from openpilot.sunnypilot.selfdrive.controls.lib.cruise_smoother import CruiseSmoother
-from openpilot.sunnypilot.selfdrive.controls.lib.highway_plan_curvature import HighwayPlanCurvature
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
@@ -60,9 +57,6 @@ class Controls(ControlsExt):
     self.calibrated_pose: Pose | None = None
 
     self.LoC = LongControl(self.CP, self.CP_SP)
-    self.stopping_controller = StoppingController(self.CP.stopAccel)
-    self.cruise_smoother = CruiseSmoother()  # sunnypilot: steady-cruise ripple, see cruise_smoother.py
-    self.highway_plan_curvature = HighwayPlanCurvature()  # sunnypilot: highway curvature swing, see highway_plan_curvature.py
     self.VM = VehicleModel(self.CP)
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
@@ -141,41 +135,9 @@ class Controls(ControlsExt):
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    prev_state = self.LoC.long_control_state
-    prev_accel = self.LoC.last_output_accel
-    a_target = self.cruise_smoother.update(long_plan.aTarget, CS.vEgo, self.sm['radarState'].leadOne.present,
-                                           CC.longActive, long_plan.shouldStop)  # sunnypilot hook
-    accel = self.LoC.update(CC.longActive, CS, a_target, long_plan.shouldStop, pid_accel_limits)
-    stock_state = self.LoC.long_control_state
-    self.LoC.long_control_state, accel = self.stopping_controller.update(
-      prev_state, stock_state, CS, a_target, prev_accel, accel, pid_accel_limits, long_plan.hasLead,
-      pitch=self.calibrated_pose.orientation.pitch if self.calibrated_pose is not None else None,
-      a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None,
-      lead_d=self.sm['radarState'].leadOne.dRel if self.sm["radarState"].leadOne.present else None,
-      lead_v=self.sm['radarState'].leadOne.vLead if self.sm["radarState"].leadOne.present else None)  # sunnypilot hook
-    if self.LoC.long_control_state != stock_state:
-      self.LoC.reset()
-    self.LoC.last_output_accel = accel
-    # sunnypilot hook: the stop-gap hold, creep-stall guard and boost only shape what is sent; last_output_accel (the
-    # next frame's prev_accel for the stopping controller and LongControl's stopping state) keeps the plain request, or
-    # the boost would compound
-    lead_one = self.sm['radarState'].leadOne
-    accel_shaped = self.stop_gap_hold.update(accel, CS.vEgo, CS.aEgo, CS.standstill, lead_one, CC.longActive)
-    accel_shaped = self.stop_gap_close.update(accel_shaped, CS.vEgo, CS.aEgo, CS.standstill, lead_one, CC.longActive)
-    # the gap-close crawl rolls on purpose: not a creep stall
-    accel_shaped = self.creep_stall_guard.update(accel_shaped, CS.vEgo, CS.aEgo, CS.standstill,
-                                                 CC.longActive and not self.stop_gap_close.active, pid_accel_limits[0])
-    accel_shaped = self.lead_brake_boost.update(accel_shaped, CS.vEgo, CS.standstill, lead_one, CC.longActive,
-                                                pid_accel_limits[0], a_ego=CS.aEgo,
-                                                hold_off=self.stop_gap_hold.roll_out is not None)
-    # tncr: +0.2 m/s^2 on braking 30-10 km/h (gone by 6 km/h, before the end ceiling below)
-    accel_shaped = self.mid_speed_brake_add.update(accel_shaped, CS.vEgo, CS.standstill, CC.longActive, pid_accel_limits[0],
-                                                   hold_off=self.stop_gap_hold.roll_out is not None or
-                                                   self.stop_gap_close.active)
-    # owner's end-force rule, last: never firmer than the end ceiling (Cross: -2.0 at 5 km/h -> -0.34 at 0, and the
-    # anchored line below 2 km/h), whatever asked for more - the roll guard included (2026-10-15 evening: its exemption
-    # put 4120 N on at 2.7 km/h and the car stopped with a jolt); the standstill hold then firms up at HOLD_RATE
-    actuators.accel = float(self.end_force_limit.update(accel_shaped, CS.vEgo, CS.standstill, CC.longActive, CS.aEgo))
+    a_target = self.long_target_sp(long_plan, CS, CC.longActive)  # sunnypilot hook
+    actuators.accel = float(self.LoC.update(CC.longActive, CS, a_target, long_plan.shouldStop, pid_accel_limits))
+    self.long_accel_sp(actuators, CS, long_plan, pid_accel_limits, CC.longActive)  # sunnypilot hook
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
@@ -183,11 +145,8 @@ class Controls(ControlsExt):
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
-    new_desired_curvature = self.lane_change_start_rate_sp(new_desired_curvature, self.desired_curvature,
-                                                        model_v2.meta.laneChangeState, CS.vEgo)  # sunnypilot hook
-    new_desired_curvature = self.highway_plan_curvature.update(new_desired_curvature, model_v2, CS.vEgo,
-                                                               CC.latActive and not self.sm.valid['lateralManeuverPlan'],
-                                                               model_v2.meta.laneChangeState == LaneChangeState.off)  # sunnypilot hook
+    new_desired_curvature = self.desired_curvature_sp(new_desired_curvature, model_v2, CS.vEgo,
+                                                     CC.latActive and not self.sm.valid['lateralManeuverPlan'])  # sunnypilot hook
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 

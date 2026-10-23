@@ -25,6 +25,9 @@ from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_hold import StopGapHol
 from openpilot.sunnypilot.selfdrive.controls.lib.creep_stall_guard import CreepStallGuard
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_gap_close import StopGapClose
 from openpilot.sunnypilot.selfdrive.controls.lib.end_force_limit import EndForceLimit
+from openpilot.sunnypilot.selfdrive.controls.lib.stopping_controller import StoppingController
+from openpilot.sunnypilot.selfdrive.controls.lib.cruise_smoother import CruiseSmoother
+from openpilot.sunnypilot.selfdrive.controls.lib.highway_plan_curvature import HighwayPlanCurvature
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_split import LatControlTorqueSplit, SPLIT_ENABLED
 
@@ -66,6 +69,13 @@ class ControlsExt(ModelStateBase):
     self.creep_stall_guard = CreepStallGuard()  # tnpb3: 1-5 km/h adds back brake the hybrid creep eats
     self.stop_gap_close = StopGapClose()  # tnpb3: <12 km/h a stop predicted beyond 4 m crawls on at 2.3 km/h to 3.25 m
     self.end_force_limit = EndForceLimit()  # tnpb3: owner rule, <2 km/h linear to -0.30 at 0 km/h, never firmer
+    self.stopping_controller = StoppingController(CP.stopAccel)  # end of stop / standstill hold, see stopping_controller.py
+    self.cruise_smoother = CruiseSmoother()  # steady-cruise ripple, see cruise_smoother.py
+    self.highway_plan_curvature = HighwayPlanCurvature()  # highway curvature swing, see highway_plan_curvature.py
+    # LongControl's state and last output as they stood before this frame's update; long_target_sp() records them,
+    # long_accel_sp() hands them to the stopping controller
+    self._stopping_prev = None
+    self._a_target_sp = 0.0
 
     cloudlog.info("controlsd_ext is waiting for CarParamsSP")
     self.CP_SP = messaging.log_from_bytes(params.get("CarParamsSP", block=True), custom.CarParamsSP)
@@ -171,3 +181,55 @@ class ControlsExt(ModelStateBase):
       return min(max(new_desired_curvature, desired_curvature - max_lc_delta), desired_curvature + max_lc_delta)
     self.lane_change_start_t = 0.0
     return new_desired_curvature
+
+  def long_target_sp(self, long_plan, CS, long_active: bool) -> float:
+    """sunnypilot hook before the stock LongControl.update(): returns the aTarget it should track (steady-cruise
+    smoothing) and records LongControl's state from before the update for long_accel_sp()."""
+    self._stopping_prev = (self.LoC.long_control_state, self.LoC.last_output_accel)
+    self._a_target_sp = self.cruise_smoother.update(long_plan.aTarget, CS.vEgo, self.sm['radarState'].leadOne.present,
+                                                    long_active, long_plan.shouldStop)
+    return self._a_target_sp
+
+  def long_accel_sp(self, actuators, CS, long_plan, accel_limits: tuple[float, float], long_active: bool) -> None:
+    """sunnypilot hook after the stock LongControl.update(): the end-of-stop policy (stopping controller), then the
+    send-only shaping layers, the owner's end-force ceiling last."""
+    prev_state, prev_accel = self._stopping_prev
+    stock_state = self.LoC.long_control_state
+    lead_one = self.sm['radarState'].leadOne
+    self.LoC.long_control_state, accel = self.stopping_controller.update(
+      prev_state, stock_state, CS, self._a_target_sp, prev_accel, self.LoC.last_output_accel, accel_limits, long_plan.hasLead,
+      pitch=self.calibrated_pose.orientation.pitch if self.calibrated_pose is not None else None,
+      a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None,
+      lead_d=lead_one.dRel if lead_one.present else None,
+      lead_v=lead_one.vLead if lead_one.present else None)
+    if self.LoC.long_control_state != stock_state:
+      self.LoC.reset()
+    self.LoC.last_output_accel = accel
+    # the stop-gap hold, creep-stall guard and boost only shape what is sent; last_output_accel (the next frame's
+    # prev_accel for the stopping controller and LongControl's stopping state) keeps the plain request, or the boost
+    # would compound
+    accel_shaped = self.stop_gap_hold.update(accel, CS.vEgo, CS.aEgo, CS.standstill, lead_one, long_active)
+    accel_shaped = self.stop_gap_close.update(accel_shaped, CS.vEgo, CS.aEgo, CS.standstill, lead_one, long_active)
+    # the gap-close crawl rolls on purpose: not a creep stall
+    accel_shaped = self.creep_stall_guard.update(accel_shaped, CS.vEgo, CS.aEgo, CS.standstill,
+                                                 long_active and not self.stop_gap_close.active, accel_limits[0])
+    accel_shaped = self.lead_brake_boost.update(accel_shaped, CS.vEgo, CS.standstill, lead_one, long_active,
+                                                accel_limits[0], a_ego=CS.aEgo,
+                                                hold_off=self.stop_gap_hold.roll_out is not None)
+    # tncr: +0.2 m/s^2 on braking 30-10 km/h (gone by 6 km/h, before the end ceiling below)
+    accel_shaped = self.mid_speed_brake_add.update(accel_shaped, CS.vEgo, CS.standstill, long_active, accel_limits[0],
+                                                   hold_off=self.stop_gap_hold.roll_out is not None or
+                                                   self.stop_gap_close.active)
+    # owner's end-force rule, last: never firmer than the end ceiling (Cross: -2.0 at 5 km/h -> -0.34 at 0, and the
+    # anchored line below 2 km/h), whatever asked for more - the roll guard included (2026-10-15 evening: its exemption
+    # put 4120 N on at 2.7 km/h and the car stopped with a jolt); the standstill hold then firms up at HOLD_RATE
+    actuators.accel = float(self.end_force_limit.update(accel_shaped, CS.vEgo, CS.standstill, long_active, CS.aEgo))
+
+  def desired_curvature_sp(self, new_desired_curvature: float, model_v2, v_ego: float, model_lat_active: bool) -> float:
+    """sunnypilot hook after stock controlsd picks the new desired curvature: lane-change start rate, then the
+    highway plan-curvature smoothing (model path only, not in a lane change)."""
+    lane_change_state = model_v2.meta.laneChangeState
+    new_desired_curvature = self.lane_change_start_rate_sp(new_desired_curvature, self.desired_curvature,
+                                                           lane_change_state, v_ego)
+    return self.highway_plan_curvature.update(new_desired_curvature, model_v2, v_ego, model_lat_active,
+                                              lane_change_state == log.LaneChangeState.off)
