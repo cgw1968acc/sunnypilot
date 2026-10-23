@@ -212,6 +212,15 @@ class CarStateExt:
       ret_sp.engineRpm = float(cp.vl["ENGINE_RPM"]["RPM"])
       ret_sp.engineOff = ret_sp.engineRpm < ENGINE_RUNNING_RPM and not bool(cp.vl["ENGINE_RPM"]["ENGINE_RUNNING"])
 
+    # Drive mode in memory (tncr, owner 2026-10-23). The stock ToyotaDriveMode code above only writes the profile to
+    # the AccelPersonality param, which the planner reads back from storage. Route 000000a5 2026-10-22 21:30: the
+    # driver switched ECO -> NORMAL (21:30:02) -> SPORT (21:30:12), the dash showed it, but /data was in an 8-minute
+    # write stall (tn_iowatch: iowait 18-31 %, 0 MB written) and the planner stayed on the eco cap. The profile now
+    # also travels in carStateSP every frame; the param write stays for the settings screen.
+    if getattr(self, 'toyota_drive_mode', False) and getattr(self, '_accel_profile_init', False):
+      ret_sp.driveModeValid = True
+      ret_sp.driveModeProfile = int(self._prev_accel_profile)
+
   def cluster_hyst_gap_sp(self, stock_gap: float) -> float:
     return CLUSTER_HYST_KPH * CV.KPH_TO_MS
 

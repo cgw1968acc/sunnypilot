@@ -171,6 +171,8 @@ class LongitudinalPlannerSP:
   def update(self, sm: messaging.SubMaster) -> None:
     self.lead_one = sm['radarState'].leadOne
     self.accel_controller.update()
+    if sm['carStateSP'].driveModeValid:  # Toyota drive mode straight from CAN, not via the param file
+      self.accel_controller.set_profile_sp(sm['carStateSP'].driveModeProfile)
     self.events_sp.clear()
     self.e2e_alerts_helper.update(sm, self.events_sp)
 

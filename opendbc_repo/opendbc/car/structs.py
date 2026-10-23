@@ -170,3 +170,7 @@ class CarStateSP:
   # do not expose engine state, so consumers treat False as "engine running / unknown".
   engineOff: bool = auto_field()
   engineRpm: float = auto_field()
+  # Toyota drive mode (sunnypilot ToyotaDriveMode): the accel profile picked by the ECO / NORMAL / SPORT switch,
+  # straight from CAN, so the planner does not depend on the AccelPersonality param file (see carstate_ext.py)
+  driveModeValid: bool = auto_field()
+  driveModeProfile: int = auto_field()  # 0 eco, 1 normal, 2 sport

@@ -71,6 +71,11 @@ class AccelController:
     self._profile = get_sanitize_int_param("AccelPersonality", AccelProfile.eco, AccelProfile.sport, self.params)
     self._enabled = self.params.get_bool("AccelPersonalityEnabled")
 
+  def set_profile_sp(self, profile: int) -> None:
+    """The drive-mode switch as read from CAN this frame (carStateSP), ahead of the param file (see carstate_ext.py)"""
+    if AccelProfile.eco <= profile <= AccelProfile.sport:
+      self._profile = int(profile)
+
   @property
   def profile(self) -> int:
     return self._profile

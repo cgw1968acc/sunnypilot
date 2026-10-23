@@ -465,6 +465,8 @@ struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
   engineOff @1 :Bool;
   engineRpm @2 :Float32;
+  driveModeValid @3 :Bool;
+  driveModeProfile @4 :UInt8;  # 0 eco, 1 normal, 2 sport
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {
