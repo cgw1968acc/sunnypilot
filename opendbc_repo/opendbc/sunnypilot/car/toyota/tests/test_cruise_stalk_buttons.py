@@ -1,9 +1,9 @@
-import inspect
 import unittest
 
 from opendbc.can import CANParser
 from opendbc.car import structs
-from opendbc.car.toyota.carstate import CarState, CruiseButton
+from opendbc.car.toyota.carstate import CarState
+from opendbc.sunnypilot.car.toyota.carstate_ext import CarStateExt, CruiseButton
 from opendbc.car.toyota.interface import CarInterface
 from opendbc.car.toyota.values import CAR
 
@@ -21,6 +21,7 @@ class FakeParser:
 def make_cs():
   cs = CarState.__new__(CarState)  # skip the heavy __init__, only the button state is needed
   cs.cruise_button = CruiseButton.none
+  cs.CP_SP = structs.CarParamsSP(pcmCruiseSpeed=False)
   return cs
 
 
@@ -29,7 +30,7 @@ class TestCruiseStalkButtons(unittest.TestCase):
     self.cs = make_cs()
 
   def events(self, res, set_):
-    return [(e.type, e.pressed) for e in self.cs.update_cruise_button_events(FakeParser(res, set_))]
+    return [(e.type, e.pressed) for e in self.cs.cruise_button_events_sp(FakeParser(res, set_))]
 
   def test_short_res_press_gives_one_press_and_release(self):
     # ~0.5 s physical press = 7-8 genuine frames, spread over several 100 Hz iterations
@@ -55,9 +56,9 @@ class TestCruiseStalkButtons(unittest.TestCase):
     self.assertEqual(self.events([0], [1]), [(ButtonType.accelCruise, False), (ButtonType.decelCruise, True)])
 
   def test_parser_registers_clutch_only_for_software_set_speed(self):
-    src = inspect.getsource(CarState.get_can_parsers)
-    self.assertIn('if not CP_SP.pcmCruiseSpeed:', src)
-    self.assertIn('("CLUTCH", 15)', src)
+    # registered by CarStateExt.extra_pt_messages_sp (sunnypilot hook in CarState.get_can_parsers)
+    self.assertIn(("CLUTCH", 15), CarStateExt.extra_pt_messages_sp(structs.CarParamsSP(pcmCruiseSpeed=False), {}))
+    self.assertNotIn(("CLUTCH", 15), CarStateExt.extra_pt_messages_sp(structs.CarParamsSP(pcmCruiseSpeed=True), {}))
 
   def test_clutch_stalk_bits_decode(self):
     # byte 0 of 0x361: bit 3 CANCEL, bit 4 SET/-, bit 5 RES/+ (generator _toyota_2017.dbc, built at runtime)

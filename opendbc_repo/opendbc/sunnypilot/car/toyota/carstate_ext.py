@@ -7,7 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 
 from enum import StrEnum
 
-from opendbc.car import Bus, structs
+from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.carlog import carlog
 from opendbc.can.parser import CANParser
 from opendbc.car.common.conversions import Conversions as CV
@@ -16,6 +16,7 @@ from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 from opendbc.sunnypilot.car.toyota.wheel_pulse import WheelPulseCreep
 
 ENGINE_RUNNING_RPM = 300.0
+ButtonType = structs.CarState.ButtonEvent.Type
 
 TRAFFIC_SIGNAL_MAP = {
   1: "kph",
@@ -58,6 +59,23 @@ def cluster_speed(v_ego: float) -> float:
   return (CLUSTER_SPEED_GAIN * v_kph + CLUSTER_SPEED_OFFSET_KPH) * CV.KPH_TO_MS
 
 
+# Toyota has no dedicated cruise button message on the powertrain bus, but CLUTCH (0x361) byte 0 carries the raw
+# stalk switch state: bit 5 RES/+, bit 4 SET/-, bit 3 CANCEL, held for the real ~0.5 s of a physical short press.
+# PCM_CRUISE->CRUISE_STATE 9/10 ("click up/down") must NOT be used as the button source: it reflects the PCM
+# accelerating/decelerating towards its own set speed and persists for seconds whenever the car is above or below
+# that number, which openpilot then mistakes for a long press (option1b_findings14 section 12, tncr18 cfd771a7b8).
+class CruiseButton:
+  none = 0
+  plus = 1
+  minus = 2
+
+
+CRUISE_BUTTONS_DICT = {
+  CruiseButton.plus: ButtonType.accelCruise,
+  CruiseButton.minus: ButtonType.decelCruise,
+}
+
+
 class CarStateExt:
   def __init__(self, CP, CP_SP):
     self.CP = CP
@@ -69,6 +87,7 @@ class CarStateExt:
     # tnpb2 additions, called from hooks in the stock Toyota CarState (see the *_sp methods at the end)
     self.wheel_pulse = WheelPulseCreep()
     self.wheel_encoder = float('nan')  # SPEED (0xB4) ENCODER: wheel pulse counter, still counts below the ~0.5 km/h speed floor
+    self.cruise_button = CruiseButton.none  # last raw stalk state (CLUTCH 0x361), see cruise_button_events_sp
     self.zss_cruise_active_last = False
     self.zss_angle_offset = 0.
     self.zss_threshold_count = 0
@@ -251,10 +270,40 @@ class CarStateExt:
       ret.vEgoRaw = creep_v
       ret.vEgo = max(ret.vEgo, creep_v)
 
+  def cruise_button_events_sp(self, cp) -> list[structs.CarState.ButtonEvent]:
+    """Derive accelCruise/decelCruise events from the raw RES/SET stalk bits in CLUTCH (0x361).
+
+    Only when openpilot tracks the set speed itself (software set speed, CP_SP.pcmCruiseSpeed False, see
+    interface.py); CLUTCH is only registered with the parser in that case (extra_pt_messages_sp).
+
+    Every sample received this cycle is walked in order so that a press and its release landing in the same
+    100 Hz iteration still produce both edges. RES and SET asserted together is physically impossible and is
+    treated as unpressed. CANCEL is left to the PCM (it disengages cruise on its own).
+    """
+    events: list[structs.CarState.ButtonEvent] = []
+    if self.CP_SP.pcmCruiseSpeed:
+      return events
+
+    for res, set_ in zip(cp.vl_all["CLUTCH"]["CRUISE_BTN_RES"], cp.vl_all["CLUTCH"]["CRUISE_BTN_SET"], strict=True):
+      if bool(res) != bool(set_):
+        cruise_button = CruiseButton.plus if res else CruiseButton.minus
+      else:
+        cruise_button = CruiseButton.none
+      events += create_button_events(cruise_button, self.cruise_button, CRUISE_BUTTONS_DICT,
+                                     unpressed_btn=CruiseButton.none)
+      self.cruise_button = cruise_button
+
+    return events
+
   @staticmethod
-  def extra_pt_messages_sp(name_to_msg) -> list:
+  def extra_pt_messages_sp(CP_SP, name_to_msg) -> list:
+    msgs = []
+    # raw cruise stalk bits for the software set speed (0x361 runs at ~15.5 Hz on the Corolla Cross TSS2). Only
+    # registered when needed so cars without this message are not affected by the frequency check (tncr18 cfd771a7b8).
+    if not CP_SP.pcmCruiseSpeed:
+      msgs.append(("CLUTCH", 15))
     # wheel pulse counter (0xB4 ENCODER): the wheel speeds read 0 below ~0.5 km/h, the encoder still counts, so a
     # slow creep is not mistaken for a stop (wheel_pulse.py). Alive check skipped.
     if "SPEED" in name_to_msg:
-      return [("SPEED", float('nan'))]
-    return []
+      msgs.append(("SPEED", float('nan')))
+    return msgs
