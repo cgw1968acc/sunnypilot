@@ -174,6 +174,14 @@ class StoppingController:
   # accepted). The request is eased down to the line at END_CAP_RATE so the hand-over itself is not felt. With a lead
   # the plan still wins whenever it is firmer.
   END_CAP_RATE = 1.0  # m/s^3
+  # tncr, owner 2026-10-23 (route 000000ac 15:45:28, experimental, red light, no lead: 'brakes until nearly 5 km/h,
+  # then lets go and creeps; one braking to the stop like my normal ACC'): the e2e plan was still -1.65 at 8 km/h, so
+  # the ceiling that only started at END_V_HI had to come off -1.7 -> -0.37 in 1.3 s; the Cross lost all decel at
+  # 2.4 km/h (aEgo 0..+0.1 at -0.37 sent) and crept 1.9 s / 1.4 m. The no-lead ceiling now starts where the line
+  # does (BLEND_V): from the request at 13 km/h down to END_HI at 8 km/h, as a stop behind a lead arrives there.
+  # Kinematic estimate for that stop: 13 km/h -> 0 in ~5.7 m (logged 6.3 m incl. the creep), one continuous decel.
+  # Stops with a lead are untouched.
+  NO_LEAD_CAP_V = BLEND_V  # m/s (was END_V_HI)
 
   # Leaving the standstill hold (driver 2026-10-04, route 000000fa 14:43:32: "the brake release at launch is a jerk, as
   # if let go suddenly; make it linear and slow"). There the request went from the -2.0 hold (3960 N) to +0.7 in 0.5 s
@@ -280,7 +288,7 @@ class StoppingController:
   def _end_request(self, a_target, prev_accel, v_ego, has_lead=True):
     line = self._blend(v_ego)
     target = min(a_target, line)  # the firmer of the plan and the line
-    if not has_lead and v_ego < self.END_V_HI and target < line:
+    if not has_lead and v_ego < self.NO_LEAD_CAP_V and target < line:
       # no lead: the line is also the ceiling here, reached gently
       return float(min(line, prev_accel + self.END_CAP_RATE * DT_CTRL))
     step = self.END_RATE * DT_CTRL

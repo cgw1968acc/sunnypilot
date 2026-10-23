@@ -42,3 +42,33 @@ def test_far_gate_uses_the_leads_run_out():
   # lead 6 m ahead but still rolling at 3 m/s (runs out 4.5 m more at 1 m/s^2): the stop point is 10.5 m away -> far
   assert abs(run(sc, 50, 8.0 / 3.6, -0.49, 6.0, 3.0) - (-0.49)) < 1e-9
   assert not sc.end_active
+
+
+def step(sc, v, a_target, prev, has_lead, lead_d=None, lead_v=None):
+  return sc.update(LongCtrlState.pid, LongCtrlState.pid, cs(v), a_target, prev, a_target, LIM, has_lead, lead_d=lead_d, lead_v=lead_v)[1]
+
+
+def test_no_lead_ceiling_starts_at_blend_v():
+  # route 000000ac 15:45:23 (experimental, red light, no lead): the e2e plan was still -1.65 at 8 km/h. The no-lead
+  # ceiling now starts at BLEND_V, so between 13 and 8 km/h the request already comes down along the line from the
+  # request at 13 km/h toward END_HI, eased at END_CAP_RATE - never firmer than the line
+  sc = StoppingController(-2.0)
+  out = step(sc, 12.9 / 3.6, -2.0, -2.0, False)                                 # arm at 12.9 km/h with -2.0
+  assert sc.end_active
+  line_10 = float(sc._blend(10.0 / 3.6))
+  assert -2.0 < line_10 < sc.END_HI
+  outs = [out]
+  for _ in range(300):
+    outs.append(step(sc, 10.0 / 3.6, -1.9, outs[-1], False))
+  assert abs(outs[-1] - line_10) < 1e-6                                          # settles on the line, lighter than the plan
+  steps = [b - a for a, b in zip(outs, outs[1:], strict=False)]
+  assert max(steps) <= sc.END_CAP_RATE * 0.01 + 1e-9                             # eased, no step
+
+
+def test_lead_stop_between_13_and_8_kmh_unchanged():
+  # with a lead the plan still wins wherever it is firmer than the line
+  sc = StoppingController(-2.0)
+  out = step(sc, 12.9 / 3.6, -2.0, -2.0, True, 6.0, 0.0)
+  for _ in range(200):
+    out = step(sc, 10.0 / 3.6, -1.9, out, True, 6.0, 0.0)
+  assert abs(out - (-1.9)) < 1e-6
