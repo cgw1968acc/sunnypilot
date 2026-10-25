@@ -223,7 +223,10 @@ class ControlsExt(ModelStateBase):
     # owner's end-force rule, last: never firmer than the end ceiling (Cross: -2.0 at 5 km/h -> -0.34 at 0, and the
     # anchored line below 2 km/h), whatever asked for more - the roll guard included (2026-10-15 evening: its exemption
     # put 4120 N on at 2.7 km/h and the car stopped with a jolt); the standstill hold then firms up at HOLD_RATE
-    actuators.accel = float(self.end_force_limit.update(accel_shaped, CS.vEgo, CS.standstill, long_active, CS.aEgo))
+    # downhill: the owner's approved exception, a little firmer with the grade below 30 km/h (end_force_limit.py)
+    actuators.accel = float(self.end_force_limit.update(accel_shaped, CS.vEgo, CS.standstill, long_active, CS.aEgo,
+                                                        pitch=self.calibrated_pose.orientation.pitch
+                                                        if self.calibrated_pose is not None else None))
 
   def desired_curvature_sp(self, new_desired_curvature: float, model_v2, v_ego: float, model_lat_active: bool) -> float:
     """sunnypilot hook after stock controlsd picks the new desired curvature: lane-change start rate, then the

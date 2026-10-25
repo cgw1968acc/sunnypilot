@@ -4,6 +4,8 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import math
+
 import numpy as np
 
 from openpilot.common.realtime import DT_CTRL
@@ -52,6 +54,35 @@ STALL_A = -0.1         # m/s^2
 STALL_T = 0.3          # s
 
 
+
+# Downhill end braking (tncr, Corolla Cross, owner 2026-10-25, approved as an exception to item 0: "below 30 km/h, stopping on a
+# downhill, add a little force step by step with the slope angle; start with 0.01 per degree"). The request AND every
+# ceiling above (the end value -0.34 at 0 km/h included) move firmer by the same small amount, so the shape of the stop is
+# unchanged and only its level follows the grade; flat roads and uphills are untouched. Pitch: calibrated pose (rad,
+# + = nose up); standing on the flat both cars read +0.2..+1.6 deg (Altis routes 173-175 standstill p50 0.2-1.1, Cross
+# route a3 stops p50 1.1; auto_brake_hold.FLAT_PITCH_DEG 1.0 from Altis routes ec/ee/f2), so downhill degrees count from
+# +1.0 with a 0.5 deg dead band for the road crown and the nose dip under braking. 1 deg of grade is ~0.17 m/s^2 of
+# gravity; 0.01 per degree is a first small step.
+SLOPE_GAIN = 0.01             # m/s^2 per degree of downhill
+SLOPE_FLAT_PITCH_DEG = 1.0    # deg
+SLOPE_DEADBAND_DEG = 0.5      # deg
+SLOPE_MAX = 0.10              # m/s^2 (reached at ~10.5 deg downhill)
+SLOPE_V_BP = [25.0 / 3.6, 30.0 / 3.6]  # m/s: full below 25 km/h, none from 30 (no step at 30)
+SLOPE_V_W = [1.0, 0.0]
+SLOPE_A_BP = [-0.10, 0.0]     # m/s^2: only on a braking request (fades in from 0 to -0.1, cruise near 0 untouched)
+SLOPE_A_W = [1.0, 0.0]
+
+
+def downhill_extra(pitch: float | None, v_ego: float, accel: float) -> float:
+  """extra braking (m/s^2, >= 0) for the grade; 0 on the flat, uphill, above 30 km/h or without a braking request"""
+  if pitch is None or not math.isfinite(pitch) or accel >= 0.0:
+    return 0.0
+  deg = SLOPE_FLAT_PITCH_DEG - math.degrees(pitch) - SLOPE_DEADBAND_DEG
+  if deg <= 0.0:
+    return 0.0
+  w = float(np.interp(v_ego, SLOPE_V_BP, SLOPE_V_W)) * float(np.interp(accel, SLOPE_A_BP, SLOPE_A_W))
+  return min(SLOPE_GAIN * deg, SLOPE_MAX) * w
+
 class EndForceLimit:
   def __init__(self):
     self.reset()
@@ -62,7 +93,12 @@ class EndForceLimit:
     self.out = None      # last limited output (None = not limiting)
     self.stall_t = 0.0
 
-  def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0) -> float:
+  def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0, pitch: float | None = None) -> float:
+    """the end-force limit, then the downhill extra (pitch: calibrated pose, rad, + = nose up)"""
+    out = self._update(accel, v_ego, standstill, long_active, a_ego)
+    return out - downhill_extra(pitch, v_ego, accel) if long_active else out
+
+  def _update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0) -> float:
     if not long_active or accel >= 0.0:
       self.reset()
       return accel
