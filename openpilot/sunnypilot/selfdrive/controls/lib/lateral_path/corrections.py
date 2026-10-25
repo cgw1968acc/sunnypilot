@@ -40,7 +40,8 @@ class LateralPathCorrections:
     desired_curvature = self.low_straight.update(desired_curvature, model_v2, CS, active, lane_changing)
     model_curvature = desired_curvature
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
-    desired_curvature += self.lane_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed, straight)
+    desired_curvature += self.lane_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed, straight,
+                                                    desired_curvature, lane_changing)
     if self.low_centering is not None:
       desired_curvature += self.low_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed,
                                                      getattr(CS, 'leftBlinker', False) or getattr(CS, 'rightBlinker', False),

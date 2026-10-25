@@ -72,6 +72,28 @@ LANE_CENTER_JERK = 0.5             # tncr19 Cross value (Altis 0.3); m/s^3; how 
                                    # 85 km/h, 514 s: unlimited correction rate p95 0.12 / p99 0.20 m/s^3, the limit binds 0.1% -> 0.4%)
 LANE_CENTER_FILTER_TAU = 0.5       # s; low-pass on the measured offset and heading
 
+# Line mode (tncr, owner 2026-10-25: "on the highway, use the absolute centre line from the two seen lane lines instead of
+# the planned path, so the centring is more precise"). Route 000000a9 (2026-10-23, > 85 km/h, 6.3 min, both lines
+# >= 0.5 98% of the time): the car sat 4.2 cm left of the line centre with a 12.0 cm std (26% of the time > 10 cm); the
+# model's path 20 m ahead was 5.1 cm left of the line centre with a 10.3 cm std, while the line centre itself moved only
+# 1.3 cm (std) from frame to frame - the wander is the plan, not the lines. The owner's own steady hold is 3-4 cm std.
+# With both lines confident the target curvature is taken from the line centre itself (pure pursuit of the centre
+# LINE_T_LOOK ahead, which carries the lane's own curvature) instead of correcting the model's action: weight w blends
+# from the PD correction above (w = 0) to the line curvature (w = 1). Equivalent gains of the pursuit: 2 / T^2 = 0.89
+# m/s^2 per metre (KP above 0.35), 2 / T = 1.33 m/s^2 per m/s (KD 1.20), damping ratio 0.71. The model's action is the
+# fallback whenever the lines are not trusted (exits, merges, worn paint, lane changes): w falls back in 0.5 s.
+LINE_V_BP = [80.0 / 3.6, 90.0 / 3.6]  # m/s: line mode fades in above the full-strength PD centering
+LINE_V_W = [0.0, 1.0]
+LINE_MIN_PROB = 0.7         # both near lines at least this (the PD centering accepts 0.5 / 0.4)
+LINE_T_LOOK = 1.5           # s of travel to the pursued point on the line centre
+LINE_L_RANGE = (20.0, 45.0)  # m; lookahead limits
+LINE_FIT_MARGIN = 10.0      # m beyond the lookahead included in the centre fit
+LINE_MAX_DIFF_ACCEL = 1.0   # m/s^2; a line target this far from the model's is not trusted (a line of another lane)
+LINE_W_MAX = 1.0
+LINE_W_RISE = 0.5           # 1/s: 2 s to take over
+LINE_W_FALL = 2.0           # 1/s: 0.5 s to hand back
+LINE_FILTER_TAU = 0.1       # s; low-pass on the line curvature (0.3 oscillated in the closed-loop sim with 0.5 s steering lag)
+
 
 class LaneCentering:
   def __init__(self, dt: float):
@@ -85,6 +107,10 @@ class LaneCentering:
     self.heading = 0.0
     self.valid = False
     self.last_meas: tuple[float, float] | None = None  # this frame's (offset, heading), for the low-speed trim
+    self.line_w = 0.0  # line mode weight (0 = PD correction of the model, 1 = line centre curvature)
+    self.line_filter = FirstOrderFilter(0.0, LINE_FILTER_TAU, dt)
+    self.line_valid = False
+    self.output = 0.0  # what update() returned (correction blended with line mode)
 
   def reset(self):
     self.offset_filter.x = 0.0
@@ -92,6 +118,45 @@ class LaneCentering:
     self.integral = 0.0
     self.correction = 0.0
     self.valid = False
+    self.line_w = 0.0
+    self.line_valid = False
+    self.output = 0.0
+
+  def line_curvature(self, model_v2, v_ego: float) -> float | None:
+    """Pure pursuit of the lane-line centre LINE_T_LOOK ahead (curvature, positive = right). None unless both near
+    lines are confident and seen far enough; call only after measure() accepted the pair (width checks)."""
+    lines, probs = model_v2.laneLines, model_v2.laneLineProbs
+    if min(probs[1], probs[2]) < LINE_MIN_PROB:
+      return None
+    look = float(np.clip(v_ego * LINE_T_LOOK, *LINE_L_RANGE))
+    x = np.asarray(lines[1].x)
+    if len(x) < 4 or x[-1] < look + LINE_FIT_MARGIN or len(lines[2].y) != len(x):
+      return None
+    n = int(np.sum(x <= look + LINE_FIT_MARGIN))
+    centre = (np.asarray(lines[1].y)[:n] + np.asarray(lines[2].y)[:n]) / 2.0
+    y_look = float(np.polyval(np.polyfit(x[:n], centre, 2), look))
+    return 2.0 * y_look / (look ** 2 + y_look ** 2)
+
+  def _line_mode(self, model_v2, v_ego: float, meas_ok: bool, model_curvature: float | None, lane_changing: bool) -> float:
+    """Blend the PD correction (self.correction) with the line-centre curvature; returns the curvature to add."""
+    if model_curvature is None:
+      return self.correction
+    k_line = self.line_curvature(model_v2, v_ego) if meas_ok and not lane_changing else None
+    trusted = k_line is not None and abs(k_line - model_curvature) * v_ego ** 2 <= LINE_MAX_DIFF_ACCEL
+    if trusted:
+      if not self.line_valid and self.line_w <= 0.0:
+        self.line_filter.x = k_line
+      self.line_filter.update(k_line)
+    else:
+      # hand back: the target follows the model's curvature while the weight falls
+      if self.line_w <= 0.0:
+        self.line_filter.x = model_curvature
+      self.line_filter.update(model_curvature)
+    self.line_valid = trusted
+    w_target = LINE_W_MAX * float(np.interp(v_ego, LINE_V_BP, LINE_V_W)) if trusted else 0.0
+    rate = LINE_W_RISE if w_target > self.line_w else LINE_W_FALL
+    self.line_w = float(np.clip(w_target, self.line_w - rate * self.dt, self.line_w + rate * self.dt))
+    return (1.0 - self.line_w) * self.correction + self.line_w * (self.line_filter.x - model_curvature)
 
   def measure(self, model_v2) -> tuple[float, float] | None:
     """(offset, heading) of the car relative to the lane centre: offset positive = car LEFT of centre, heading
@@ -125,8 +190,10 @@ class LaneCentering:
     c2, c1, c0 = np.polyfit(x[:n], centre, 2)
     return float(c0), float(math.atan(c1))
 
-  def update(self, model_v2, v_ego: float, active: bool, steering_pressed: bool, straight: float = 0.0) -> float:
-    """Curvature to ADD to the desired curvature (positive = right). straight: tncr straight mode weight (0..1)"""
+  def update(self, model_v2, v_ego: float, active: bool, steering_pressed: bool, straight: float = 0.0,
+             model_curvature: float | None = None, lane_changing: bool = False) -> float:
+    """Curvature to ADD to the desired curvature (positive = right). straight: tncr straight mode weight (0..1).
+    model_curvature: the desired curvature this is added to (enables line mode); lane_changing: hand back to the model."""
     meas = self.measure(model_v2) if active and not steering_pressed and v_ego > LANE_CENTER_MIN_SPEED else None
     self.last_meas = meas
     tau = blend(LANE_CENTER_FILTER_TAU, STRAIGHT_CENTER_TAU, straight)
@@ -142,7 +209,8 @@ class LaneCentering:
       self.integral = 0.0
       self.valid = False
       self.correction = float(np.clip(0.0, self.correction - step, self.correction + step))
-      return self.correction
+      self.output = self._line_mode(model_v2, v_ego, False, model_curvature, lane_changing)
+      return self.output
 
     self.valid = True
     self.offset = self.offset_filter.update(meas[0])
@@ -156,7 +224,8 @@ class LaneCentering:
     target = float(np.clip(lat_accel / max(v_ego, LANE_CENTER_MIN_SPEED) ** 2, -LANE_CENTER_MAX_CURV, LANE_CENTER_MAX_CURV))
     target *= float(np.interp(v_ego, LANE_CENTER_FADE_BP, LANE_CENTER_FADE_V))
     self.correction = float(np.clip(target, self.correction - step, self.correction + step))
-    return self.correction
+    self.output = self._line_mode(model_v2, v_ego, True, model_curvature, lane_changing)
+    return self.output
 
 
 # Low-speed lane trim (below the highway-speed centering), ported from tncr18 on 2026-09-30 (Altis driver: "sometimes
