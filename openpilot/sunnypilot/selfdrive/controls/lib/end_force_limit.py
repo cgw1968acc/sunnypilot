@@ -93,15 +93,16 @@ class EndForceLimit:
     self.out = None      # last limited output (None = not limiting)
     self.stall_t = 0.0
 
-  def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0, pitch: float | None = None) -> float:
-    """the end-force limit, then the downhill extra (pitch: calibrated pose, rad, + = nose up)"""
-    out = self._update(accel, v_ego, standstill, long_active, a_ego)
-    return out - downhill_extra(pitch, v_ego, accel) if long_active else out
-
-  def _update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0) -> float:
+  def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0,
+             pitch: float | None = None) -> float:
+    """pitch: calibrated pose, rad, + = nose up (downhill end braking, see downhill_extra)"""
     if not long_active or accel >= 0.0:
       self.reset()
       return accel
+    # downhill (owner-approved exception to item 0): the request and every end value below sit `extra` firmer
+    extra = downhill_extra(pitch, v_ego, accel)
+    accel -= extra
+    end_accel = END_ACCEL - extra
 
     if standstill:
       if self.out is None:
@@ -114,7 +115,7 @@ class EndForceLimit:
 
     ceil_in = accel
     if v_ego <= CEIL_V:  # the fixed ceiling line (never firmer, whatever asked for it)
-      ceil = float(np.interp(max(v_ego, 0.0), CEIL_BP, CEIL_A))
+      ceil = float(np.interp(max(v_ego, 0.0), CEIL_BP, CEIL_A)) - extra
       if accel < ceil:
         accel = ceil
     if v_ego >= V_LINE:
@@ -128,8 +129,8 @@ class EndForceLimit:
       if self.stall_t >= STALL_T:
         self.out = None
         return accel
-    a_top = min(self.a_line, END_ACCEL)
-    floor = END_ACCEL + (a_top - END_ACCEL) * min(max(v_ego, 0.0) / self.v_line, 1.0)
+    a_top = min(self.a_line, end_accel)
+    floor = end_accel + (a_top - end_accel) * min(max(v_ego, 0.0) / self.v_line, 1.0)
     if accel < floor:
       self.out = floor
       return floor
