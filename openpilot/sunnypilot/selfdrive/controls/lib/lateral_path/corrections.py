@@ -42,12 +42,14 @@ class LateralPathCorrections:
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
     desired_curvature += self.lane_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed, straight,
                                                     desired_curvature, lane_changing)
+    # the low-speed corrections nudge the model's action; line mode (lane_centering.line_w) replaces that action
+    keep = 1.0 - self.lane_centering.line_w
     if self.low_centering is not None:
-      desired_curvature += self.low_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed,
-                                                     getattr(CS, 'leftBlinker', False) or getattr(CS, 'rightBlinker', False),
-                                                     lane_changing)
+      desired_curvature += keep * self.low_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed,
+                                                            getattr(CS, 'leftBlinker', False) or getattr(CS, 'rightBlinker', False),
+                                                            lane_changing)
     else:
-      desired_curvature += self.lane_trim.update(model_v2, CS.vEgo, active, CS.steeringPressed, model_curvature)
+      desired_curvature += keep * self.lane_trim.update(model_v2, CS.vEgo, active, CS.steeringPressed, model_curvature)
     if self.turn_exit_limiter is not None:
       desired_curvature = self.turn_exit_limiter.update(desired_curvature, model_curvature, CS.vEgo, active, lane_changing,
                                                         model_v2)
