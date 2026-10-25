@@ -316,7 +316,7 @@ class HudRenderer(Widget):
       set_speed_color,
     )
 
-    max_text = tr("MAX")
+    max_text = self.speed_label_sp() if hasattr(self, "speed_label_sp") else tr("MAX")  # sunnypilot hook
     rl.draw_text_ex(
       self._font_semi_bold,
       max_text,
