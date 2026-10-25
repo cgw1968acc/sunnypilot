@@ -165,7 +165,8 @@ class Controls(ControlsExt):
                                                 pid_accel_limits[0])
     # owner's end-force rule, last: never firmer than a line to -0.30 at 0 km/h below 2 km/h, whatever asked for more
     actuators.accel = float(self.end_force_limit.update(accel_shaped, CS.vEgo, CS.standstill, CC.longActive, CS.aEgo,
-                                                        lead_one.dRel if lead_one.present else None))
+                                                        lead_one.dRel if lead_one.present else None,
+                                                        self.calibrated_pose.orientation.pitch if self.calibrated_pose is not None else None))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
