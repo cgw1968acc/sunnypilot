@@ -82,19 +82,11 @@ LANE_CENTER_FILTER_TAU = 0.5       # s; low-pass on the measured offset and head
 # from the PD correction above (w = 0) to the line curvature (w = 1). Equivalent gains of the pursuit: 2 / T^2 = 0.89
 # m/s^2 per metre (KP above 0.35), 2 / T = 1.33 m/s^2 per m/s (KD 1.20), damping ratio 0.71. The model's action is the
 # fallback whenever the lines are not trusted (exits, merges, worn paint, lane changes): w falls back in 0.5 s.
-# Owner 2026-10-25 (same evening): "apply it straight down to 30 km/h; if it is not good, go back" - was 80 -> 90 km/h.
-# Below 30 km/h measure() does not run (LANE_CENTER_MIN_SPEED), so line mode is off there.
-LINE_V_BP = [30.0 / 3.6, 35.0 / 3.6]  # m/s
+LINE_V_BP = [80.0 / 3.6, 90.0 / 3.6]  # m/s: line mode fades in above the full-strength PD centering
 LINE_V_W = [0.0, 1.0]
 LINE_MIN_PROB = 0.7         # both near lines at least this (the PD centering accepts 0.5 / 0.4)
 LINE_T_LOOK = 1.5           # s of travel to the pursued point on the line centre
-LINE_L_RANGE = (12.0, 45.0)  # m; lookahead limits (12 m keeps 1.5 s down to 30 km/h; 20 m made it 2.25 s at 32 km/h)
-# Closed-loop sketch grid (2026-10-25, 0.2 s dead time + first-order steering lag, 3 seeds, 100 / 60 / 40 km/h with
-# 150 m / 60 m / 40 m clothoids into R1500-R700 / R300-R150 / R150-R80; std / max cm):
-#   lag 0.3 s (reproduces the road's 7-12 cm with the model): model 7.3/25 14.1/62 13.1/52; T 1.2 3.8/19 7.8/47 7.0/41;
-#           T 1.5 5.2/25 12.1/65 10.8/56; T 2.0 6.0/28 20.2/105 18.3/90
-#   lag 0.5 s: model 66/124 18.4/91 16.9/79; T 1.2 90/191 86/219 86/194 (weaves); T 1.5 7.1/38 19.1/98 17.4/86
-# T 1.2 is better only while the steering is quick and weaves with a slower one; T 1.5 is never worse than the model.
+LINE_L_RANGE = (20.0, 45.0)  # m; lookahead limits
 LINE_FIT_MARGIN = 10.0      # m beyond the lookahead included in the centre fit
 LINE_MAX_DIFF_ACCEL = 1.0   # m/s^2; a line target this far from the model's is not trusted (a line of another lane)
 LINE_W_MAX = 1.0

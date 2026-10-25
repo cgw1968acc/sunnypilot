@@ -45,9 +45,9 @@ def test_follows_the_lane_curvature_not_the_model():
   assert abs((1 / 800 + out) - 1 / 1000) < 2e-5
 
 
-def test_no_line_mode_below_30_kph_or_without_model_curvature():
+def test_no_line_mode_below_80_kph_or_without_model_curvature():
   lc = LaneCentering(DT)
-  _run(lc, _model(offset=0.2), 25 / 3.6, 0.0, 3.0)
+  _run(lc, _model(offset=0.2), 75 / 3.6, 0.0, 3.0)
   assert lc.line_w == 0.0
   lc2 = LaneCentering(DT)
   for _ in range(300):
