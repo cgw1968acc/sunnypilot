@@ -16,6 +16,9 @@ EventName = log.OnroadEvent.EventName
 # Constants
 SET_SPEED_NA = 255
 KM_TO_MILE = 0.621371
+PCM_GAP = 12  # px between a large speed label and the PCM ceiling to its right
+LARGE_LABEL_RAISE = 12  # px
+BASELINE_RATIO = 0.78  # baseline height / font size, aligns the smaller PCM text with the label
 CRUISE_DISABLED_CHAR = '–'
 
 SET_SPEED_PERSISTENCE = 2.5  # seconds
@@ -317,27 +320,38 @@ class HudRenderer(Widget):
     )
 
     max_text = self.speed_label_sp() if hasattr(self, "speed_label_sp") else tr("MAX")  # sunnypilot hook
+    max_size = self.speed_label_size_sp() if hasattr(self, "speed_label_size_sp") else FONT_SIZES.max_speed  # sunnypilot hook
+    # a large label is raised so it clears the steering wheel icon under it
+    label_y = y + FONT_SIZES.set_speed - 7 + 4 - (LARGE_LABEL_RAISE if max_size > FONT_SIZES.max_speed else 0)
     rl.draw_text_ex(
       self._font_semi_bold,
       max_text,
-      rl.Vector2(x + 25, y + FONT_SIZES.set_speed - 7 + 4),
-      FONT_SIZES.max_speed,
+      rl.Vector2(x + 25, label_y),
+      max_size,
       0,
       max_color,
     )
 
-    # PCM ceiling under MAX: the number the driver parks with a long press, read from the C4 instead of the cluster
+    # PCM ceiling under MAX: the number the driver parks with a long press, read from the C4 instead of the cluster.
+    # Next to a large speed label (sunnypilot) there is no room under it above the wheel icon: "PCM" over the number,
+    # right of the label and ending on its baseline, so the box gets no wider than the set speed.
     if self.pcm_ceiling > 0:
       ceiling = self.pcm_ceiling if ui_state.is_metric else self.pcm_ceiling * KM_TO_MILE
       ceiling_color = rl.Color(255, 255, 255, int(255 * 0.7 * alpha))
-      rl.draw_text_ex(
-        self._font_medium,
-        f"PCM {round(ceiling)}",
-        rl.Vector2(x + 25, y + FONT_SIZES.set_speed + FONT_SIZES.max_speed + 2),
-        FONT_SIZES.pcm_ceiling,
-        0,
-        ceiling_color,
-      )
+      if max_size > FONT_SIZES.max_speed:
+        pcm_x = x + 25 + measure_text_cached(self._font_semi_bold, max_text, max_size).x + PCM_GAP
+        number_y = label_y + (max_size - FONT_SIZES.pcm_ceiling) * BASELINE_RATIO
+        for text, pos_y in (("PCM", number_y - FONT_SIZES.pcm_ceiling), (str(round(ceiling)), number_y)):
+          rl.draw_text_ex(self._font_medium, text, rl.Vector2(pcm_x, pos_y), FONT_SIZES.pcm_ceiling, 0, ceiling_color)
+      else:
+        rl.draw_text_ex(
+          self._font_medium,
+          f"PCM {round(ceiling)}",
+          rl.Vector2(x + 25, y + FONT_SIZES.set_speed + max_size + 2),
+          FONT_SIZES.pcm_ceiling,
+          0,
+          ceiling_color,
+        )
 
   def _draw_current_speed(self, rect: rl.Rectangle) -> None:
     """Draw the current vehicle speed and unit."""

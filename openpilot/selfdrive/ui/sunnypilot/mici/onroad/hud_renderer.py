@@ -7,13 +7,14 @@ See the LICENSE.md file in the root directory for more details.
 import pyray as rl
 
 from openpilot.common.constants import CV
-from openpilot.selfdrive.ui.mici.onroad.hud_renderer import HudRenderer, FONT_SIZES
+from openpilot.selfdrive.ui.mici.onroad.hud_renderer import HudRenderer, FONT_SIZES, PCM_GAP
 from openpilot.selfdrive.ui.sunnypilot.mici.onroad import lane_change_hud
 from openpilot.selfdrive.ui.sunnypilot.mici.onroad.dial_speed import DialSpeed, software_set_speed
 from openpilot.selfdrive.ui.sunnypilot.onroad.blind_spot_indicators import BlindSpotIndicators
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 
+SPEED_LABEL_SIZE = 72  # px, current speed in place of MAX: twice the stock MAX size (owner 2026-10-25: 36 too small to read)
 BOX_MARGIN = 10  # px kept free right of the set speed box for a lane change banner (lane_change_hud.py)
 
 
@@ -36,6 +37,9 @@ class HudRendererSP(HudRenderer):
     """current speed on the speedometer's scale, drawn where the stock HUD writes MAX (dial_speed.py)"""
     return str(self.dial_speed)
 
+  def speed_label_size_sp(self) -> int:
+    return SPEED_LABEL_SIZE
+
   def _render(self, rect: rl.Rectangle) -> None:
     super()._render(rect)
     self.blind_spot_indicators.render(rect)
@@ -45,10 +49,12 @@ class HudRendererSP(HudRenderer):
     """width of the set speed box as drawn by HudRenderer._draw_set_speed (same x offsets and fonts)"""
     set_speed = self.set_speed if ui_state.is_metric else self.set_speed * CV.KPH_TO_MPH
     w = 17 + measure_text_cached(self._font_display, str(round(set_speed)), FONT_SIZES.set_speed).x
-    w = max(w, 25 + measure_text_cached(self._font_semi_bold, self.speed_label_sp(), FONT_SIZES.max_speed).x)
-    if self.pcm_ceiling > 0:
+    label = 25 + measure_text_cached(self._font_semi_bold, self.speed_label_sp(), SPEED_LABEL_SIZE).x
+    if self.pcm_ceiling > 0:  # drawn right of the label (HudRenderer._draw_set_speed)
       ceiling = self.pcm_ceiling if ui_state.is_metric else self.pcm_ceiling * CV.KPH_TO_MPH
-      w = max(w, 25 + measure_text_cached(self._font_medium, f"PCM {round(ceiling)}", FONT_SIZES.pcm_ceiling).x)
+      label += PCM_GAP + max(measure_text_cached(self._font_medium, t, FONT_SIZES.pcm_ceiling).x
+                             for t in ("PCM", str(round(ceiling))))
+    w = max(w, label)
     return w + BOX_MARGIN
 
   def _has_blind_spot_detected(self) -> bool:
