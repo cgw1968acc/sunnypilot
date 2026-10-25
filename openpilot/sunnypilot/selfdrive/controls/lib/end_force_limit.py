@@ -107,13 +107,8 @@ class EndForceLimit:
 
   def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0,
              lead_d: float | None = None, pitch: float | None = None) -> float:
-    """the end-force limit, then the downhill extra (pitch: calibrated pose, rad, + = nose up)"""
-    out = self._update(accel, v_ego, standstill, long_active, a_ego, lead_d)
-    return out - downhill_extra(pitch, v_ego, accel) if long_active else out
-
-  def _update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0,
-              lead_d: float | None = None) -> float:
     # lead_d: distance to the lead in metres, None without a lead
+    # pitch: calibrated pose, rad, + = nose up (downhill end braking, see downhill_extra)
     restop = self._update_restop(v_ego, standstill, long_active, lead_d)
     end_accel = RESTOP_END_ACCEL if restop else END_ACCEL
     if self.restop_on and not restop and not standstill and v_ego < V_LINE and self.a_line is not None:
@@ -123,6 +118,10 @@ class EndForceLimit:
     if not long_active or accel >= 0.0:
       self.reset()
       return accel
+    # downhill (owner-approved exception to item 0): the request and every end value below sit `extra` firmer
+    extra = downhill_extra(pitch, v_ego, accel)
+    accel -= extra
+    end_accel -= extra
 
     if standstill:
       if self.out is None:
