@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import pyray as rl
 from dataclasses import dataclass
 from openpilot.common.constants import CV
@@ -18,6 +19,7 @@ SET_SPEED_NA = 255
 KM_TO_MILE = 0.621371
 PCM_GAP = 12  # px between a large speed label and the PCM ceiling to its right
 LARGE_LABEL_RAISE = 12  # px
+LARGE_LABEL_FREE = 60  # px: labels up to this size fit above the wheel icon unraised
 BASELINE_RATIO = 0.78  # baseline height / font size, aligns the smaller PCM text with the label
 CRUISE_DISABLED_CHAR = '–'
 
@@ -310,6 +312,7 @@ class HudRenderer(Widget):
       set_speed *= KM_TO_MILE
 
     set_speed_text = CRUISE_DISABLED_CHAR if not self.is_cruise_set else str(round(set_speed))
+    set_speed_text = self.top_text_sp(set_speed_text) if hasattr(self, "top_text_sp") else set_speed_text  # sunnypilot hook
     rl.draw_text_ex(
       self._font_display,
       set_speed_text,
@@ -321,8 +324,8 @@ class HudRenderer(Widget):
 
     max_text = self.speed_label_sp() if hasattr(self, "speed_label_sp") else tr("MAX")  # sunnypilot hook
     max_size = self.speed_label_size_sp() if hasattr(self, "speed_label_size_sp") else FONT_SIZES.max_speed  # sunnypilot hook
-    # a large label is raised so it clears the steering wheel icon under it
-    label_y = y + FONT_SIZES.set_speed - 7 + 4 - (LARGE_LABEL_RAISE if max_size > FONT_SIZES.max_speed else 0)
+    # a label above LARGE_LABEL_FREE px is raised (up to LARGE_LABEL_RAISE) so it clears the steering wheel icon under it
+    label_y = y + FONT_SIZES.set_speed - 7 + 4 - float(np.clip(max_size - LARGE_LABEL_FREE, 0, LARGE_LABEL_RAISE))
     rl.draw_text_ex(
       self._font_semi_bold,
       max_text,

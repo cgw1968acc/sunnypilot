@@ -14,7 +14,10 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.blind_spot_indicators import Blind
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 
-SPEED_LABEL_SIZE = 72  # px, current speed in place of MAX: twice the stock MAX size (owner 2026-10-25: 36 too small to read)
+# Owner 2026-10-25: the current speed (dial_speed.py) in the large top number, the set speed below it in place of MAX
+# (first drawn the other way round, then "swap them, keep the sizes, the top one larger"; the lower number at 72 px,
+# twice the stock MAX, then "about 75%" of it).
+SPEED_LABEL_SIZE = 54  # px, the lower number (set speed)
 BOX_MARGIN = 10  # px kept free right of the set speed box for a lane change banner (lane_change_hud.py)
 
 
@@ -33,9 +36,17 @@ class HudRendererSP(HudRenderer):
       dial = software_set_speed(ui_state.CP, getattr(ui_state, "CP_SP", None))
       self.dial_speed = self._dial_speed.update(sm['carState'].vEgo, self.speed, dial, ui_state.is_metric)
 
+  def _set_speed_text(self) -> str:
+    set_speed = self.set_speed if ui_state.is_metric else self.set_speed * CV.KPH_TO_MPH
+    return str(round(set_speed))
+
+  def top_text_sp(self, stock_text: str) -> str:
+    """the large number: current speed on the speedometer's scale (dial_speed.py)"""
+    return str(self.dial_speed) if self.is_cruise_set else stock_text
+
   def speed_label_sp(self) -> str:
-    """current speed on the speedometer's scale, drawn where the stock HUD writes MAX (dial_speed.py)"""
-    return str(self.dial_speed)
+    """the number where the stock HUD writes MAX: the set speed"""
+    return self._set_speed_text()
 
   def speed_label_size_sp(self) -> int:
     return SPEED_LABEL_SIZE
@@ -47,8 +58,7 @@ class HudRendererSP(HudRenderer):
 
   def _box_width(self) -> float:
     """width of the set speed box as drawn by HudRenderer._draw_set_speed (same x offsets and fonts)"""
-    set_speed = self.set_speed if ui_state.is_metric else self.set_speed * CV.KPH_TO_MPH
-    w = 17 + measure_text_cached(self._font_display, str(round(set_speed)), FONT_SIZES.set_speed).x
+    w = 17 + measure_text_cached(self._font_display, self.top_text_sp(""), FONT_SIZES.set_speed).x
     label = 25 + measure_text_cached(self._font_semi_bold, self.speed_label_sp(), SPEED_LABEL_SIZE).x
     if self.pcm_ceiling > 0:  # drawn right of the label (HudRenderer._draw_set_speed)
       ceiling = self.pcm_ceiling if ui_state.is_metric else self.pcm_ceiling * CV.KPH_TO_MPH
