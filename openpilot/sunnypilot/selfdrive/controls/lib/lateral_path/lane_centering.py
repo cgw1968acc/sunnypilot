@@ -85,8 +85,13 @@ LANE_CENTER_FILTER_TAU = 0.5       # s; low-pass on the measured offset and head
 LINE_V_BP = [80.0 / 3.6, 90.0 / 3.6]  # m/s: line mode fades in above the full-strength PD centering
 LINE_V_W = [0.0, 1.0]
 LINE_MIN_PROB = 0.7         # both near lines at least this (the PD centering accepts 0.5 / 0.4)
-LINE_T_LOOK = 1.5           # s of travel to the pursued point on the line centre
-LINE_L_RANGE = (20.0, 45.0)  # m; lookahead limits
+LINE_T_LOOK = 2.0           # s of travel to the pursued point on the line centre
+# 1.5 -> 2.0 s (owner 2026-10-25 after route b5): at 100-110 km/h the car swayed +-10..15 cm with a ~4.5 s period (22:02,
+# angle 2-5 deg); 61-84 % of the offset's energy sat in the 3-7 s band vs 39-56 % with the model's path (route a9), and
+# the actual lateral accel lagged the request by 0.15-0.25 m/s^2 at the peaks: the pursuit loop is lightly damped on
+# the real car (the closed-loop sketch, which lacks the perception/steering delays, did not reproduce it). A longer
+# lookahead lowers the gains (2 / T^2 = 0.50 m/s^2 per m, 2 / T = 1.0 per m/s, was 0.89 / 1.33) and the sway with them.
+LINE_L_RANGE = (20.0, 65.0)  # m; lookahead limits (45 m capped 1.5 s at 108 km/h: at 100 km/h it was really 1.62 s)
 LINE_FIT_MARGIN = 10.0      # m beyond the lookahead included in the centre fit
 LINE_MAX_DIFF_ACCEL = 1.0   # m/s^2; a line target this far from the model's is not trusted (a line of another lane)
 LINE_W_MAX = 1.0
