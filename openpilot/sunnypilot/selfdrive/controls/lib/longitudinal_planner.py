@@ -25,6 +25,7 @@ from openpilot.sunnypilot.models.helpers import get_active_bundle
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import LeadStartAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import VISION_PROB_MIN as LEAD_START_VISION_PROB
 from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedRamp
+from openpilot.sunnypilot.selfdrive.controls.lib.mid_speed_brake_ease import mid_speed_brake_ease
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
@@ -308,4 +309,5 @@ class LongitudinalPlannerSP:
                                             a_max=a_max, v_lead_vision=v_lead_vision)
     if a_start is not None and a_start > output_a_target:
       return a_start, False
-    return output_a_target, output_should_stop
+    # tnpb3 2026-10-25: 5 % lighter braking at 30-50 km/h (owner), see mid_speed_brake_ease.py
+    return mid_speed_brake_ease(output_a_target, v_ego), output_should_stop
