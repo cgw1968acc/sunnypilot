@@ -87,6 +87,7 @@ class LatControlTorque(LatControl):
     desired_lateral_jerk = self.jerk_filter.update(raw_lateral_jerk)
     gravity_adjusted_future_lateral_accel = future_desired_lateral_accel - roll_compensation
     ff = gravity_adjusted_future_lateral_accel
+    ff *= self.extension.ff_gain_sp(CS.vEgo) if hasattr(self.extension, "ff_gain_sp") else 1.0  # sunnypilot hook
     # latAccelOffset corrects roll compensation bias from device roll misalignment relative to car roll
     ff -= self.torque_params.latAccelOffset
     ff += get_friction(error + JERK_GAIN * desired_lateral_jerk, lateral_accel_deadzone, FRICTION_THRESHOLD, self.torque_params)

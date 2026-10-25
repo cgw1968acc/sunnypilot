@@ -8,7 +8,8 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.nnlc import NeuralNetworkLateralControl
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_override import LatControlTorqueExtOverride
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.corrections import LateralPathCorrections
-from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.gains import KP_INTERP_TN, get_highway_friction_scale
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.gains import KP_INTERP_TN, get_highway_friction_scale, \
+  get_low_speed_ff_gain
 from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.nnlc_blend import get_nnlc_weight
 
 
@@ -44,6 +45,10 @@ class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverri
     torque_params.friction = self._fric_base * get_highway_friction_scale(self._v_ego)
     self._fric_applied = torque_params.friction  # read back: the capnp field is float32
     return changed
+
+  def ff_gain_sp(self, v_ego: float) -> float:
+    """gain on the desired-lateral-accel feed-forward of the stock torque controller (lateral_path/gains.py)"""
+    return get_low_speed_ff_gain(v_ego) if self.tn_stock_controller else 1.0
 
   def correct_desired_curvature(self, desired_curvature: float, CS, active: bool) -> float:
     """Hook called by LatControlTorque.update() before it uses the desired curvature; stock = unchanged."""

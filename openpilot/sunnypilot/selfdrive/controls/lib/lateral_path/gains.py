@@ -36,3 +36,20 @@ HWY_FRICTION_SCALE_V = [1.0, 1.4, 1.5, 1.6]
 
 def get_highway_friction_scale(v_ego: float) -> float:
   return float(np.interp(v_ego, HWY_FRICTION_BP, HWY_FRICTION_SCALE_V))
+
+
+# Low-speed feed-forward gain (tncr, owner 2026-10-25: mountain roads on ALKA at 30-60 km/h, "the model turns in early,
+# then understeers and drifts from the inside toward the outside, sometimes onto the outer line - more steering
+# ability"). 269 lateral-only curve events (backups 10-15/10-23/10-25, 33/40/49 km/h): the actual lateral accel lagged
+# the request by 0.40 s (median) and reached only 0.83 -> 0.88 -> 0.91 -> 0.97 of it through the first four fifths of
+# curves where the torque was NOT at its limit (75 of 104 clean events); 8 curves had the torque at the panda maximum
+# all through the middle (actual 0.84 of the request, drifting 62 -> 26 cm toward the outside) - nothing can add there.
+# The torque REQUEST moved faster than the panda rise limit (1500 per 1.0 s) for 40 % of curve time (p95 7 /s, PID
+# jitter), so only the smooth feed-forward (the desired lateral accel) is scaled, not the PID. x1.12 puts the torque at
+# its maximum for 31.9 % of curve time instead of 25.7 %.
+LOW_FF_BP = [25.0 / 3.6, 30.0 / 3.6, 60.0 / 3.6, 70.0 / 3.6]  # m/s
+LOW_FF_GAIN_V = [1.0, 1.12, 1.12, 1.0]
+
+
+def get_low_speed_ff_gain(v_ego: float) -> float:
+  return float(np.interp(v_ego, LOW_FF_BP, LOW_FF_GAIN_V))
