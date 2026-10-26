@@ -23,28 +23,26 @@ def test_flat_road_unchanged():
   assert abs(run(flat_learnt(), 600, 100, 0.5) - 100) < 1e-6
 
 
-def test_downhill_plus_10_capped_at_120_and_smooth():
-  sc = flat_learnt()
-  assert 100 < run(sc, 20 * 10, 100, 0.5 - 2.0) < 105   # after 10 s: only ~3.3 km/h (0.33 km/h/s)
-  assert abs(run(sc, 20 * 30, 100, 0.5 - 2.0) - 110) < 0.5
-  assert abs(run(flat_learnt(), 20 * 60, 115, 0.5 - 2.0) - 120) < 1e-6
-  assert abs(run(flat_learnt(), 20 * 60, 125, 0.5 - 2.0) - 125) < 1e-6  # set above 120: no increase
+def test_downhill_no_longer_raises_the_target():
+  # owner 2026-10-27: the descent allowance is removed
+  for set_kph in (63, 100, 115):
+    assert abs(run(flat_learnt(), 20 * 60, set_kph, 0.5 - 2.0, v_kph=max(set_kph, 85)) - set_kph) < 1e-6
 
 
 def test_uphill_minus_10_floored_at_70():
   assert abs(run(flat_learnt(), 20 * 60, 100, 0.5 + 2.0) - 90) < 0.5
-  assert abs(run(flat_learnt(), 20 * 60, 75, 0.5 + 2.0) - 70) < 1e-6
+  assert abs(run(flat_learnt(), 20 * 60, 75, 0.5 + 2.0, v_kph=85) - 70) < 1e-6
   assert abs(run(flat_learnt(), 20 * 60, 65, 0.5 + 2.0, v_kph=65) - 65) < 1e-6  # set below 70: kept
 
 
 def test_inactive_or_slow_or_disabled(monkeypatch):
   assert abs(run(flat_learnt(), 600, 100, -2.0, active=False) - 100) < 1e-6
-  assert abs(run(flat_learnt(), 600, 100, -2.0, v_kph=50) - 100) < 1e-6
+  assert abs(run(flat_learnt(), 600, 100, 3.0, v_kph=75) - 100) < 1e-6  # below 80 km/h (mountain roads): untouched
   monkeypatch.setattr(sc_mod, "ENABLED", False)
   assert abs(run(flat_learnt(), 600, 100, -2.0) - 100) < 1e-6
 
 
 def test_returns_smoothly_after_the_slope():
   sc = flat_learnt()
-  run(sc, 20 * 40, 100, 0.5 - 2.0)
-  assert 105 < run(sc, 20 * 10, 100, 0.5) < 108  # 10 s after the descent ends still easing back
+  run(sc, 20 * 40, 100, 0.5 + 2.0)
+  assert 92 < run(sc, 20 * 10, 100, 0.5) < 95  # 10 s after the climb ends still easing back

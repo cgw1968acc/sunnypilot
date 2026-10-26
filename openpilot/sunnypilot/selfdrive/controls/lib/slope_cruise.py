@@ -21,8 +21,12 @@ from openpilot.common.constants import CV
 # offset of +0.37 / +0.73 deg that differs per drive, so the offset is learnt: a slow low-pass of the pitch while above
 # V_MIN (OFFSET_TAU, starting at OFFSET_INIT_DEG) - a highway averages out flat over minutes, a slope does not move it.
 ENABLED = True
-V_MIN = 60.0 / 3.6          # m/s: highway speeds only
-OFFSET_KPH = 10.0           # km/h
+# tncr, owner 2026-10-27 (route b8 23:09): the descent allowance is REMOVED - on a mountain road at 63 km/h (dash 70)
+# it let the car run to 73.6 km/h (dash ~80) going into a curve. Only the climb part is kept, and only on the highway:
+# V_MIN 60 -> 80 km/h (60 let it act on mountain roads).
+V_MIN = 80.0 / 3.6          # m/s: highway speeds only
+OFFSET_DOWN_KPH = 0.0       # km/h on a descent (was +10)
+OFFSET_KPH = 10.0           # km/h on a climb (-)
 V_HI_KPH = 120.0            # downhill: never above (unless the set speed itself is higher)
 V_LO_KPH = 70.0             # uphill: never below (unless the set speed itself is lower)
 GRADE_DEAD = 0.6            # deg: a "flat" road, no change
@@ -54,7 +58,7 @@ class SlopeCruise:
     target = 0.0
     if ENABLED and active and pitch_ok and v_ego > V_MIN and self.pitch_f is not None:
       g = self.grade_deg()
-      target = float(np.interp(g, [-GRADE_FULL, -GRADE_DEAD, GRADE_DEAD, GRADE_FULL], [OFFSET_KPH, 0.0, 0.0, -OFFSET_KPH]))
+      target = float(np.interp(g, [-GRADE_FULL, -GRADE_DEAD, GRADE_DEAD, GRADE_FULL], [OFFSET_DOWN_KPH, 0.0, 0.0, -OFFSET_KPH]))
     step = OFFSET_RATE * self.dt
     self.offset = float(np.clip(target, self.offset - step, self.offset + step))
     if self.offset == 0.0 or not np.isfinite(v_cruise) or v_cruise <= 0.0:
