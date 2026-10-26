@@ -76,3 +76,17 @@ def test_weight_capped_at_line_w_max():
   lc = LaneCentering(DT)
   _run(lc, _model(), 100 / 3.6, 0.0, 5.0)
   assert LINE_W_MAX == 0.7 and lc.line_w == LINE_W_MAX
+
+
+def test_centre_fits_made_once_per_model_frame(monkeypatch):
+  import openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering as lcm
+  calls = []
+  real = np.polyfit
+  monkeypatch.setattr(lcm.np, 'polyfit', lambda *a, **k: calls.append(1) or real(*a, **k))
+  lc = LaneCentering(DT)
+  md = _model(offset=0.2)
+  for _ in range(5):  # one 20 Hz model frame = five 100 Hz cycles
+    lc.update(md, 100 / 3.6, True, False, 0.0, 0.0, False)
+  assert len(calls) == 2  # the near fit (measure) and the line-mode fit, once each
+  lc.update(_model(offset=0.1), 100 / 3.6, True, False, 0.0, 0.0, False)  # a new frame refits
+  assert len(calls) == 4

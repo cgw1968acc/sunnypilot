@@ -119,6 +119,31 @@ class LaneCentering:
     self.line_filter = FirstOrderFilter(0.0, LINE_FILTER_TAU, dt)
     self.line_valid = False
     self.output = 0.0  # what update() returned (correction blended with line mode)
+    self.fit_key = None  # model frame the lane-centre fits below belong to
+    self.fit_x = np.zeros(0)
+    self.fit_centre = np.zeros(0)
+    self.fits: dict[int, np.ndarray] = {}
+
+  def centre_fit(self, model_v2, x_max: float) -> tuple[int, np.ndarray | None]:
+    """Quadratic fit (c2, c1, c0) of the lane-line centre over the points with x <= x_max, and how many points that is.
+    The model publishes at 20 Hz and this runs at 100 Hz: the fits are made once per model frame and reused (each one
+    costs ~0.38 ms on the C4, on core 4 that card, controlsd and selfdrived share - route b8 10-26 had core 4 at ~100 %
+    and five 'System Lagging' alerts). Same numbers as fitting every cycle."""
+    key = (id(model_v2), getattr(model_v2, 'frameId', None))
+    if key != self.fit_key:
+      lines = model_v2.laneLines
+      self.fit_key = key
+      self.fit_x = np.asarray(lines[1].x, dtype=float)
+      y1, y2 = np.asarray(lines[1].y, dtype=float), np.asarray(lines[2].y, dtype=float)
+      m = min(len(y1), len(y2))
+      self.fit_centre = (y1[:m] + y2[:m]) / 2.0  # model y: positive = right (capnp lists do not slice)
+      self.fits = {}
+    n = int(np.sum(self.fit_x <= x_max))
+    if n < 4 or n > len(self.fit_centre):
+      return n, None
+    if n not in self.fits:
+      self.fits[n] = np.polyfit(self.fit_x[:n], self.fit_centre[:n], 2)
+    return n, self.fits[n]
 
   def reset(self):
     self.offset_filter.x = 0.0
@@ -137,12 +162,13 @@ class LaneCentering:
     if min(probs[1], probs[2]) < LINE_MIN_PROB:
       return None
     look = float(np.clip(v_ego * LINE_T_LOOK, *LINE_L_RANGE))
-    x = np.asarray(lines[1].x)
-    if len(x) < 4 or x[-1] < look + LINE_FIT_MARGIN or len(lines[2].y) != len(x):
+    nx = len(lines[1].x)
+    if nx < 4 or lines[1].x[nx - 1] < look + LINE_FIT_MARGIN or len(lines[2].y) != nx:
       return None
-    n = int(np.sum(x <= look + LINE_FIT_MARGIN))
-    centre = (np.asarray(lines[1].y)[:n] + np.asarray(lines[2].y)[:n]) / 2.0
-    y_look = float(np.polyval(np.polyfit(x[:n], centre, 2), look))
+    _, fit = self.centre_fit(model_v2, look + LINE_FIT_MARGIN)
+    if fit is None:
+      return None
+    y_look = float((fit[0] * look + fit[1]) * look + fit[2])
     return 2.0 * y_look / (look ** 2 + y_look ** 2)
 
   def _line_mode(self, model_v2, v_ego: float, meas_ok: bool, model_curvature: float | None, lane_changing: bool) -> float:
@@ -188,14 +214,12 @@ class LaneCentering:
         self.width_filter.update(width)
       else:
         self.width_filter.x = width
-    x = np.asarray(lines[1].x)
-    n = int(np.sum(x <= LANE_CENTER_FIT_RANGE))
-    if n < 4:
+    _, fit = self.centre_fit(model_v2, LANE_CENTER_FIT_RANGE)
+    if fit is None:
       return None
-    centre = (np.asarray(lines[1].y)[:n] + np.asarray(lines[2].y)[:n]) / 2.0  # model y: positive = right (capnp lists do not slice)
     # centre(x) ~ c0 + c1 x + c2 x^2: c0 is the centre's lateral position (right of the car), c1 its slope. A lane
     # that runs to the right ahead (c1 > 0) means the car is pointing LEFT of it.
-    c2, c1, c0 = np.polyfit(x[:n], centre, 2)
+    c2, c1, c0 = fit
     return float(c0), float(math.atan(c1))
 
   def update(self, model_v2, v_ego: float, active: bool, steering_pressed: bool, straight: float = 0.0,
