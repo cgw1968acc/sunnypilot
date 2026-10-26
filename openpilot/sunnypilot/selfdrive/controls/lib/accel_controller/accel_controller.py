@@ -41,8 +41,12 @@ CRUISE_DECEL_ACCEL = {  # m/s^2; gentlest constant decel (normal/sport)
   AccelProfile.normal: -0.50,
   AccelProfile.sport: -0.65,
 }
-ECO_CRUISE_DECEL_BP = [0., 16.67, 19.44, 25.0, 33.3]   # m/s (0, 60, 70, 90, 120 km/h)
-ECO_CRUISE_DECEL_V = [-0.40, -0.40, -0.22, -0.30, -0.40]  # m/s^2; the >= 70 km/h part is only the FALLBACK coast estimate
+# tncr, owner 2026-10-27: when several quick -5 presses bring the set speed down to ~30 km/h from a higher speed, the
+# decel should keep growing smoothly from the coast above 70 km/h to a little firmer at 30 km/h: below 60 km/h it now
+# ramps -0.40 -> -0.50 at 30 km/h (was flat -0.40), held at -0.50 below. 60 km/h and up unchanged. 80 -> 30 km/h on a
+# flat road takes 39 s / 597 m (was 41 s / 620 m); the 1 s taper still lands it on the set speed.
+ECO_CRUISE_DECEL_BP = [0., 8.33, 16.67, 19.44, 25.0, 33.3]   # m/s (0, 30, 60, 70, 90, 120 km/h)
+ECO_CRUISE_DECEL_V = [-0.50, -0.50, -0.40, -0.22, -0.30, -0.40]  # m/s^2; the >= 70 km/h part is only the FALLBACK coast estimate
 ECO_COAST_BLEND_BP = [16.67, 19.44]  # m/s: -0.40 at 60 km/h blends into pure coasting by 70 km/h
 ECO_COAST_MIN, ECO_COAST_MAX = -1.2, -0.05  # m/s^2; sanity clip on the planner's pitch-aware coast accel
 # Eco lead pull-away boost (driver 2026-10-01 night): below 80 km/h, when a detected lead is pulling away (gap opening),
@@ -118,7 +122,8 @@ class AccelController:
         # >= 70 km/h: coast exactly (pitch-aware); 60-70 km/h: blend from the low-speed value into coasting
         coast = float(np.clip(accel_coast, ECO_COAST_MIN, ECO_COAST_MAX))
         w = float(np.interp(v_ego, ECO_COAST_BLEND_BP, [0.0, 1.0]))
-        decel = (1.0 - w) * ECO_CRUISE_DECEL_V[1] + w * coast
+        low = float(np.interp(min(v_ego, ECO_COAST_BLEND_BP[0]), ECO_CRUISE_DECEL_BP, ECO_CRUISE_DECEL_V))  # -0.40 from 60 km/h
+        decel = (1.0 - w) * low + w * coast
     else:
       if self._cruise_decel is None or self._cruise_decel_target != v_target:
         # a new (or changed) gap: latch one constant decel for this episode

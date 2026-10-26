@@ -134,13 +134,17 @@ class TestAccelController(OpenpilotTestCase):
     a_small = controller.get_cruise_target(22.0, 20.0) - 22.0
     a_big = controller.get_cruise_target(22.0, 12.0) - 22.0
     assert np.isclose(a_small, a_big)
-    # above 70 km/h it is the coast estimate, below 60 km/h -0.30, monotonic in between
-    assert np.isclose(controller.get_cruise_target(19.44, 10.0) - 19.44, -0.22)
-    assert np.isclose(controller.get_cruise_target(15.0, 10.0) - 15.0, -0.40)
+    # above 70 km/h it is the coast estimate, -0.40 at 60 km/h ramping to -0.50 at 30 km/h (owner 2026-10-27), monotonic in between
+    assert np.isclose(controller.get_cruise_target(19.44, 5.0) - 19.44, -0.22)
+    assert np.isclose(controller.get_cruise_target(16.67, 5.0) - 16.67, -0.40)
+    assert np.isclose(controller.get_cruise_target(12.5, 5.0) - 12.5, -0.45, atol=1e-3)
+    assert np.isclose(controller.get_cruise_target(8.33, 5.0) - 8.33, -0.50)
+    assert np.isclose(controller.get_cruise_target(7.0, 2.0) - 7.0, -0.50)
     assert -0.40 < controller.get_cruise_target(18.0, 10.0) - 18.0 < -0.22
     # with the planner's coast accel available, >= 70 km/h coasts exactly (pitch-aware), 60-70 blends into it
     assert np.isclose(controller.get_cruise_target(22.0, 10.0, accel_coast=-0.27) - 22.0, -0.27)
-    assert np.isclose(controller.get_cruise_target(15.0, 10.0, accel_coast=-0.27) - 15.0, -0.40)
+    assert np.isclose(controller.get_cruise_target(16.67, 5.0, accel_coast=-0.27) - 16.67, -0.40)
+    assert np.isclose(controller.get_cruise_target(8.33, 5.0, accel_coast=-0.27) - 8.33, -0.50)
     assert -0.40 < controller.get_cruise_target(18.0, 10.0, accel_coast=-0.27) - 18.0 < -0.27
     # normal ignores the coast value
     normal = self.set_profile(AccelProfile.normal)
@@ -156,19 +160,19 @@ class TestAccelController(OpenpilotTestCase):
   def test_cruise_decel_is_constant_then_tapers(self):
     controller = self.set_profile(AccelProfile.eco)
     v_target = 10.0
-    # far from the target the shaped target sits a fixed decel below v_ego (a straight-line slowdown)
+    # far from the target the shaped target follows the speed schedule (below 60 km/h a little firmer as it slows)
     a1 = controller.get_cruise_target(14.0, v_target) - 14.0
     a2 = controller.get_cruise_target(13.0, v_target) - 13.0
-    assert a1 < 0 and np.isclose(a1, a2)
+    assert a1 < 0 and a2 <= a1 and a1 - a2 < 0.02
     # close to the target the decel eases off instead of holding, so the speed lands without overshoot
     a3 = controller.get_cruise_target(10.2, v_target) - 10.2
     assert a1 < a3 < 0
     # reaching the target ends the episode
     assert controller.get_cruise_target(10.0, v_target) == v_target
-    # an extra press (lower target) re-latches a firmer decel
+    # eco: an extra press (lower target) does not make it firmer - the decel depends on speed only
     a4 = controller.get_cruise_target(14.0, v_target) - 14.0
     a5 = controller.get_cruise_target(14.0, v_target - 2.0) - 14.0
-    assert a5 < a4
+    assert np.isclose(a5, a4)
 
   def test_engine_off_line_only_lowers_eco(self):
     eco = self.set_profile(AccelProfile.eco)

@@ -149,7 +149,7 @@ class TestAccelControllerClosedLoop(OpenpilotTestCase):
     decels = [controller.get_cruise_target(speed, speed - 10.0) - speed for speed in speeds]
     expected = np.interp(speeds, ECO_CRUISE_DECEL_BP, ECO_CRUISE_DECEL_V)
     np.testing.assert_allclose(decels, expected)
-    self.assertTrue(all(decel > -0.5 for decel in decels))
+    self.assertTrue(all(decel >= -0.5 for decel in decels))
 
   def test_normal_cruise_decel_remains_gradual(self):
     params = Params()
