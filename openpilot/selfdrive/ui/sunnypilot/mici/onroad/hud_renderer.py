@@ -32,6 +32,10 @@ class HudRendererSP(HudRenderer):
     super()._update_state()
     self.blind_spot_indicators.update()
     sm = ui_state.sm
+    if sm.recv_frame["carState"] >= ui_state.started_frame and sm['carState'].vCruise == 0.0 and \
+       software_set_speed(ui_state.CP, getattr(ui_state, "CP_SP", None)):
+      self.set_speed = 0.0  # the stop target (set speed 0): stock treats 0 as "not set" and would hide the box
+      self.is_cruise_set = True
     if sm.recv_frame["carState"] >= ui_state.started_frame:
       dial = software_set_speed(ui_state.CP, getattr(ui_state, "CP_SP", None))
       self.dial_speed = self._dial_speed.update(sm['carState'].vEgo, self.speed, dial, ui_state.is_metric)

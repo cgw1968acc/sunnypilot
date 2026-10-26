@@ -45,10 +45,18 @@ CRUISE_DECEL_ACCEL = {  # m/s^2; gentlest constant decel (normal/sport)
 # decel should keep growing smoothly from the coast above 70 km/h to a little firmer at 30 km/h: below 60 km/h it now
 # ramps -0.40 -> -0.50 at 30 km/h (was flat -0.40), held at -0.50 below. 60 km/h and up unchanged. 80 -> 30 km/h on a
 # flat road takes 39 s / 597 m (was 41 s / 620 m); the 1 s taper still lands it on the set speed.
+# Set speed 0 (owner 2026-10-27, Toyota software set speed): below 30 km/h the decel eases again, -0.50 at 30 km/h to
+# the end value -0.34 at 0 (item 0: never firmer towards the stop; EndForceLimit still caps the last 5 km/h).
 ECO_CRUISE_DECEL_BP = [0., 8.33, 16.67, 19.44, 25.0, 33.3]   # m/s (0, 30, 60, 70, 90, 120 km/h)
-ECO_CRUISE_DECEL_V = [-0.50, -0.50, -0.40, -0.22, -0.30, -0.40]  # m/s^2; the >= 70 km/h part is only the FALLBACK coast estimate
+ECO_CRUISE_DECEL_V = [-0.34, -0.50, -0.40, -0.22, -0.30, -0.40]  # m/s^2; the >= 70 km/h part is only the FALLBACK coast estimate
 ECO_COAST_BLEND_BP = [16.67, 19.44]  # m/s: -0.40 at 60 km/h blends into pure coasting by 70 km/h
 ECO_COAST_MIN, ECO_COAST_MAX = -1.2, -0.05  # m/s^2; sanity clip on the planner's pitch-aware coast accel
+# Descent (owner 2026-10-27): a descent cancels the coast's decel (3 deg: -0.30 -> ~0, 80 -> 0 km/h took 111 s / 1.8 km
+# in the sketch), so ONLY when the set speed is already down at 30 km/h or below (the dial's 30 drives ~25.7 km/h, its 35
+# ~30.4) the coast is never gentler than on the flat: get_coast_accel(0) = -0.30. Higher set speeds keep the pure
+# pitch-aware coast; a climb keeps its own (firmer) coast.
+ECO_COAST_FLAT = -0.30  # m/s^2
+ECO_COAST_COMP_SET_MAX = 30.0 / 3.6  # m/s
 # Eco lead pull-away boost (driver 2026-10-01 night): below 80 km/h, when a detected lead is pulling away (gap opening),
 # eco may accelerate a little harder for a while so the car keeps up, eased in and out; with no lead nothing changes.
 # The boost scales with how fast the gap opens, fades out from 70 to 80 km/h, and never lifts eco above the normal line.
@@ -109,7 +117,7 @@ class AccelController:
     return self._boost
 
   def get_cruise_target(self, v_ego: float, v_target: float, accel_coast: float | None = None) -> float:
-    if not np.isfinite(v_target) or v_target <= 0.0 or v_target >= v_ego:
+    if not np.isfinite(v_target) or v_target < 0.0 or v_target >= v_ego:  # 0 = the stop target, on the schedule too
       self._cruise_decel = None
       self._cruise_decel_target = None
       return v_target
@@ -121,6 +129,8 @@ class AccelController:
       if accel_coast is not None and np.isfinite(accel_coast) and accel_coast < 0.0:
         # >= 70 km/h: coast exactly (pitch-aware); 60-70 km/h: blend from the low-speed value into coasting
         coast = float(np.clip(accel_coast, ECO_COAST_MIN, ECO_COAST_MAX))
+        if v_target <= ECO_COAST_COMP_SET_MAX:
+          coast = min(coast, ECO_COAST_FLAT)
         w = float(np.interp(v_ego, ECO_COAST_BLEND_BP, [0.0, 1.0]))
         low = float(np.interp(min(v_ego, ECO_COAST_BLEND_BP[0]), ECO_CRUISE_DECEL_BP, ECO_CRUISE_DECEL_V))  # -0.40 from 60 km/h
         decel = (1.0 - w) * low + w * coast

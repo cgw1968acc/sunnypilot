@@ -139,13 +139,26 @@ class TestAccelController(OpenpilotTestCase):
     assert np.isclose(controller.get_cruise_target(16.67, 5.0) - 16.67, -0.40)
     assert np.isclose(controller.get_cruise_target(12.5, 5.0) - 12.5, -0.45, atol=1e-3)
     assert np.isclose(controller.get_cruise_target(8.33, 5.0) - 8.33, -0.50)
-    assert np.isclose(controller.get_cruise_target(7.0, 2.0) - 7.0, -0.50)
+    # below 30 km/h it eases again to the end value -0.34 at 0; a set speed of 0 (stop target) follows the same schedule
+    assert np.isclose(controller.get_cruise_target(4.17, 0.0) - 4.17, -0.42, atol=1e-3)
+    assert np.isclose(controller.get_cruise_target(20.0, 0.0) - 20.0, controller.get_cruise_target(20.0, 5.0) - 20.0)
+    prev = -1.0
+    for v in np.arange(8.33, 0.4, -0.25):  # never firmer towards the stop
+      a = controller.get_cruise_target(v, 0.0) - v
+      assert a >= prev - 1e-9 and a <= -0.34 + 1e-9
+      prev = a
     assert -0.40 < controller.get_cruise_target(18.0, 10.0) - 18.0 < -0.22
     # with the planner's coast accel available, >= 70 km/h coasts exactly (pitch-aware), 60-70 blends into it
     assert np.isclose(controller.get_cruise_target(22.0, 10.0, accel_coast=-0.27) - 22.0, -0.27)
     assert np.isclose(controller.get_cruise_target(16.67, 5.0, accel_coast=-0.27) - 16.67, -0.40)
     assert np.isclose(controller.get_cruise_target(8.33, 5.0, accel_coast=-0.27) - 8.33, -0.50)
     assert -0.40 < controller.get_cruise_target(18.0, 10.0, accel_coast=-0.27) - 18.0 < -0.27
+    # set speed 30 km/h or below: a descent's weak coast is topped up to the flat-road coast; a climb keeps its firmer
+    # coast; a higher set speed keeps the pure coast
+    assert np.isclose(controller.get_cruise_target(22.0, 8.33, accel_coast=-0.02) - 22.0, -0.30)
+    assert np.isclose(controller.get_cruise_target(22.0, 0.0, accel_coast=-0.02) - 22.0, -0.30)
+    assert np.isclose(controller.get_cruise_target(22.0, 8.33, accel_coast=-0.45) - 22.0, -0.45)
+    assert np.isclose(controller.get_cruise_target(22.0, 8.5, accel_coast=-0.02) - 22.0, -0.05)
     # normal ignores the coast value
     normal = self.set_profile(AccelProfile.normal)
     assert normal.get_cruise_target(22.0, 20.0, accel_coast=-0.27) == normal.get_cruise_target(22.0, 20.0)
@@ -194,7 +207,9 @@ class TestAccelController(OpenpilotTestCase):
     controller = self.set_profile(AccelProfile.eco)
     assert controller.get_cruise_target(20.0, 25.0) == 25.0
     assert controller.get_cruise_target(20.0, 20.0) == 20.0
-    assert controller.get_cruise_target(20.0, 0.0) == 0.0
+    # 0 is the stop target (Toyota set speed 0, 2026-10-27): it follows the eco schedule like any lower set speed
+    assert controller.get_cruise_target(20.0, 0.0) == controller.get_cruise_target(20.0, 5.0) < 20.0
+    assert controller.get_cruise_target(20.0, -1.0) == -1.0
     assert np.isnan(controller.get_cruise_target(20.0, float("nan")))
 
   def test_profile_change_refreshes_ceiling(self):

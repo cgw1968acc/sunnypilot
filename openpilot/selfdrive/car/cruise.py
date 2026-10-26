@@ -58,7 +58,7 @@ class VCruiseHelper(VCruiseHelperSP):
 
   @property
   def software_pcm_cruise_initialized(self) -> bool:
-    return 0 < self.v_cruise_kph < V_CRUISE_UNSET and 0 < self.v_cruise_cluster_kph < V_CRUISE_UNSET
+    return 0 <= self.v_cruise_kph < V_CRUISE_UNSET and 0 <= self.v_cruise_cluster_kph < V_CRUISE_UNSET  # sunnypilot hook: 0 = stop target
 
   def _apply_software_pcm_cruise_delta(self, delta_kph: float, is_metric: bool) -> None:
     """Move Toyota's planner/display targets together while respecting both targets' bounds."""

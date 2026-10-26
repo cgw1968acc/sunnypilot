@@ -55,6 +55,8 @@ TOYOTA_DIAL_OFFSET_KPH = 2.53  # 2.73 measured; -0.2 on 2026-09-26 so the dial s
 
 
 def toyota_dial_from_canonical(kph: float) -> float:
+  if kph <= 0.0:
+    return 0.0  # the stop target (set speed 0) shows 0
   dial = TOYOTA_DIAL_SLOPE * kph + TOYOTA_DIAL_OFFSET_KPH
   # the canonical target is kept to 0.1, which can put the dial number 0.1 off the integer the driver dialed; snap
   # back onto it so the HUD shows the round number and the +/- snap grid keeps working
@@ -63,7 +65,7 @@ def toyota_dial_from_canonical(kph: float) -> float:
 
 
 def toyota_canonical_from_dial(kph: float) -> float:
-  return (kph - TOYOTA_DIAL_OFFSET_KPH) / TOYOTA_DIAL_SLOPE
+  return max(0.0, (kph - TOYOTA_DIAL_OFFSET_KPH) / TOYOTA_DIAL_SLOPE)
 
 
 def update_manual_button_timers(CS: car.CarState, button_timers: dict[car.CarState.ButtonEvent.Type, int]) -> None:
@@ -133,6 +135,12 @@ class VCruiseHelperSP:
     return round_to_nearest, v_cruise_delta
 
   def get_minimum_set_speed(self, is_metric: bool) -> None:
+    if self.software_pcm_cruise_speed:
+      # Toyota software set speed (tncr, owner 2026-10-27): the -5 presses go on below 30 km/h down to 0, a stop
+      # target - with no lead the car slows on the eco schedule and stops (accel_controller.py); RES resumes to the
+      # PCM ceiling (resume_to_ceiling_sp)
+      self.v_cruise_min = 0
+      return
     if self.CP_SP.pcmCruiseSpeed:
       self.v_cruise_min = V_CRUISE_MIN
       return
@@ -219,6 +227,8 @@ class VCruiseHelperSP:
       press_type, press_frame = self._toyota_last_press
       resumed_with_res = press_type == ButtonType.accelCruise and self._toyota_frame - press_frame < 150
       self._toyota_engaged_by_set = not resumed_with_res
+      if resumed_with_res and self.v_cruise_kph == 0:
+        self.resume_to_ceiling_sp(CS)  # cancelled while stopping to 0: RES goes back up to the ceiling
     self._toyota_engaged_prev = engaged
 
     if _enabled:
@@ -226,6 +236,14 @@ class VCruiseHelperSP:
     if not engaged:
       return True   # cancelled: hold
     return not self._toyota_engaged_by_set  # engagement transition frames: hold after RES, mirror after SET
+
+  def resume_to_ceiling_sp(self, CS) -> None:
+    """From the stop target (0): the target goes back to the PCM ceiling, the number on the dash (owner 2026-10-27)."""
+    ceiling_dial = CS.cruiseState.speedCluster * CV.MS_TO_KPH
+    if ceiling_dial <= 0.0:
+      return
+    self.v_cruise_kph = round(float(np.clip(toyota_canonical_from_dial(ceiling_dial), self.v_cruise_min, V_CRUISE_MAX)), 1)
+    self.v_cruise_cluster_kph = toyota_dial_from_canonical(self.v_cruise_kph)
 
   def pcm_ceiling_sp(self, CS) -> None:
     """Toyota software set speed only. The PCM will not hold the car more than ~8 kph above its own set speed
@@ -264,6 +282,9 @@ class VCruiseHelperSP:
       if hold <= 0 or hold > self.cruise_long_press_frames:
         continue  # not a short press (spurious, or a long press = ceiling move)
       st = self.button_change_states[b.type.raw]
+      if b.type.raw == ButtonType.accelCruise and self.v_cruise_kph == 0 and st["enabled"]:
+        self.resume_to_ceiling_sp(CS)  # set speed 0 (stopping or stopped): RES / + goes back up to the ceiling
+        continue
       if b.type.raw == ButtonType.accelCruise and (st["standstill"] or CS.cruiseState.standstill):
         continue
       if not st["enabled"]:

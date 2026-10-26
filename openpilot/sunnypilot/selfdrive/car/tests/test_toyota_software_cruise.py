@@ -176,3 +176,65 @@ class TestToyotaSoftwareCruise(unittest.TestCase):
 
 if __name__ == "__main__":
   unittest.main()
+
+
+class TestToyotaStopTarget(unittest.TestCase):
+  """Set speed 0 (owner 2026-10-27): -5 presses go on below 30 down to 0; from 0 RES returns to the PCM ceiling."""
+  setUp = TestToyotaSoftwareCruise.setUp
+  cs = TestToyotaSoftwareCruise.cs
+  step = TestToyotaSoftwareCruise.step
+  engage_with_set = TestToyotaSoftwareCruise.engage_with_set
+  tap = TestToyotaSoftwareCruise.tap
+
+  def press_down_to_zero(self):
+    self.engage_with_set()
+    for _ in range(25):
+      self.tap(ButtonType.decelCruise, hold_frames=3)
+
+  def test_minus_presses_reach_zero_and_stay(self):
+    self.press_down_to_zero()
+    self.assertEqual(self.helper.v_cruise_kph, 0.)
+    self.assertEqual(self.helper.v_cruise_cluster_kph, 0.)
+    self.assertEqual(self.helper.v_cruise_planner_kph, 0.)
+    self.step(n=50)  # 0 is a valid target: not unset, not re-mirrored from the PCM
+    self.assertEqual(self.helper.v_cruise_kph, 0.)
+
+  def test_steps_below_30_on_the_dial(self):
+    self.engage_with_set()
+    seen = []
+    for _ in range(25):
+      self.tap(ButtonType.decelCruise, hold_frames=3)
+      seen.append(self.helper.v_cruise_cluster_kph)
+    self.assertEqual([s for s in seen if s <= 30.][:7], [30., 25., 20., 15., 10., 5., 0.])
+
+  def test_res_from_zero_returns_to_the_ceiling(self):
+    self.press_down_to_zero()
+    self.tap(ButtonType.accelCruise)
+    self.assertEqual(self.helper.v_cruise_cluster_kph, PCM_DIAL_KPH)
+    self.assertAlmostEqual(self.helper.v_cruise_kph, toyota_canonical_from_dial(PCM_DIAL_KPH), delta=0.1)
+
+  def test_res_from_zero_at_standstill_returns_to_the_ceiling(self):
+    self.press_down_to_zero()
+    self.v_ego_kph = 0.
+    CS = self.cs([(ButtonType.accelCruise, True)]); CS.cruiseState.standstill = True
+    self.helper.update_v_cruise(CS, True, is_metric=True)
+    for _ in range(4):
+      CS = self.cs(); CS.cruiseState.standstill = True
+      self.helper.update_v_cruise(CS, True, is_metric=True)
+    CS = self.cs([(ButtonType.accelCruise, False)]); CS.cruiseState.standstill = True
+    self.helper.update_v_cruise(CS, True, is_metric=True)
+    self.assertEqual(self.helper.v_cruise_cluster_kph, PCM_DIAL_KPH)
+
+  def test_cancel_at_zero_then_res_returns_to_the_ceiling(self):
+    self.press_down_to_zero()
+    self.engaged = False
+    self.pcm_kph, self.pcm_dial_kph = 120., 128.
+    self.step(enabled=False, n=20)
+    self.assertEqual(self.helper.v_cruise_kph, 0.)
+    self.step(enabled=False, events=[(ButtonType.accelCruise, True)])
+    self.engaged = True
+    self.step(enabled=False, events=[(ButtonType.accelCruise, False)])
+    self.step(enabled=False, n=5)
+    self.step(enabled=True, n=5)
+    self.assertAlmostEqual(self.helper.v_cruise_kph, toyota_canonical_from_dial(128.), delta=0.1)
+    self.assertEqual(self.helper.v_cruise_cluster_kph, 128.)
