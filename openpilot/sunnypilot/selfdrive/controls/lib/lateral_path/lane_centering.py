@@ -94,7 +94,10 @@ LINE_T_LOOK = 2.0           # s of travel to the pursued point on the line centr
 LINE_L_RANGE = (20.0, 65.0)  # m; lookahead limits (45 m capped 1.5 s at 108 km/h: at 100 km/h it was really 1.62 s)
 LINE_FIT_MARGIN = 10.0      # m beyond the lookahead included in the centre fit
 LINE_MAX_DIFF_ACCEL = 1.0   # m/s^2; a line target this far from the model's is not trusted (a line of another lane)
-LINE_W_MAX = 1.0
+LINE_W_MAX = 0.7
+# 1.0 -> 0.7 (owner 2026-10-26, highway): smaller, more even corrections. At most 70 % of the line pursuit; the other
+# 30 % stays with the PD correction of the model's path, so each pursuit correction is cut to 0.7x and a jumpy line
+# estimate moves the wheel less (effective pursuit gain 0.35 m/s^2 per metre at T 2.0 s, was 0.50).
 LINE_W_RISE = 0.5           # 1/s: 2 s to take over
 LINE_W_FALL = 2.0           # 1/s: 0.5 s to hand back
 LINE_FILTER_TAU = 0.1       # s; low-pass on the line curvature (0.3 oscillated in the closed-loop sim with 0.5 s steering lag)

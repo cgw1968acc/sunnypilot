@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering import LaneCentering, LINE_T_LOOK
+from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering import LaneCentering, LINE_T_LOOK, LINE_W_MAX
 
 DT = 0.01
 X = [0., 2., 4., 6., 8., 10., 12., 15., 18., 21., 25., 30., 35., 40., 45., 50., 55., 60., 70., 80.]
@@ -33,16 +33,17 @@ def test_takes_over_with_confident_lines_and_pursues_the_centre():
   lc = LaneCentering(DT)
   v = 100 / 3.6
   out = _run(lc, _model(offset=0.2), v, 0.0, 3.0)  # car 0.2 m LEFT of centre, model goes straight
-  assert lc.line_w == 1.0
+  assert lc.line_w == LINE_W_MAX
   look = v * LINE_T_LOOK
-  assert abs(out - 2 * 0.2 / (look ** 2 + 0.04)) < 1e-5  # steers right, pure pursuit
+  pursuit = 2 * 0.2 / (look ** 2 + 0.04)  # steers right, pure pursuit
+  assert abs(out - (LINE_W_MAX * pursuit + (1 - LINE_W_MAX) * lc.correction)) < 1e-5
 
 
 def test_follows_the_lane_curvature_not_the_model():
   lc = LaneCentering(DT)
   v = 100 / 3.6
   out = _run(lc, _model(curv=1 / 1000), v, 1 / 800, 3.0)  # model asks tighter than the lane
-  assert abs((1 / 800 + out) - 1 / 1000) < 2e-5
+  assert abs(out - (LINE_W_MAX * (1 / 1000 - 1 / 800) + (1 - LINE_W_MAX) * lc.correction)) < 2e-5
 
 
 def test_no_line_mode_below_80_kph_or_without_model_curvature():
@@ -60,7 +61,7 @@ def test_hands_back_on_weak_lines_lane_change_or_far_target():
   for md, k_model, lane_changing in ((_model(prob=0.6), 0.0, False), (_model(), 0.0, True), (_model(curv=1 / 300), 0.0, False)):
     lc = LaneCentering(DT)
     _run(lc, _model(), v, 0.0, 3.0)
-    assert lc.line_w == 1.0
+    assert lc.line_w == LINE_W_MAX
     _run(lc, md, v, k_model, 0.6, lane_changing)
     assert lc.line_w == 0.0
 
@@ -69,3 +70,9 @@ def test_weight_rises_in_two_seconds():
   lc = LaneCentering(DT)
   _run(lc, _model(), 100 / 3.6, 0.0, 1.0)
   assert 0.45 < lc.line_w < 0.55
+
+
+def test_weight_capped_at_line_w_max():
+  lc = LaneCentering(DT)
+  _run(lc, _model(), 100 / 3.6, 0.0, 5.0)
+  assert LINE_W_MAX == 0.7 and lc.line_w == LINE_W_MAX
