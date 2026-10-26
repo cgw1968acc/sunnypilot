@@ -20,7 +20,10 @@ CURVE_OUTWARD_DEADZONE = 0.0005  # 1/m (~radius 2000 m): below this is a straigh
 # -0.05 at 30 km/h (inward), 0.02 at 40, 0.06 at 50, 0.085 at 60, 0.09 at 70, flat 0.155 from 90 km/h.
 # (Altis/tnpb3 values were -0.01 @30, 0 @35, 0.03 @40, 0.063 @50, 0.087 @60.)
 CURVE_OUTWARD_V_BP = [v * CV.KPH_TO_MS for v in (30., 40., 50., 60., 70., 90., 100., 120.)]   # m/s
-CURVE_OUTWARD_FRAC_V = [-0.05, 0.02, 0.06, 0.085, 0.09, 0.155, 0.155, 0.155]
+# tncr, owner 2026-10-27 (route b8 mountain ALKA, signs re-checked): in 30-60 km/h curves the car sits 0.25-0.4 m toward
+# the INSIDE (straights centred) and the owner's own drive steered outward in 27 of 32 curves to keep the centre, so
+# the low-speed inward bias goes: 30 km/h -0.05 -> 0, 40 km/h 0.02 -> 0.05 (50 km/h and up unchanged).
+CURVE_OUTWARD_FRAC_V = [0.0, 0.05, 0.06, 0.085, 0.09, 0.155, 0.155, 0.155]
 
 
 def apply_curve_outward_bias(desired_curvature: float, v_ego: float) -> float:
