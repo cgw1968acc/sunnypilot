@@ -115,6 +115,13 @@ RETURN_FIRM_RAMP_T = 0.3       # s
 # ENOUGH_HYST below b. A state gate on the measured decel, not a proportional loop (two-sided feedback pumped on the
 # Cross). The end of the stop (END_ACCEL -0.34 below V_END / ROOM_END) and end_force_limit are unchanged.
 ENOUGH_HYST = 0.03         # m/s^2 (sim: 0.1 held the plan too long on a flat stop, then -0.76 at the end)
+# tncr 2026-10-27, route 000000ba 21:27:01 (owner: "a slight unevenness in the stop"): at 4.8 -> 3.6 km/h the car gave
+# only -0.34 for the plan's -0.48 (the hybrid's regen -> creep hand-off) and the decel feedback firmed the request
+# -0.49 -> -0.92 while the plan eased to -0.40; at 3.2 km/h the end line took it back to -0.37 - a small bite and release
+# in the last 2-3 m, against the owner's supreme principle (no layer may raise the force before the stop). Same at
+# 21:28:53 (-0.39 -> -0.67). Below NO_FIRM_V it may only hold or ease: never firmer than both the plan and its own
+# present output (the owner's -0.34 end line below is unchanged).
+NO_FIRM_V = 6.0 / 3.6      # m/s
 JUMP_D = 1.0               # m: a dRel step this large in one frame = a different / flickering lead
 LEAD_LOST_T = 0.3          # s
 
@@ -222,6 +229,8 @@ class StopGapClose:
           self.enough = False
         if self.enough:  # the car already slows enough: no firmer than the plan
           target = max(target, min(accel, 0.0))
+        if v_ego < NO_FIRM_V:  # the last metres: hold or ease only
+          target = max(target, min(accel, self.out))
         if self.d_f - GAP_TARGET < ROOM_END or self.v_f < V_END:  # the stop itself: at least the owner's end -0.35
           target = min(target, END_ACCEL)
         if v_ego > V_FLOOR:  # tncr: never a coast above 2 km/h

@@ -74,7 +74,8 @@ def test_far_stop_rolls_on_steadily_into_the_window():
         gap, hist = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau, t_max=40.0)
         if v0 > 8.0:
           # 2026-10-22 owner end line -0.37 below 3 km/h: lower bound 3.0 -> 2.5; tncr:
-          assert 2.5 <= gap <= 4.5, (v0, tau, creep, gap)  # held while it ends 3.35-3.8 m; the slowest plant overshoots a bit
+          # 2026-10-27 no firming below 6 km/h (NO_FIRM_V): the fastest plant with the strongest creep 2.64 -> 2.31 m
+          assert 2.3 <= gap <= 4.5, (v0, tau, creep, gap)  # held while it ends 3.35-3.8 m; the slowest plant overshoots a bit
         else:  # tncr: a late trigger eases at only 0.3 m/s^3 - it closes less, but never ends farther than without it
           stop_gap_close.ENABLED = False
           gap_off, _ = sim(v0 / 3.6, d, plain=plain, creep=creep, tau=tau)
@@ -241,3 +242,32 @@ def test_tncr_delivery_hole_no_ease_firm_pump():
   firmed = max(band[i] - band[i + 1] for i in range(len(band) - 1))
   assert firmed < 0.011, firmed  # never firmer by more than one FIRM_RATE step and no sustained re-firm
   assert stop_gap_close.delivery_hole(4.0 / 3.6) == 0.0  # the end of the stop is untouched
+
+
+def test_tncr_no_firming_in_the_last_metres():
+  # route 000000ba 21:27:01: 4.8 km/h, stopped lead 5.2 m, the plan easing -0.48 -> -0.40, the car giving only -0.34.
+  # Before: the request firmed to -0.92. Now it never gets firmer than both the plan and its own present output.
+  c = StopGapClose()
+  run(c, 60, -0.5, 6.5 / 3.6, -0.5, lead(8.0))
+  v, d, plan, outs = 6.5 / 3.6, 8.0, -0.5, []
+  for i in range(250):
+    plan = max(plan + 0.0005, -0.48) if v < 5 / 3.6 else plan
+    a = -0.34 if v < 5 / 3.6 else -0.5
+    outs.append(c.update(plan, v, a, False, lead(d), True))
+    d -= v * 0.01
+    v = max(v + a * 0.01, 0.05)
+    if v < stop_gap_close.NO_FIRM_V and len(outs) > 1:
+      assert outs[-1] >= min(outs[-2], plan) - 1e-6, (v * 3.6, outs[-2], outs[-1], plan)
+  assert min(o for o in outs) > -0.6
+
+
+def test_tncr_late_stops_end_in_range_without_firming():
+  # the stops this change touches: the car decelerates less than asked below 6 km/h (creep). They still end >= 2 m
+  # (owner: 3-3.5 m ideal, never < 2 m) and the command below 6 km/h never steps firmer (beyond the -0.34 end line)
+  for v0, d, plain in ((6.0, 9.0, -0.7), (8.0, 8.0, -0.6), (11.0, 16.0, -0.5), (12.0, 12.1, -0.88)):
+    for creep in (0.20, 0.27, 0.30):
+      gap, hist = sim(v0 / 3.6, d, plain=plain, creep=creep, t_max=40.0)
+      assert gap >= 2.2, (v0, d, creep, gap)
+      low = [cmd for v, cmd, _ in hist if v < stop_gap_close.NO_FIRM_V]
+      firm = max((low[i] - low[i + 1] for i in range(len(low) - 1)), default=0.0)
+      assert firm < 0.011 or min(low) >= -0.345, (v0, creep, firm)
