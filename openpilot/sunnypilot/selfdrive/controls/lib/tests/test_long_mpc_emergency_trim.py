@@ -28,9 +28,9 @@ def test_ordinary_stop_is_untouched():
 
 
 def test_hard_lead_brake_ramps_the_trim_in_and_keeps_it():
-  # route 00000119 09:23-like: lead -2.3, plan -2.6 -> full EMERG_TRIM, built at EMERG_RATE_ON (no step)
+  # route 00000119 09:23-like: lead -2.2, plan -2.6 -> full EMERG_TRIM, built at EMERG_RATE_ON (no step)
   ext = EXT.LongMpcObstacleExt()
-  trims = [ext.update_emergency(lead_xv(23.0, 11.0, -2.3), plan(12.8, -2.6), T[1], T) for _ in range(40)]
+  trims = [ext.update_emergency(lead_xv(23.0, 11.0, -2.2), plan(12.8, -2.6), T[1], T) for _ in range(40)]
   steps = np.diff([0.0] + trims)
   assert max(steps) <= EXT.EMERG_RATE_ON * EXT.EMERG_DT + 1e-9
   assert abs(trims[-1] - EXT.EMERG_TRIM) < 1e-9
@@ -46,12 +46,19 @@ def test_partial_trim_between_plan_thresholds():
 
 def test_released_when_the_lead_calms_or_we_stop():
   ext = EXT.LongMpcObstacleExt()
-  step(ext, 40, lead_xv(23.0, 11.0, -2.3), plan(12.8, -2.6))
+  step(ext, 40, lead_xv(23.0, 11.0, -2.2), plan(12.8, -2.6))
   # the lead stops braking and we are not closing: after EMERG_CALM_T it fades at EMERG_RATE_OFF
   calm = [ext.update_emergency(lead_xv(20.0, 10.0, 0.0), plan(10.0, 0.0), T[1], T) for _ in range(200)]
   assert calm[int(EXT.EMERG_CALM_T / EXT.EMERG_DT) - 2] == EXT.EMERG_TRIM
   assert calm[-1] == 0.0 and max(-np.diff(calm)) <= EXT.EMERG_RATE_OFF * EXT.EMERG_DT + 1e-9
   ext2 = EXT.LongMpcObstacleExt()
-  step(ext2, 40, lead_xv(23.0, 11.0, -2.3), plan(12.8, -2.6))
+  step(ext2, 40, lead_xv(23.0, 11.0, -2.2), plan(12.8, -2.6))
   step(ext2, 100, lead_xv(3.0, 0.0, 0.0), plan(0.0, 0.0))  # standing
   assert not ext2.emerg and ext2.emerg_trim == 0.0
+
+
+def test_harder_lead_keeps_more_room():
+  # 10-27: the trim shrinks as the lead itself brakes harder (route 73 17:16, lead -2.7: sim 1.65 -> 2.33 m)
+  for a_lead, want in ((-2.2, EXT.EMERG_TRIM), (-2.6, (EXT.EMERG_TRIM + EXT.EMERG_TRIM_HARD) / 2), (-3.5, EXT.EMERG_TRIM_HARD)):
+    ext = EXT.LongMpcObstacleExt()
+    assert abs(step(ext, 60, lead_xv(23.0, 11.0, a_lead), plan(12.8, -2.6)) - want) < 1e-6, a_lead

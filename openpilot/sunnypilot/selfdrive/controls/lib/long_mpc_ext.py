@@ -114,6 +114,13 @@ EMERG_PLAN_A1 = -2.5     # m/s^2: full trim from here
 # 2.7-3.35 m (was 2.5-2.8), peak 0.03-0.06 m/s^2 firmer, end of stop unchanged; 1.75/1.5 pushed 60 km/h -3 and
 # 30 km/h -2.5 past 3.5 m (do-not-deploy rule). Stops without a hard-braking lead are bit-identical.
 EMERG_TRIM = 2.0         # m taken off the desired distance at full trim
+# tncr, owner 2026-10-27 ("if needed let the stop end as close as 2 m" - 2 m is the floor). With the soft onset of
+# 10-27 the closed-loop sim of route 73 17:16 (lead -2.7 from 34 km/h) ended 1.65 m out (the installed tree already
+# 1.71 m) while route ba 21:28:46 (lead -2.1) ended 3.7 m. The trim is therefore smaller the harder the lead itself
+# brakes (firmest lead decel of the event): full EMERG_TRIM down to EMERG_LEAD_A0, EMERG_TRIM_HARD from EMERG_LEAD_A1.
+EMERG_LEAD_A0 = -2.2     # m/s^2
+EMERG_LEAD_A1 = -3.0     # m/s^2
+EMERG_TRIM_HARD = 1.0    # m
 EMERG_RATE_ON = 4.0      # m/s
 EMERG_RATE_OFF = 1.0     # m/s
 EMERG_CALM_A = -0.5      # m/s^2
@@ -139,12 +146,32 @@ CAP_V_W = [0.0, 1.0, 1.0, 0.0]
 CAP_A0 = 0.6            # m/s^2: the brake the plan may ask at the start of a brake event
 CAP_RATE = 0.4          # m/s^3: the cap grows this fast with a calm lead (-1.0 at 1 s, -1.4 at 2 s, -2.0 at 3.5 s)
 CAP_RATE_URGENT = 2.0   # m/s^3: at full lead urgency (lead braking -2.0 or harder)
-CAP_NEED_MARGIN = 1.15  # the cap never sits below this times the constant decel needed to stop CAP_STOP_D short
+CAP_NEED_MARGIN = 1.0   # the cap never sits below this times the constant decel needed to stop CAP_STOP_D short
 CAP_STOP_D = 3.5        # m short of the obstacle (a stopped lead: ~3-3.5 m behind it)
 CAP_BRAKING_A = -0.2    # m/s^2: the plan counts as braking below this
 CAP_RELEASE_T = 1.0     # s without braking -> the brake event ends
 CAP_DT = 0.05           # s: the planner runs at 20 Hz
 ACCEL_MIN_MPC = -3.5    # m/s^2: the stock limit (opendbc ACCEL_MIN), used when no cap applies
+# tncr, owner 2026-10-27 (route 000000ba 21:28:46, aggressive at 34 km/h 15 m behind, the lead braked at -2.1 after
+# 11 s of light braking at -0.2..-0.4): the plan went -0.36 -> -1.59 -> -2.27 in 1 s, "the start was again a bit
+# abrupt". The cap above had grown with the time since the brake event STARTED (11 s -> no cap left), so a sudden
+# demand inside a long light brake got none of the soft start. Owner: "start with the softest brake, raise it smoothly;
+# when the distance is not enough keep raising it smoothly; if needed let the stop end as close as 2 m - by hand I get
+# enough braking in 9 of 10 hard stops this way". So the cap now follows the brake the plan is USING: at most
+# CAP_HEAD above it, and it grows only while the plan presses against it, at a rate that itself starts at
+# CAP_RATE_START and builds at CAP_RATE_RAMP up to the calm / urgent rate (no step in the jerk either). The safety
+# floor (CAP_NEED_MARGIN x the decel that stops short of the real obstacle) keeps CAP_STOP_D (3.5 m) for a calm lead
+# and lets the stop end CAP_STOP_D_URGENT (2 m) short when the lead brakes hard (the DYN urgency).
+CAP_HEAD = 0.2          # m/s^2: the cap sits at most this far beyond the brake the plan uses
+CAP_RATE_START = 0.3    # m/s^3: growth rate when the plan first presses against the cap ...
+CAP_RATE_RAMP = 0.7     # m/s^4: ... building up at this rate to CAP_RATE / CAP_RATE_URGENT
+CAP_BIND = 0.1          # m/s^2: the plan counts as pressing against the cap within this of it
+CAP_STOP_D_URGENT = 2.0  # m: the stop may end this short of the real obstacle when the lead brakes hard
+# The safety floor's stop point is where the lead itself will stop at the decel it SHOWS (at least CAP_LEAD_A_MIN), not
+# the stock stopped-equivalence that assumes every lead may brake at COMFORT_BRAKE: behind a lead at steady speed that
+# assumption alone asked ~-1.7 (x 1.15 -> -2.0) of room at 34 km/h, so the soft start never applied while following
+# closely (route ba 21:28:46). A lead that really brakes moves the floor up with its measured decel at once.
+CAP_LEAD_A_MIN = 0.5    # m/s^2
 
 
 # Relaxed (far) highway gap (tncr, owner 2026-10-17 night): "for far following add following distance from 60 km/h up
@@ -158,15 +185,22 @@ FAR_GAP_V = [0.0, 20.0]                 # m added to the desired distance
 # Steady gap in standard at 130 km/h ~58 -> ~68 m (+0.28 s), at 105 km/h +5 m. Aggressive unchanged.
 STD_GAP_BP = [80.0 / 3.6, 130.0 / 3.6]  # m/s
 STD_GAP_V = [0.0, 10.0]                 # m
+# Aggressive (owner 2026-10-27, route 000000ba 21:28:46 at 34 km/h): "at this speed close following still needs one
+# more metre" -> +1 m from 30 to 60 km/h, faded in from 20 and out by 70 km/h (per node at its planned speed, so the end
+# of a stop - planned speeds near 0 - is unchanged).
+AGG_GAP_BP = [20.0 / 3.6, 30.0 / 3.6, 60.0 / 3.6, 70.0 / 3.6]  # m/s
+AGG_GAP_V = [0.0, 1.0, 1.0, 0.0]                              # m
 
 
 def get_far_gap_extra(v_plan, personality) -> np.ndarray:
-  """metres to ADD to the desired distance per node (relaxed and standard; aggressive none)"""
+  """metres to ADD to the desired distance per node (relaxed, standard and aggressive each their own table)"""
   v = np.maximum(np.asarray(v_plan, dtype=float), 0.0)
   if personality == log.LongitudinalPersonality.relaxed:
     return np.interp(v, FAR_GAP_BP, FAR_GAP_V)
   if personality == log.LongitudinalPersonality.standard:
     return np.interp(v, STD_GAP_BP, STD_GAP_V)
+  if personality == log.LongitudinalPersonality.aggressive:
+    return np.interp(v, AGG_GAP_BP, AGG_GAP_V)
   return np.zeros_like(v)
 
 
@@ -202,10 +236,13 @@ class LongMpcObstacleExt:
     self.emerg = False
     self.emerg_trim = 0.0
     self.emerg_plan = 0.0  # firmest planned decel of this event
+    self.emerg_lead = 0.0  # firmest lead decel of this event
     self.calm_t = 0.0
     self.dyn = 0.0  # dynamic close-follow gap factor 0..1, see DYN_*
     self.cap_t_on = 0.0   # s since this brake event started, see CAP_*
     self.cap_t_off = 0.0  # s since the plan stopped braking
+    self.cap_level = None  # m/s^2 (positive): the cap at the first node, None = no brake event
+    self.cap_rate = CAP_RATE_START  # m/s^3: its present growth rate
     self.a_min = None     # per-node brake limit for the MPC, None = stock
 
   def update_onset_cap(self, x_obstacle_0: float, v_plan, t1: float, t_idxs, closing: float, dyn: float):
@@ -221,11 +258,26 @@ class LongMpcObstacleExt:
         self.cap_t_on = 0.0
     w = float(np.interp(v_ego, CAP_V_BP, CAP_V_W))
     if w <= 0.0 or closing < -1.0 or self.cap_t_on <= 0.0:
-      self.a_min = None
+      self.a_min, self.cap_level, self.cap_rate = None, None, CAP_RATE_START
       return None
-    rate = CAP_RATE + (CAP_RATE_URGENT - CAP_RATE) * dyn
-    need = v_ego ** 2 / (2.0 * max(x_obstacle_0 - CAP_STOP_D, 0.5))
-    cap = CAP_A0 + rate * (self.cap_t_on + np.asarray(t_idxs))
+    used = max(-a0, 0.0)
+    rate_target = CAP_RATE + (CAP_RATE_URGENT - CAP_RATE) * dyn
+    if self.cap_level is None:
+      self.cap_level, self.cap_rate = CAP_A0, min(CAP_RATE_START, rate_target)
+    elif used >= self.cap_level - CAP_BIND:  # the plan presses against the cap: grow it, the rate itself building up
+      self.cap_rate = min(self.cap_rate + CAP_RATE_RAMP * CAP_DT, max(rate_target, CAP_RATE_START))
+      self.cap_level += self.cap_rate * CAP_DT
+    else:  # the plan sits below it: the next rise starts soft again
+      self.cap_rate = min(CAP_RATE_START, rate_target)
+    self.cap_level = min(self.cap_level, max(CAP_A0, used + CAP_HEAD))
+    # each node: the cap of its own time ahead, the growth rate building up as it would now
+    t = np.asarray(t_idxs, dtype=float)
+    r_top = max(rate_target, self.cap_rate)
+    t_ramp = (r_top - self.cap_rate) / CAP_RATE_RAMP
+    tr = np.minimum(t, t_ramp)
+    cap = self.cap_level + self.cap_rate * tr + 0.5 * CAP_RATE_RAMP * tr ** 2 + r_top * np.maximum(t - t_ramp, 0.0)
+    stop_d = CAP_STOP_D + (CAP_STOP_D_URGENT - CAP_STOP_D) * dyn
+    need = v_ego ** 2 / (2.0 * max(x_obstacle_0 - stop_d, 0.5))
     cap = np.minimum(np.maximum(cap, CAP_NEED_MARGIN * need), -ACCEL_MIN_MPC)
     self.a_min = -(w * cap + (1.0 - w) * -ACCEL_MIN_MPC)
     return self.a_min
@@ -256,12 +308,14 @@ class LongMpcObstacleExt:
     a_plan = float(np.min(np.diff(v_plan) / np.diff(t_idxs))) if t_idxs is not None else 0.0
     self.calm_t = self.calm_t + EMERG_DT if (a_lead > EMERG_CALM_A and closing < 1.0) else 0.0
     if v_ego < 0.3 or closing < -1.0 or self.calm_t >= EMERG_CALM_T:
-      self.emerg, self.emerg_plan = False, 0.0
+      self.emerg, self.emerg_plan, self.emerg_lead = False, 0.0, 0.0
     elif a_lead <= EMERG_A and a_plan <= EMERG_PLAN_A0:
       self.emerg = True
     if self.emerg:
       self.emerg_plan = min(self.emerg_plan, a_plan)
-    target = EMERG_TRIM * float(np.interp(self.emerg_plan, [EMERG_PLAN_A1, EMERG_PLAN_A0], [1.0, 0.0])) if self.emerg else 0.0
+      self.emerg_lead = min(self.emerg_lead, a_lead)
+    trim = float(np.interp(self.emerg_lead, [EMERG_LEAD_A1, EMERG_LEAD_A0], [EMERG_TRIM_HARD, EMERG_TRIM]))
+    target = trim * float(np.interp(self.emerg_plan, [EMERG_PLAN_A1, EMERG_PLAN_A0], [1.0, 0.0])) if self.emerg else 0.0
     self.emerg_trim = float(np.clip(target, self.emerg_trim - EMERG_RATE_OFF * EMERG_DT, self.emerg_trim + EMERG_RATE_ON * EMERG_DT))
     return self.emerg_trim
 
@@ -275,5 +329,9 @@ class LongMpcObstacleExt:
     far = get_far_gap_extra(v_plan, personality)
     x_obstacles = x_obstacles + (get_desired_dist_trim(v_plan) - self.night_gap.extra(v_plan) - far + emerg - dyn_gap)[:, None]
     if t1 > 0.0 and t_idxs is not None:
-      self.update_onset_cap(x_obstacle_raw, v_plan, t1, t_idxs, float(v_plan[0]) - float(lead_xv_0[0, 1]), dyn)
+      v_lead = float(lead_xv_0[0, 1])
+      a_lead = (float(lead_xv_0[1, 1]) - v_lead) / t1
+      x_stop = float(lead_xv_0[0, 0]) + v_lead ** 2 / (2.0 * max(-a_lead, CAP_LEAD_A_MIN))  # where the lead itself stops
+      self.update_onset_cap(x_stop if v_lead > 0.0 else x_obstacle_raw, v_plan, t1, t_idxs,
+                            float(v_plan[0]) - v_lead, dyn)
     return x_obstacles

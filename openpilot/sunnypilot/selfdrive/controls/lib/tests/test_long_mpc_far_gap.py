@@ -10,7 +10,8 @@ def test_far_gap_tables():
   v = np.array([50.0, 60.0, 80.0, 95.0, 105.0, 130.0, 150.0]) / 3.6
   assert np.allclose(get_far_gap_extra(v, LP.relaxed), [0.0, 0.0, 20.0 / 7 * 2, 10.0, 20.0 / 7 * 4.5, 20.0, 20.0])
   assert np.allclose(get_far_gap_extra(v, LP.standard), [0.0, 0.0, 0.0, 3.0, 5.0, 10.0, 10.0])
-  assert np.allclose(get_far_gap_extra(v, LP.aggressive), 0.0)
+  assert np.allclose(get_far_gap_extra(v, LP.aggressive), [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])  # +1 m 30-60 km/h (10-27)
+  assert np.allclose(get_far_gap_extra(np.array([10.0, 25.0, 30.0, 45.0, 65.0]) / 3.6, LP.aggressive), [0.0, 0.5, 1.0, 1.0, 0.5])
   assert np.allclose(get_far_gap_extra(v, None), 0.0)
 
 
