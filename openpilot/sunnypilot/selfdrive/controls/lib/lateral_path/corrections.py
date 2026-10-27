@@ -42,12 +42,12 @@ class LateralPathCorrections:
     desired_curvature = apply_curve_outward_bias(desired_curvature, CS.vEgo)
     desired_curvature += self.lane_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed, straight,
                                                     desired_curvature, lane_changing)
+    # tncr: the trim as before, plus the PD centering in 50-70 km/h curves (lane_centering_low_speed.py, 2026-10-27)
+    desired_curvature += self.lane_trim.update(model_v2, CS.vEgo, active, CS.steeringPressed, model_curvature)
     if self.low_centering is not None:
       desired_curvature += self.low_centering.update(model_v2, CS.vEgo, active, CS.steeringPressed,
                                                      getattr(CS, 'leftBlinker', False) or getattr(CS, 'rightBlinker', False),
-                                                     lane_changing)
-    else:
-      desired_curvature += self.lane_trim.update(model_v2, CS.vEgo, active, CS.steeringPressed, model_curvature)
+                                                     lane_changing, model_curvature)
     if self.turn_exit_limiter is not None:
       desired_curvature = self.turn_exit_limiter.update(desired_curvature, model_curvature, CS.vEgo, active, lane_changing,
                                                         model_v2)

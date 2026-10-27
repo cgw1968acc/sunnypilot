@@ -18,11 +18,11 @@ def make():
   return lc, LaneCenteringLowSpeed(DT, lc)
 
 
-def step(lc, low, m, v, n, active=True, pressed=False, blinker=False):
+def step(lc, low, m, v, n, active=True, pressed=False, blinker=False, k=3e-3):
   c = 0.0
   for _ in range(n):
     lc.update(m, v, active, pressed)  # measurement shared with the low-speed centering
-    c = low.update(m, v, active, pressed, blinker)
+    c = low.update(m, v, active, pressed, blinker, False, k)  # tncr: in a curve (k = road curvature)
   return c
 
 
@@ -44,7 +44,7 @@ class TestLaneCenteringLowSpeed(unittest.TestCase):
     prev = 0.0
     for _ in range(600):
       lc.update(model(-2.0), V50, True, False)
-      c = low.update(model(-2.0), V50, True, False)
+      c = low.update(model(-2.0), V50, True, False, False, False, 3e-3)
       self.assertLessEqual(abs(c - prev) * V50 ** 2, LOW_CENTER_JERK * DT + 1e-9)
       prev = c
     self.assertAlmostEqual(-prev * V50 ** 2, LOW_CENTER_MAX_LAT_ACCEL, places=6)
@@ -64,6 +64,25 @@ class TestLaneCenteringLowSpeed(unittest.TestCase):
     self.assertAlmostEqual(c_hold, c0, places=9)
     c_end = step(lc, low, weak, V50, int((LOW_CENTER_LOST_HOLD_T + 3.0) / DT))
     self.assertEqual(c_end, 0.0)
+
+
+  def test_tncr_only_in_curves_50_to_70_kph_with_clear_lines(self):
+    lc, low = make()
+    self.assertEqual(step(lc, low, model(-0.85), V50, 300, k=0.0), 0.0)                    # straight: nothing
+    lc, low = make()
+    self.assertEqual(step(lc, low, model(-0.85), 42 * CV.KPH_TO_MS, 300), 0.0)             # below 45 km/h: the trim's job
+    lc, low = make()
+    self.assertLess(step(lc, low, model(-0.85), 63 * CV.KPH_TO_MS, 300), 0.0)              # 63 km/h curve: on
+    lc, low = make()
+    self.assertEqual(step(lc, low, model(-0.85, probs=(0.55, 0.9)), V50, 300), 0.0)       # one line unclear: off
+
+  def test_tncr_held_through_an_s_bend(self):
+    # route ba 22:31:50-52: left curve (-8e-3) into a right curve (+5.8e-3), the curvature crosses zero for ~1 s
+    lc, low = make()
+    v = 63 * CV.KPH_TO_MS
+    step(lc, low, model(0.9), v, 300, k=-8e-3)
+    c = step(lc, low, model(-1.1), v, 100, k=0.0)
+    self.assertLess(c, 0.0)  # still pulling the car (now right of centre) back left in the transition
 
 
 if __name__ == "__main__":

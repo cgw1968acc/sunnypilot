@@ -1,3 +1,4 @@
+import itertools
 import math
 import unittest
 from types import SimpleNamespace
@@ -13,13 +14,18 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.lane_centering imp
 DT = 0.01
 
 
+_FRAME = itertools.count()
+
+
 def model(offset_left, heading_left=0.0, width=3.6, probs=(0.9, 0.9)):
   """laneLines for a car `offset_left` m LEFT of the lane centre, pointing `heading_left` rad LEFT (model y+ = right)."""
   x = np.arange(0.0, 30.0, 2.0)
   centre = offset_left + math.tan(heading_left) * x   # pointing left: the lane centre runs off to the right ahead
   ll = [SimpleNamespace(x=list(x), y=list(centre - width / 2 + 3.0)), SimpleNamespace(x=list(x), y=list(centre - width / 2)),
         SimpleNamespace(x=list(x), y=list(centre + width / 2)), SimpleNamespace(x=list(x), y=list(centre + width / 2 + 3.0))]
-  return SimpleNamespace(laneLines=ll, laneLineProbs=[0.1, probs[0], probs[1], 0.1])
+  # a unique frameId like a real modelV2 message: LaneCentering caches its lane fits per (id, frameId), and a
+  # recycled id() of a freed test object must not hit a stale cache entry
+  return SimpleNamespace(laneLines=ll, laneLineProbs=[0.1, probs[0], probs[1], 0.1], frameId=next(_FRAME))
 
 
 class TestLaneCentering(unittest.TestCase):
