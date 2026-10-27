@@ -46,10 +46,16 @@ def test_follows_the_lane_curvature_not_the_model():
   assert abs(out - (LINE_W_MAX * (1 / 1000 - 1 / 800) + (1 - LINE_W_MAX) * lc.correction)) < 2e-5
 
 
-def test_no_line_mode_below_80_kph_or_without_model_curvature():
-  lc = LaneCentering(DT)
-  _run(lc, _model(offset=0.2), 75 / 3.6, 0.0, 3.0)
+def test_no_line_mode_below_70_kph_or_without_model_curvature():
+  lc = LaneCentering(DT)  # 2026-10-27: fades in 70 -> 80 km/h (was 80 -> 90)
+  _run(lc, _model(offset=0.2), 68 / 3.6, 0.0, 3.0)
   assert lc.line_w == 0.0
+  lc_half = LaneCentering(DT)
+  _run(lc_half, _model(offset=0.2), 75 / 3.6, 0.0, 3.0)
+  assert abs(lc_half.line_w - 0.5 * LINE_W_MAX) < 1e-6
+  lc_full = LaneCentering(DT)
+  _run(lc_full, _model(offset=0.2), 82 / 3.6, 0.0, 3.0)
+  assert lc_full.line_w == LINE_W_MAX
   lc2 = LaneCentering(DT)
   for _ in range(300):
     out = lc2.update(_model(offset=0.2), 100 / 3.6, True, False)

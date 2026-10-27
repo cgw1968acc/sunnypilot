@@ -82,7 +82,11 @@ LANE_CENTER_FILTER_TAU = 0.5       # s; low-pass on the measured offset and head
 # from the PD correction above (w = 0) to the line curvature (w = 1). Equivalent gains of the pursuit: 2 / T^2 = 0.89
 # m/s^2 per metre (KP above 0.35), 2 / T = 1.33 m/s^2 per m/s (KD 1.20), damping ratio 0.71. The model's action is the
 # fallback whenever the lines are not trusted (exits, merges, worn paint, lane changes): w falls back in 0.5 s.
-LINE_V_BP = [80.0 / 3.6, 90.0 / 3.6]  # m/s: line mode fades in above the full-strength PD centering
+LINE_V_BP = [70.0 / 3.6, 80.0 / 3.6]  # m/s: line mode fades in with the PD centering
+# 80-90 -> 70-80 km/h (owner 2026-10-27, route 000000ba): "at 100 km/h the highway is steady, at 90 it corrects left and
+# right more". Dash 90 is ~82 km/h true (dial = 1.068 x true + 2.5), where the line weight was only ~0.2: steering
+# angle jitter 0.31 deg at true 78-84 km/h vs 0.20 at 88-95 (lateral-accel jitter about equal; the same correction
+# also takes ~25 % more wheel angle at the lower speed). Now full line mode (x LINE_W_MAX) from 80 km/h true (dash ~88).
 LINE_V_W = [0.0, 1.0]
 LINE_MIN_PROB = 0.7         # both near lines at least this (the PD centering accepts 0.5 / 0.4)
 LINE_T_LOOK = 2.0           # s of travel to the pursued point on the line centre
