@@ -306,6 +306,7 @@ class HudRenderer(Widget):
 
     set_speed_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
     max_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
+    max_color = self.speed_label_color_sp(alpha) if hasattr(self, "speed_label_color_sp") else max_color  # sunnypilot hook
 
     set_speed = self.set_speed
     if self.is_cruise_set and not ui_state.is_metric:

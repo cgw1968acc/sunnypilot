@@ -19,6 +19,7 @@ from openpilot.system.ui.lib.text_measure import measure_text_cached
 # twice the stock MAX, then "about 75%" of it).
 SPEED_LABEL_SIZE = 54  # px, the lower number (set speed)
 BOX_MARGIN = 10  # px kept free right of the set speed box for a lane change banner (lane_change_hud.py)
+SPEED_LABEL_RGB = (0, 230, 90)  # owner 2026-10-27: the set speed number in green
 
 
 class HudRendererSP(HudRenderer):
@@ -54,6 +55,9 @@ class HudRendererSP(HudRenderer):
 
   def speed_label_size_sp(self) -> int:
     return SPEED_LABEL_SIZE
+
+  def speed_label_color_sp(self, alpha: float) -> rl.Color:
+    return rl.Color(*SPEED_LABEL_RGB, int(255 * 0.9 * alpha))
 
   def _render(self, rect: rl.Rectangle) -> None:
     super()._render(rect)
