@@ -26,6 +26,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_as
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_start_assist.lead_start_assist import VISION_PROB_MIN as LEAD_START_VISION_PROB
 from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedRamp
 from openpilot.sunnypilot.selfdrive.controls.lib.slope_cruise import SlopeCruise
+from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.ev_glide import EvGlide
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.accel_controller import AccelProfile
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
@@ -90,6 +91,8 @@ class LongitudinalPlannerSP:
     self._sp_t_set_speed_up = SET_SPEED_INTENT_T  # s since the last set-speed increase
     self.set_speed_ramp = SetSpeedRamp()
     self.slope_cruise = SlopeCruise(mpc.dt)  # tncr: relaxed + eco highway slope speed band, see slope_cruise.py
+    self.ev_glide = EvGlide(mpc.dt)  # tncr: eco EV mode entry by a light lift, see ev_glide.py
+    self.ev_glide_cap = None
     self._sp_set_speed_up = False
 
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
@@ -175,6 +178,11 @@ class LongitudinalPlannerSP:
       self.accel_controller.set_profile_sp(sm['carStateSP'].driveModeProfile)
     self.events_sp.clear()
     self.e2e_alerts_helper.update(sm, self.events_sp)
+    cs, cc, cs_sp = sm['carState'], sm['carControl'], sm['carStateSP']
+    self.ev_glide_cap = self.ev_glide.update(
+      self.accel_controller.profile == AccelProfile.eco, cc.longActive, cs.gasPressed or cs.brakePressed,
+      cs.vEgo, cs.aEgo, cs.vCruise * CV.KPH_TO_MS, cs_sp.engineOff, cs_sp.engineRpm, cs_sp.hvSoc,
+      cc.orientationNED[1] if len(cc.orientationNED) == 3 else 0.0, cs.steeringAngleDeg, self.lead_one)
 
   def update_dec(self, sm: messaging.SubMaster) -> None:
     self.dec.update(sm)
@@ -277,9 +285,11 @@ class LongitudinalPlannerSP:
     self.lead_start_assist.reset()
 
   def max_accel_sp(self, max_accel_override: float | None, sm: messaging.SubMaster) -> float | None:
-    """uphill scaling of the accel profile ceiling"""
+    """uphill scaling of the accel profile ceiling; tncr: the eco EV glide lift (ev_glide.py) on top"""
     if max_accel_override is not None and len(sm['carControl'].orientationNED) == 3:
       max_accel_override *= get_uphill_accel_factor(sm['carControl'].orientationNED[1])
+    if max_accel_override is not None and self.ev_glide_cap is not None:
+      max_accel_override = min(max_accel_override, self.ev_glide_cap)
     return max_accel_override
 
   def cruise_accel_sp(self, gated: float, ungated: float, e2e: bool, v_cruise: float, v_ego: float, a_cruise_prev: float,

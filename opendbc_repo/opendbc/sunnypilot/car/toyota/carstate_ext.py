@@ -87,6 +87,7 @@ class CarStateExt:
     # tnpb2 additions, called from hooks in the stock Toyota CarState (see the *_sp methods at the end)
     self.wheel_pulse = WheelPulseCreep()
     self.wheel_encoder = float('nan')  # SPEED (0xB4) ENCODER: wheel pulse counter, still counts below the ~0.5 km/h speed floor
+    self._hv_soc = -1.0  # last valid HYBRID_BATTERY.HV_SOC_PCT
     self.cruise_button = CruiseButton.none  # last raw stalk state (CLUTCH 0x361), see cruise_button_events_sp
     self.zss_cruise_active_last = False
     self.zss_angle_offset = 0.
@@ -230,6 +231,13 @@ class CarStateExt:
     if self.CP.flags & ToyotaFlags.HYBRID and "ENGINE_RPM" in cp.vl:
       ret_sp.engineRpm = float(cp.vl["ENGINE_RPM"]["RPM"])
       ret_sp.engineOff = ret_sp.engineRpm < ENGINE_RUNNING_RPM and not bool(cp.vl["ENGINE_RPM"]["ENGINE_RUNNING"])
+    # hybrid battery state of charge (0x380, 5 Hz; 128 = not valid yet): the eco EV glide entry needs it (ev_glide.py)
+    ret_sp.hvSoc = -1.0
+    if self.CP.flags & ToyotaFlags.HYBRID and "HYBRID_BATTERY" in cp.vl:
+      soc = float(cp.vl["HYBRID_BATTERY"]["HV_SOC_PCT"])
+      if 0.0 < soc <= 100.0:
+        self._hv_soc = soc
+      ret_sp.hvSoc = self._hv_soc
 
     # Drive mode in memory (tncr, owner 2026-10-23). The stock ToyotaDriveMode code above only writes the profile to
     # the AccelPersonality param, which the planner reads back from storage. Route 000000a5 2026-10-22 21:30: the
@@ -306,4 +314,7 @@ class CarStateExt:
     # slow creep is not mistaken for a stop (wheel_pulse.py). Alive check skipped.
     if "SPEED" in name_to_msg:
       msgs.append(("SPEED", float('nan')))
+    # hybrid battery state of charge (0x380): only hybrids send it, so the alive check is skipped
+    if "HYBRID_BATTERY" in name_to_msg:
+      msgs.append(("HYBRID_BATTERY", float('nan')))
     return msgs

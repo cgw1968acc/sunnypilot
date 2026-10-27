@@ -467,6 +467,7 @@ struct CarStateSP @0xb86e6369214c01c8 {
   engineRpm @2 :Float32;
   driveModeValid @3 :Bool;
   driveModeProfile @4 :UInt8;  # 0 eco, 1 normal, 2 sport
+  hvSoc @5 :Float32;  # hybrid battery state of charge (Toyota 0x380 HV_SOC_PCT), -1 = unknown
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {

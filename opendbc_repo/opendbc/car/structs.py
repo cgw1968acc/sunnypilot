@@ -174,3 +174,4 @@ class CarStateSP:
   # straight from CAN, so the planner does not depend on the AccelPersonality param file (see carstate_ext.py)
   driveModeValid: bool = auto_field()
   driveModeProfile: int = auto_field()  # 0 eco, 1 normal, 2 sport
+  hvSoc: float = auto_field()  # hybrid battery state of charge (Toyota HYBRID_BATTERY.HV_SOC_PCT), -1 = unknown
