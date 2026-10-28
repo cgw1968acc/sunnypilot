@@ -226,7 +226,9 @@ class ControlsExt(ModelStateBase):
     # downhill: the owner's approved exception, a little firmer with the grade below 30 km/h (end_force_limit.py)
     actuators.accel = float(self.end_force_limit.update(accel_shaped, CS.vEgo, CS.standstill, long_active, CS.aEgo,
                                                         pitch=self.calibrated_pose.orientation.pitch
-                                                        if self.calibrated_pose is not None else None))
+                                                        if self.calibrated_pose is not None else None,
+                                                        lead_d=lead_one.dRel if lead_one.present else None,
+                                                        lead_v=lead_one.vLead if lead_one.present else None))
 
   def desired_curvature_sp(self, new_desired_curvature: float, model_v2, v_ego: float, model_lat_active: bool) -> float:
     """sunnypilot hook after stock controlsd picks the new desired curvature: lane-change start rate, then the

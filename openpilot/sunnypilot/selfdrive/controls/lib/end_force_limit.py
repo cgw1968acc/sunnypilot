@@ -73,6 +73,36 @@ SLOPE_A_BP = [-0.10, 0.0]     # m/s^2: only on a braking request (fades in from 
 SLOPE_A_W = [1.0, 0.0]
 
 
+# Dynamic end (tncr, owner 2026-10-28, route 000000bb 09:17:46): the fixed ceiling above cut the request -2.26 -> -0.38
+# in 0.4 s between 5.4 and 2.4 km/h while the stopped lead was only 2.5 m ahead (the plan still asked -1.3 .. -1.06); the
+# brake let go, the hybrid's creep beat -0.37 (aEgo +0.17) and rolled the car from 2.1 to 1.3 m until the owner braked.
+# Owner: the mid phase must blend smoothly into the end, never let go suddenly; only DYNAMIC handling, and ordinary soft
+# stops must not change. So the ceiling (and the anchored line) may hold firmer than the table only by what the CURRENT
+# state needs: (1) END_NEED - the constant decel that still stops END_GAP_MIN short of a stopped lead from the present
+# speed and gap (it shrinks to nothing as the car slows with room to spare, so the end still tapers to END_ACCEL; it
+# grows if the car creeps toward the lead); (2) whatever the ceiling / line cuts comes off as a ramp, never a step: at
+# END_RELEASE_RATE, or faster when needed so that it is back on the end value just as the wheels stop (the remaining
+# excess over the time to stop at the present decel) - the owner's own template (route bb 09:19:40-44, 3 bookmarks)
+# releases the same way: -2.2 at 12 km/h, -1.5 at 9, -1.1 at 6, -1.0 at 3, -0.8 at 1.5, ~850 N at the stop, a steady
+# 0.4-1.5 m/s^3 with no dip. Firming for (1) is at most END_FIRM_RATE. An ordinary stop arrives at ~-0.6..-0.7 and the
+# table takes it to -0.37 over ~0.5 s anyway (09:21:53: 0.74 m/s^3): nothing changes there (C4 sim regression over 23
+# stops: max difference 0.00-0.02 on the ordinary ones).
+END_GAP_MIN = 2.0          # m: the closest a stop may end (owner: 2 m allowed when it is urgent)
+END_LEAD_V_STOPPED = 1.0   # m/s: the lead counts as stopped below this
+END_NEED_D_MIN = 0.3       # m: the gap left for the need never taken below this (no division blow-up)
+END_NEED_MAX = 1.5         # m/s^2
+END_RELEASE_RATE = 2.0     # m/s^3: how fast the held brake may come off
+END_FIRM_RATE = 1.0        # m/s^3: how fast it may build (a creep toward the lead)
+END_DECEL_MIN = 0.3        # m/s^2: the decel assumed for the time to stop when the car is barely slowing
+
+
+def end_need(v_ego: float, lead_d: float | None, lead_v: float | None) -> float:
+  """the brake (m/s^2, >= 0) the present state needs to stop END_GAP_MIN short of a stopped lead; 0 without one"""
+  if lead_d is None or lead_v is None or not math.isfinite(lead_d) or lead_v > END_LEAD_V_STOPPED or v_ego <= 0.0:
+    return 0.0
+  return min(v_ego ** 2 / (2.0 * max(lead_d - END_GAP_MIN, END_NEED_D_MIN)), END_NEED_MAX)
+
+
 def downhill_extra(pitch: float | None, v_ego: float, accel: float) -> float:
   """extra braking (m/s^2, >= 0) for the grade; 0 on the flat, uphill, above 30 km/h or without a braking request"""
   if pitch is None or not math.isfinite(pitch) or accel >= 0.0:
@@ -92,13 +122,39 @@ class EndForceLimit:
     self.v_line = V_LINE # speed at the anchor
     self.out = None      # last limited output (None = not limiting)
     self.stall_t = 0.0
+    self.sent = None     # last output while moving (for END_RELEASE_RATE / END_FIRM_RATE)
+    self.holding = False # the dynamic end is holding firmer than the ceiling / line
 
   def update(self, accel: float, v_ego: float, standstill: bool, long_active: bool, a_ego: float = -1.0,
-             pitch: float | None = None) -> float:
-    """pitch: calibrated pose, rad, + = nose up (downhill end braking, see downhill_extra)"""
+             pitch: float | None = None, lead_d: float | None = None, lead_v: float | None = None) -> float:
+    """pitch: calibrated pose, rad, + = nose up (downhill end braking, see downhill_extra). lead_d / lead_v: radar lead
+    (None without one) for the dynamic end (END_*)"""
     if not long_active or accel >= 0.0:
       self.reset()
       return accel
+    if standstill:
+      self.sent, self.holding = None, False
+      return self._update(accel, v_ego, standstill, a_ego, pitch)
+    want = accel - downhill_extra(pitch, v_ego, accel)
+    out = self._update(accel, v_ego, standstill, a_ego, pitch)
+    need = end_need(v_ego, lead_d, lead_v)
+    if out > want:  # the ceiling / line cut the request: never drop it in a step, and hold what the state needs
+      held = min(out, -need)
+      if self.sent is not None:
+        # release just fast enough to be back on the end value as the wheels stop (time to stop at the present decel)
+        t_stop = max(v_ego / max(-a_ego, END_DECEL_MIN), DT_CTRL)
+        rate = max(END_RELEASE_RATE, (END_ACCEL - self.sent) / t_stop)
+        held = float(np.clip(held, self.sent - END_FIRM_RATE * DT_CTRL, self.sent + rate * DT_CTRL))
+      held = max(want, held)
+      self.holding = held < out - 1e-3
+      if self.holding:
+        out = self.out = held  # the standstill hold then continues from what was really sent
+    else:
+      self.holding = False
+    self.sent = out
+    return out
+
+  def _update(self, accel: float, v_ego: float, standstill: bool, a_ego: float, pitch: float | None) -> float:
     # downhill (owner-approved exception to item 0): the request and every end value below sit `extra` firmer
     extra = downhill_extra(pitch, v_ego, accel)
     accel -= extra

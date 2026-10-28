@@ -60,11 +60,11 @@ def test_pressing_against_the_cap_builds_the_rate_smoothly():
 def test_cap_never_sits_below_the_decel_needed_to_stop_short_of_the_obstacle():
   ext = EXT.LongMpcObstacleExt()
   a_min = steps(ext, 1, 80.0, plan(12.0, -1.0))                                  # 43 km/h, obstacle 80 m: need 0.94
-  need = 12.0 ** 2 / (2.0 * (80.0 - EXT.CAP_STOP_D))
+  need = 12.0 ** 2 / (2.0 * (80.0 - EXT.CAP_STOP_D - 12.0 * EXT.CAP_REACT_T))    # less the distance the response takes
   assert abs(a_min[0] - (-EXT.CAP_NEED_MARGIN * need)) < 1e-9
   # a hard-braking lead (urgency 1): the stop may end CAP_STOP_D_URGENT short
   a_min = steps(EXT.LongMpcObstacleExt(), 1, 80.0, plan(12.0, -1.0), dyn=1.0)
-  assert abs(a_min[0] - (-EXT.CAP_NEED_MARGIN * 12.0 ** 2 / (2.0 * (80.0 - EXT.CAP_STOP_D_URGENT)))) < 1e-9
+  assert abs(a_min[0] - (-EXT.CAP_NEED_MARGIN * 12.0 ** 2 / (2.0 * (80.0 - EXT.CAP_STOP_D_URGENT - 12.0 * EXT.CAP_REACT_T)))) < 1e-9
   assert steps(EXT.LongMpcObstacleExt(), 1, 3.0, plan(12.0, -1.0))[0] == -3.5    # hopeless: stock limit
 
 

@@ -172,6 +172,13 @@ CAP_STOP_D_URGENT = 2.0  # m: the stop may end this short of the real obstacle w
 # assumption alone asked ~-1.7 (x 1.15 -> -2.0) of room at 34 km/h, so the soft start never applied while following
 # closely (route ba 21:28:46). A lead that really brakes moves the floor up with its measured decel at once.
 CAP_LEAD_A_MIN = 0.5    # m/s^2
+# tncr 2026-10-28 (route 000000bb 09:17:40, a stopped car revealed 48 m ahead at 44 km/h): the floor's decel assumed the
+# brake acts at once, but the car needs ~CAP_REACT_T before the decel is there, so it sat ~0.2 under what the stop
+# really needed for the first 2 s and had to climb to -2.5 late (stop 2.1 m, end cut). Owner: the mid phase must be
+# firm enough early and blend smoothly; dynamic only. The floor now leaves out the distance covered during the
+# response (v * CAP_REACT_T) - it still follows the present speed / gap / lead every step and is only a limit: when
+# the plan itself asks less (every ordinary stop) nothing changes.
+CAP_REACT_T = 0.5       # s
 
 
 # Relaxed (far) highway gap (tncr, owner 2026-10-17 night): "for far following add following distance from 60 km/h up
@@ -277,7 +284,7 @@ class LongMpcObstacleExt:
     tr = np.minimum(t, t_ramp)
     cap = self.cap_level + self.cap_rate * tr + 0.5 * CAP_RATE_RAMP * tr ** 2 + r_top * np.maximum(t - t_ramp, 0.0)
     stop_d = CAP_STOP_D + (CAP_STOP_D_URGENT - CAP_STOP_D) * dyn
-    need = v_ego ** 2 / (2.0 * max(x_obstacle_0 - stop_d, 0.5))
+    need = v_ego ** 2 / (2.0 * max(x_obstacle_0 - stop_d - v_ego * CAP_REACT_T, 0.5))
     cap = np.minimum(np.maximum(cap, CAP_NEED_MARGIN * need), -ACCEL_MIN_MPC)
     self.a_min = -(w * cap + (1.0 - w) * -ACCEL_MIN_MPC)
     return self.a_min
