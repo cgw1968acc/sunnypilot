@@ -9,6 +9,7 @@ import math
 
 from opendbc.car import structs
 from opendbc.car.toyota import toyotacan
+from opendbc.car.toyota.values import ToyotaFlags
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
 GearShifter = structs.CarState.GearShifter
@@ -117,6 +118,29 @@ BRAKE_HOLD_N_PER_DECEL = 1360.0  # N of brake force per m/s^2 of DSS1GDRV
 BRAKE_HOLD_START_DECEL = -0.6  # m/s^2, the lightest request the hold starts from
 BRAKE_HOLD_RAMP_FRAMES = 50  # 0.5 s from the start request to the hold request
 
+# Petrol cars (no ToyotaFlags.HYBRID; tnpbx, owner 2026-10-30). Everything above was measured on the Corolla Altis
+# HYBRID (C3X), whose creep needs ~760-800 N and whose ECB holds the flat request (-1.0, ~1360 N). The owner tried the
+# stock auto hold (that same -1.0) on a petrol RAV4 on the flat: it could not hold at all, the car crept forward loudly
+# against the brake (a torque converter's idle creep, higher on a cold idle or with the A/C, and a heavier car). Hybrids
+# keep everything above unchanged. A petrol car:
+#  - holds at least GAS_HOLD_DECEL from the first frame of the hold (the -1.5 / ~2040 N that holds the Altis on a 4 deg
+#    slope), on the flat as well (a slope still gets the grade schedule when that is firmer); the hand-over never starts
+#    lighter than that (no light start for the creep to win against), so it steps from the driver's foot to it;
+#  - and while held, every forward wheel-pulse step (wheel_pulse.py zero_steps: the car moved ~0.2 m while the wheel
+#    speeds still read 0, the only window in which panda lets 0x344 through) firms the request by GAS_STEP_DECEL over
+#    GAS_STEP_FRAMES, up to HOLD_MAX (-3.0, 4080 N, which the Altis' brakes honoured on a -9.1 deg slope on 10-09).
+#    A car that already stands still never sees a step, so nothing changes for it.
+# UNTESTED ON ANY PETROL CAR: the petrol brake actuator (VSC pump, no ECB) may answer these requests differently
+# (force per request, noise, how long it holds). For users who want to try it and report back.
+GAS_HOLD_DECEL = -1.5  # m/s^2 (~2040 N on the Altis hybrid)
+GAS_STEP_DECEL = 0.5  # m/s^2 firmer per forward wheel-pulse step while held
+GAS_STEP_FRAMES = 10  # 0.1 s to reach the firmer request
+
+
+def is_petrol(CP: structs.CarParams) -> bool:
+  return not (CP.flags & ToyotaFlags.HYBRID)
+
+
 # PRE_COLLISION_2 fields that go high when the camera's own PCS/AEB is genuinely intervening this
 # frame (PCSALM mirrors PRECOLLISION_ACTIVE; IBTRGR/PBATRGR/PREFILL/AVSTRGR/PBRTRGR/PPTRGR are its
 # actuation triggers - see create_pcs_commands for the same field set on the stock-DSU PCS path).
@@ -160,6 +184,13 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
     self._hold_req = BRAKE_HOLD_DECEL  # the request actually sent: ramps from the driver's force to _hold_decel
     self._hold_step = 0.0
     self._peak_force = 0.0
+    self._petrol = is_petrol(CP)
+    self._steps_seen = 0
+
+  @staticmethod
+  def _zero_steps(CS) -> int:
+    wheel_pulse = getattr(CS, "wheel_pulse", None)
+    return getattr(wheel_pulse, "zero_steps", 0) if wheel_pulse is not None else 0
 
   def update(self, CS: structs.CarState, frame: int, packer, pitch_deg: float = FLAT_PITCH_DEG) -> list:
     ws = CS.out.wheelSpeeds
@@ -195,12 +226,23 @@ class AutoBrakeHoldCarController(AutoBrakeHold):
         if on_slope and math.isfinite(force) and self._peak_force > 0.0:
           # on a slope never hold lighter than the driver was holding (up to HOLD_MAX)
           self._hold_decel = max(-HOLD_MAX, min(self._hold_decel, -self._peak_force / BRAKE_HOLD_N_PER_DECEL))
+        if self._petrol:
+          self._hold_decel = min(self._hold_decel, GAS_HOLD_DECEL)
         # A: start at the force the driver was holding, then ramp to the hold request
         start = -self._peak_force / BRAKE_HOLD_N_PER_DECEL if math.isfinite(force) else self._hold_decel
         self._hold_req = max(self._hold_decel, min(BRAKE_HOLD_START_DECEL, start))
+        if self._petrol:
+          self._hold_req = min(self._hold_req, GAS_HOLD_DECEL)  # petrol: never start below GAS_HOLD_DECEL
         self._hold_step = (self._hold_req - self._hold_decel) / BRAKE_HOLD_RAMP_FRAMES
+        self._steps_seen = self._zero_steps(CS)
         self._engaged = True
       elif self._engaged:
+        steps = self._zero_steps(CS)
+        if self._petrol and steps > self._steps_seen and self._hold_decel > -HOLD_MAX:
+          # petrol: the held car crept one wheel-pulse step -> firmer, quickly
+          self._hold_decel = max(-HOLD_MAX, min(self._hold_decel, self._hold_req) - GAS_STEP_DECEL)
+          self._hold_step = (self._hold_req - self._hold_decel) / GAS_STEP_FRAMES
+        self._steps_seen = steps
         self._hold_req = max(self._hold_decel, self._hold_req - self._hold_step)
       self.active = self._engaged and not self._released
     else:

@@ -40,6 +40,7 @@ class WheelPulseCreep:
     self.v_step = 0.0     # creep speed estimated at the last step taken while the wheels read 0
     self.t_zero_step = -1e9
     self.settled = False  # a firm press held the car still after the last step (FIRM_*)
+    self.zero_steps = 0   # forward steps counted while the wheel speeds read 0 (auto_brake_hold: a held car creeping)
 
   def update(self, encoder: float, wheels_zero: bool, brake_force: float = math.nan) -> float:
     """Returns the creep speed (m/s) to report while the wheel speeds read 0, else 0."""
@@ -53,6 +54,7 @@ class WheelPulseCreep:
           self.v_step = min(delta * M_PER_COUNT / max(self.t - self.t_step, DT), V_FLOOR)
           self.t_zero_step = self.t
           self.settled = False
+          self.zero_steps += 1
         self.t_step = self.t
     self.prev = encoder
     if not wheels_zero:

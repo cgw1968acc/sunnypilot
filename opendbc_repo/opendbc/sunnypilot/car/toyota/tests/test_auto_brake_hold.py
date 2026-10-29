@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from opendbc.car import structs
+from opendbc.car.toyota.values import ToyotaFlags
 from opendbc.sunnypilot.car.toyota.auto_brake_hold import (AutoBrakeHoldCarController, BRAKE_HOLD_ALLOWED_TIMER, BRAKE_HOLD_MIN_FORCE,
                                                             BRAKE_HOLD_LIGHT_TIMER, BRAKE_HOLD_LIFT_DROP, BRAKE_HOLD_N_PER_DECEL,
                                                             BRAKE_HOLD_RAMP_FRAMES, BRAKE_HOLD_START_DECEL, BRAKE_HOLD_DECEL,
@@ -10,6 +11,13 @@ from opendbc.sunnypilot.car.toyota.auto_brake_hold import (AutoBrakeHoldCarContr
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
 GearShifter = structs.CarState.GearShifter
+
+
+def make_car_params(hybrid: bool = True) -> structs.CarParams:
+  # everything in this file was measured on the Corolla Altis hybrid; the petrol variant is in test_auto_brake_hold_petrol.py
+  cp = structs.CarParams()
+  cp.flags = int(ToyotaFlags.HYBRID) if hybrid else 0
+  return cp
 
 
 def make_car_params_sp(enabled: bool = True) -> structs.CarParamsSP:
@@ -35,14 +43,14 @@ class FakeCarState:
 @patch("opendbc.sunnypilot.car.toyota.auto_brake_hold.toyotacan.create_brake_hold_command")
 class TestAutoBrakeHoldCarController(unittest.TestCase):
   def _make(self):
-    return AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
+    return AutoBrakeHoldCarController(make_car_params(), make_car_params_sp())
 
   def test_enabled_reflects_flag(self, mock_create):
     for value in range(256):
       with self.subTest(flags=value):
         cp_sp = structs.CarParamsSP()
         cp_sp.flags = value
-        ctrl = AutoBrakeHoldCarController(structs.CarParams(), cp_sp)
+        ctrl = AutoBrakeHoldCarController(make_car_params(), cp_sp)
         self.assertEqual(ctrl.enabled, bool(value & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD))
 
   def test_does_not_engage_before_timer(self, mock_create):
@@ -239,7 +247,7 @@ if __name__ == "__main__":
 class TestAutoBrakeHoldFirmPress(unittest.TestCase):
   def _run(self, forces, lift=True):
     # 2026-10-06: the hold takes over only when the driver starts to lift, so every run ends with one lifting frame
-    ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
+    ctrl = AutoBrakeHoldCarController(make_car_params(), make_car_params_sp())
     ctrl.update(FakeCarState(standstill=False, brake_pressed=True), 0, None)   # the press starts while still rolling
     if lift and not math.isnan(forces[-1]):
       forces = list(forces) + [forces[-1] - BRAKE_HOLD_LIFT_DROP - 1.0]
@@ -278,7 +286,7 @@ class TestAutoBrakeHoldRealStop(unittest.TestCase):
   """2026-10-01 22:30: a creep below the wheel-speed floor is no longer standstill (wheel_pulse.py), so the timers
   restart until the car really stands."""
   def test_creep_restarts_the_timers(self, mock_create):
-    ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
+    ctrl = AutoBrakeHoldCarController(make_car_params(), make_car_params_sp())
     light = BRAKE_HOLD_MIN_FORCE * 0.7
     for i in range(500):
       creeping = (i % 25) < 10          # every 0.25 s the pulse counter shows motion for a moment
@@ -299,7 +307,7 @@ class TestAutoBrakeHoldRealStop(unittest.TestCase):
 class TestAutoBrakeHoldLightMinForce(unittest.TestCase):
   """Light stops; since 2026-10-06 the hold waits for the driver to lift instead of a minimum force, and latches."""
   def _ctrl(self):
-    ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
+    ctrl = AutoBrakeHoldCarController(make_car_params(), make_car_params_sp())
     ctrl.update(FakeCarState(standstill=False, brake_pressed=True), 0, None)
     return ctrl
 
@@ -381,7 +389,7 @@ class TestAutoBrakeHoldSlope(unittest.TestCase):
   """2026-10-05: the old -1.0 request on the flat, -1.5 on a slope, decided once when the hold engages."""
   def _engage(self, pitch_deg):
     from opendbc.sunnypilot.car.toyota.auto_brake_hold import BRAKE_HOLD_LIGHT_TIMER
-    ctrl = AutoBrakeHoldCarController(structs.CarParams(), make_car_params_sp())
+    ctrl = AutoBrakeHoldCarController(make_car_params(), make_car_params_sp())
     ctrl.update(FakeCarState(standstill=False, brake_pressed=True), 0, None)
     for i in range(1, BRAKE_HOLD_LIGHT_TIMER + 3):
       cs = FakeCarState(brake_pressed=True)
