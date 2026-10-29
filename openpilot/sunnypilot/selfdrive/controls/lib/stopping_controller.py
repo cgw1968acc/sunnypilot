@@ -77,7 +77,8 @@ class StoppingController:
   # 15 launches behind a lead): lead moves -> wheels move 1.3-2.1 s; of that 0.2 s was this debounce, ~0.7 s the slow
   # release band and LAUNCH_RATE below, ~0.6 s the PCM itself after a positive request. Debounce 0.2 -> 0.05 s (keeps
   # only a few-frame filter against a one-frame plan blip), RELEASE_SLOW and LAUNCH_RATE -> the stock 4.0 m/s^3 windup.
-  STOPPING_EXIT_DEBOUNCE = 0.05  # s (was 0.2)
+  # Owner 2026-10-29: "the car moves the instant the lead moves a little - delay that by 0.1 s": 0.05 -> 0.15 s.
+  STOPPING_EXIT_DEBOUNCE = 0.15  # s (was 0.05; 0.2 before 10-20)
   # Engaging at a standstill (driver 2026-10-06, route 0000010a 23:58:49: "pulling away with no lead, just before the car
   # really moves there is a very short hard brake, then it goes"). The car stood in the auto hold (1360 N); engaging
   # dropped the hold to 0 N, the plan's first frame still said stop, so the stopping state started the standstill hold
