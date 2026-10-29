@@ -1,3 +1,7 @@
+# Copyright (c) 2026 cgw1968acc
+# Developed under the direction of cgw1968acc with AI assistance (Claude, Anthropic).
+# Design, specifications, road testing and tuning by cgw1968acc.
+# Part of a sunnypilot-based project, distributed under the sunnypilot license (see LICENSE.md and NOTICE).
 import numpy as np
 
 import openpilot.sunnypilot.selfdrive.controls.lib.long_mpc_ext as EXT

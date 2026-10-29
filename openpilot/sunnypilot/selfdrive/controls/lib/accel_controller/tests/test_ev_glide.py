@@ -1,3 +1,7 @@
+# Copyright (c) 2026 cgw1968acc
+# Developed under the direction of cgw1968acc with AI assistance (Claude, Anthropic).
+# Design, specifications, road testing and tuning by cgw1968acc.
+# Part of a sunnypilot-based project, distributed under the sunnypilot license (see LICENSE.md and NOTICE).
 from types import SimpleNamespace
 
 import openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.ev_glide as EG

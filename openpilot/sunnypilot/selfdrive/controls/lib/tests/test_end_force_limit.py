@@ -1,3 +1,7 @@
+# Copyright (c) 2026 cgw1968acc
+# Developed under the direction of cgw1968acc with AI assistance (Claude, Anthropic).
+# Design, specifications, road testing and tuning by cgw1968acc.
+# Part of a sunnypilot-based project, distributed under the sunnypilot license (see LICENSE.md and NOTICE).
 import numpy as np
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.controls.lib.end_force_limit import EndForceLimit, V_LINE, END_ACCEL, CEIL_BP, CEIL_A, \

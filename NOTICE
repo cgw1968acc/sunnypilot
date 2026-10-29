@@ -1,0 +1,103 @@
+NOTICE
+
+Copyright (c) 2026 cgw1968acc, for the portions listed below.
+
+This branch is a modified version of sunnypilot (Copyright (c) Haibin Wen, SUNNYPILOT LLC), which is based on
+openpilot (Copyright (c) comma.ai, Inc.). sunnypilot is distributed under its own custom license; see LICENSE.md.
+"This software is licensed under a custom license requiring permission for use."
+"This project uses software from Haibin Wen and SUNNYPILOT LLC and is licensed under a custom license requiring
+permission for use."
+openpilot, panda and opendbc parts from comma.ai are distributed under the MIT License; see LICENSE.
+
+Authorship of the modifications
+-------------------------------
+The changes made on this branch since sunnypilot v2026.10.10 (commit 263ff70422) were developed under the
+direction of cgw1968acc with AI assistance (Claude, Anthropic). Design, specifications, road testing, data
+analysis decisions and tuning are by cgw1968acc. Commits authored by cgw1968acc carry a "Co-Authored-By: Claude"
+line where the AI assisted.
+
+Some modules were created or restructured by rav4kumar (Kumar) as sunnypilot plug-in modules; those files and
+commits remain attributed to their author in the git history and are not claimed here.
+
+1. New files authored by cgw1968acc (each non-empty file carries a copyright header):
+   opendbc_repo/opendbc/sunnypilot/car/toyota/delivery_trim.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/door_unlock.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/end_force.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/engage_close_stop.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/pitch_compensation.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/tests/test_cruise_stalk_buttons.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/tests/test_delivery_trim.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/tests/test_door_unlock.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/tests/test_engage_close_door_end.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/tests/test_friction_entry.py
+   opendbc_repo/opendbc/sunnypilot/car/toyota/tests/test_pitch_compensation.py
+   openpilot/selfdrive/ui/sunnypilot/mici/onroad/dial_speed.py
+   openpilot/selfdrive/ui/sunnypilot/mici/onroad/lane_change_hud.py
+   openpilot/selfdrive/ui/sunnypilot/mici/tests/test_dial_speed.py
+   openpilot/selfdrive/ui/sunnypilot/mici/tests/test_lane_change_hud.py
+   openpilot/sunnypilot/selfdrive/car/tests/test_cached_car_params.py
+   openpilot/sunnypilot/selfdrive/car/tests/test_toyota_software_cruise.py
+   openpilot/sunnypilot/selfdrive/controls/lib/accel_controller/ev_glide.py
+   openpilot/sunnypilot/selfdrive/controls/lib/accel_controller/tests/test_drive_mode_in_memory.py
+   openpilot/sunnypilot/selfdrive/controls/lib/accel_controller/tests/test_ev_glide.py
+   openpilot/sunnypilot/selfdrive/controls/lib/creep_stall_guard.py
+   openpilot/sunnypilot/selfdrive/controls/lib/cruise_smoother.py
+   openpilot/sunnypilot/selfdrive/controls/lib/e2e_stop/__init__.py
+   openpilot/sunnypilot/selfdrive/controls/lib/e2e_stop/e2e_stop_anchor.py
+   openpilot/sunnypilot/selfdrive/controls/lib/e2e_stop/tests/__init__.py
+   openpilot/sunnypilot/selfdrive/controls/lib/e2e_stop/tests/test_e2e_stop_anchor.py
+   openpilot/sunnypilot/selfdrive/controls/lib/end_force_limit.py
+   openpilot/sunnypilot/selfdrive/controls/lib/highway_plan_curvature.py
+   openpilot/sunnypilot/selfdrive/controls/lib/latcontrol_torque_split.py
+   openpilot/sunnypilot/selfdrive/controls/lib/lateral_path/lane_centering_low_speed.py
+   openpilot/sunnypilot/selfdrive/controls/lib/lateral_path/low_speed_straight_hold.py
+   openpilot/sunnypilot/selfdrive/controls/lib/lateral_path/straight_mode.py
+   openpilot/sunnypilot/selfdrive/controls/lib/lateral_path/tests/test_lane_centering_low_speed.py
+   openpilot/sunnypilot/selfdrive/controls/lib/lateral_path/tests/test_lane_line_mode.py
+   openpilot/sunnypilot/selfdrive/controls/lib/lateral_path/tests/test_low_speed_ff_gain.py
+   openpilot/sunnypilot/selfdrive/controls/lib/lateral_path/tests/test_low_speed_straight_hold.py
+   openpilot/sunnypilot/selfdrive/controls/lib/lateral_path/tests/test_straight_mode.py
+   openpilot/sunnypilot/selfdrive/controls/lib/lead_brake_boost.py
+   openpilot/sunnypilot/selfdrive/controls/lib/mid_speed_brake_add.py
+   openpilot/sunnypilot/selfdrive/controls/lib/night_gap.py
+   openpilot/sunnypilot/selfdrive/controls/lib/slope_cruise.py
+   openpilot/sunnypilot/selfdrive/controls/lib/sticky_radar_lead.py
+   openpilot/sunnypilot/selfdrive/controls/lib/stop_gap_close.py
+   openpilot/sunnypilot/selfdrive/controls/lib/stop_gap_hold.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_creep_stall_guard.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_cruise_smoother.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_downhill_end_brake.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_end_force_limit.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_highway_plan_curvature.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_latcontrol_torque_split.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_lead_brake_boost.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_long_mpc_dynamic_gap.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_long_mpc_emergency_trim.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_long_mpc_far_gap.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_long_mpc_jerk_factor.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_long_mpc_onset_cap.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_mid_speed_brake_add.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_night_gap.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_radard_cut_in.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_slope_cruise.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_sticky_radar_lead.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_stop_gap_close.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_stop_gap_hold.py
+   openpilot/sunnypilot/selfdrive/controls/lib/tests/test_stopping_controller_end_far.py
+   openpilot/sunnypilot/system/tests/test_tn_autoupdate.py
+   openpilot/sunnypilot/system/tests/test_tn_iowatch.py
+   openpilot/sunnypilot/system/tn_autoupdate.py
+   openpilot/sunnypilot/system/tn_iowatch.py
+
+2. Existing sunnypilot / openpilot / opendbc / panda files modified by cgw1968acc on this branch, including
+   (non-exhaustive) the longitudinal planner and controllers, the Toyota car port (carcontroller, carstate, safety),
+   pandad (door unlock after ignition off) and the user interface. The git history records every change, its author
+   and its date.
+
+3. Main features developed by cgw1968acc for the Toyota Corolla Cross Hybrid and Corolla Altis Hybrid, including:
+   smooth three-phase stopping and end-of-stop force control, experimental-mode stop anchoring, launch and
+   creep handling, lead braking assistance, EV glide, slope and set-speed cruise handling, lane centering and
+   lateral path corrections, wheel-pulse standstill detection, door lock above 10 km/h and door unlock after
+   ignition off.
+
+Use of these portions is subject to the sunnypilot license above. Redistribution must keep this NOTICE.
