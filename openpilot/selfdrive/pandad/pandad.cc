@@ -20,10 +20,6 @@
 #define MAX_IR_PANDA_VAL 50
 #define CUTOFF_IL 400
 #define SATURATE_IL 1000
-// sunnypilot (tncr): unlock the doors after the ignition goes off, see door_unlock_after_ignition
-#define DOOR_UNLOCK_DELAY_MS 1000.0   // first frame this long after the ignition went off (OBD window module: 1.28 s)
-#define DOOR_UNLOCK_WINDOW_MS 8000.0  // Toyota safety and CAN kept until the unlock is sent, at most this long
-#define DOOR_UNLOCK_GAP_MS 80.0       // at least this long between two unlock frames
 
 ExitHandler do_exit;
 
@@ -179,43 +175,6 @@ void fill_panda_can_state(cereal::PandaState::PandaCanState::Builder &cs, const 
   cs.setCanCoreResetCnt(can_health.can_core_reset_cnt);
 }
 
-// sunnypilot (tncr): Corolla Cross door unlock after the ignition goes off, the frames the owner's OBD window module
-// sends then (recorded 2026-10-29) = opendbc/sunnypilot/car/toyota/door_unlock.py UNLOCK_SEQ: default and extended
-// session, IOControlByIdentifier DID 0x2811 (unlock) and return control, on 0x750 (body ECU, sub-address 0x40).
-// Called from send_panda_states: one frame per call, at least DOOR_UNLOCK_GAP_MS apart. It does not count on the
-// 10 Hz cycle: on 2026-10-29 22:1x the calls after the ignition went off came ~1 s apart, so with a fixed 3 s window only
-// the two session frames went out and the doors stayed locked. Returns the number of frames sent so far.
-int door_unlock_after_ignition(Panda *panda, bool ignition, double since_off_ms) {
-  static const uint8_t UNLOCK_SEQ[4][8] = {
-    {0x40, 0x02, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00},
-    {0x40, 0x02, 0x10, 0x03, 0x00, 0x00, 0x00, 0x00},
-    {0x40, 0x06, 0x2f, 0x28, 0x11, 0x03, 0x01, 0x80},
-    {0x40, 0x06, 0x2f, 0x28, 0x11, 0x03, 0x00, 0x80},
-  };
-  static int sent = 4;
-  static double last_ms = 0.0;
-  if (ignition) {
-    sent = 0;  // armed for the next ignition off
-    return sent;
-  }
-  if (sent >= 4 || since_off_ms < DOOR_UNLOCK_DELAY_MS || since_off_ms >= DOOR_UNLOCK_WINDOW_MS ||
-      millis_since_boot() - last_ms < DOOR_UNLOCK_GAP_MS) {
-    return sent;
-  }
-
-  MessageBuilder msg;
-  auto frames = msg.initEvent().initSendcan(1);
-  frames[0].setAddress(0x750);
-  frames[0].setDat(kj::arrayPtr(UNLOCK_SEQ[sent], 8));
-  frames[0].setSrc(0);
-  const double t = millis_since_boot();
-  panda->can_send(frames.asReader());
-  last_ms = millis_since_boot();
-  LOGW("door unlock after ignition off: frame %d at %.0f ms, can_send %.1f ms", sent, since_off_ms, last_ms - t);
-  sent++;
-  return sent;
-}
-
 std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroad, bool spoofing_started, bool always_offroad) {
   // build msg
   MessageBuilder msg;
@@ -249,24 +208,13 @@ std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroa
     panda->set_safety_model(cereal::CarParams::SafetyModel::NO_OUTPUT);
   }
 
-  // sunnypilot (tncr): the doors are unlocked right after the ignition goes off (door_unlock_after_ignition); for
-  // DOOR_UNLOCK_WINDOW_MS the Toyota safety (which allows only those diagnostic frames) and CAN stay as they were
-  static double ignition_off_ms = -1e9;
-  static bool prev_ignition = false;
-  if (prev_ignition && !ignition_local) ignition_off_ms = millis_since_boot();
-  prev_ignition = ignition_local;
-  const double since_off_ms = millis_since_boot() - ignition_off_ms;
-  const bool toyota = health.safety_mode_pkt == (uint8_t)(cereal::CarParams::SafetyModel::TOYOTA);
-  const int door_sent = door_unlock_after_ignition(panda, ignition_local || !toyota, since_off_ms);  // sunnypilot hook
-  const bool door_window = !ignition_local && toyota && door_sent < 4 && since_off_ms < DOOR_UNLOCK_WINDOW_MS;
-
-  bool power_save_desired = !ignition_local && !door_window;
+  bool power_save_desired = !ignition_local;
   if (((health.flags_pkt & HEALTH_FLAG_POWER_SAVE_ENABLED) != 0U) != power_save_desired) {
     panda->set_power_saving(power_save_desired);
   }
 
   // set safety mode to NO_OUTPUT when car is off or we're not onroad. ELM327 is an alternative if we want to leverage athenad/connect
-  bool should_close_relay = (!ignition_local || !is_onroad) && !door_window;  // sunnypilot: door_window
+  bool should_close_relay = !ignition_local || !is_onroad;
   if (should_close_relay && (health.safety_mode_pkt != (uint8_t)(cereal::CarParams::SafetyModel::NO_OUTPUT))) {
     panda->set_safety_model(cereal::CarParams::SafetyModel::NO_OUTPUT);
   }
