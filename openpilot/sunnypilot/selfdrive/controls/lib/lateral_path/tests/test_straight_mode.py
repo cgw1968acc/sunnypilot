@@ -1,6 +1,7 @@
 # Copyright (c) 2026 cgw1968acc
 # Developed under the direction of cgw1968acc with AI assistance (Claude, Anthropic).
 # Design, specifications, road testing and tuning by cgw1968acc.
+# Consultant: rav4kumar (Kumar).
 # Part of a sunnypilot-based project, distributed under the sunnypilot license (see LICENSE.md and NOTICE).
 from openpilot.cereal import log
 import openpilot.sunnypilot.selfdrive.controls.lib.lateral_path.straight_mode as sm

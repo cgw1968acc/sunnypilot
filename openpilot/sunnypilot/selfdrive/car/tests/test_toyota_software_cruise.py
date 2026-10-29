@@ -1,6 +1,7 @@
 # Copyright (c) 2026 cgw1968acc
 # Developed under the direction of cgw1968acc with AI assistance (Claude, Anthropic).
 # Design, specifications, road testing and tuning by cgw1968acc.
+# Consultant: rav4kumar (Kumar).
 # Part of a sunnypilot-based project, distributed under the sunnypilot license (see LICENSE.md and NOTICE).
 """Toyota (Corolla Cross TSS2) software-owned cruise set speed: short press +/-5 on openpilot's own target, long press
 only moves the PCM ceiling, target capped at PCM + headroom, CANCEL/RES keep the target, dial calibration on the HUD.

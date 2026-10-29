@@ -1,6 +1,7 @@
 # Copyright (c) 2026 cgw1968acc
 # Developed under the direction of cgw1968acc with AI assistance (Claude, Anthropic).
 # Design, specifications, road testing and tuning by cgw1968acc.
+# Consultant: rav4kumar (Kumar).
 # Part of a sunnypilot-based project, distributed under the sunnypilot license (see LICENSE.md and NOTICE).
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_stop.e2e_stop_anchor import E2eStopAnchor, model_stop_x, RETREAT_DB, STOP_D
 
