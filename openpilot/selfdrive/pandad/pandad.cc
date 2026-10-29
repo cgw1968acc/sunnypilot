@@ -20,6 +20,7 @@
 #define MAX_IR_PANDA_VAL 50
 #define CUTOFF_IL 400
 #define SATURATE_IL 1000
+#define UNLOCK_CAPTURE_MS 15000.0  // sunnypilot (tncr, temporary): see send_panda_states
 
 ExitHandler do_exit;
 
@@ -208,7 +209,11 @@ std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroa
     panda->set_safety_model(cereal::CarParams::SafetyModel::NO_OUTPUT);
   }
 
-  bool power_save_desired = !ignition_local;
+  // sunnypilot (tncr, temporary): keep CAN live UNLOCK_CAPTURE_MS after the ignition goes off, so
+  // tn_unlock_capture can record the OBD window module's door unlock (sent at ignition off)
+  static double last_ignition_ms = 0.0;
+  if (ignition_local) last_ignition_ms = millis_since_boot();
+  bool power_save_desired = !ignition_local && (millis_since_boot() - last_ignition_ms) > UNLOCK_CAPTURE_MS;
   if (((health.flags_pkt & HEALTH_FLAG_POWER_SAVE_ENABLED) != 0U) != power_save_desired) {
     panda->set_power_saving(power_save_desired);
   }
