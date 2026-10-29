@@ -101,7 +101,7 @@ class Car:
       alpha_long_allowed = self.params.get_bool("AlphaLongitudinalEnabled")
 
       cached_params = None
-      cached_params_raw = self.params.get("CarParamsCache")
+      cached_params_raw = sunnypilot_interfaces.cached_car_params(self.params)  # sunnypilot hook: no ECU query at boot when the platform is fixed
       if cached_params_raw is not None:
         with car.CarParams.from_bytes(cached_params_raw) as _cached_params:
           cached_params = _cached_params
