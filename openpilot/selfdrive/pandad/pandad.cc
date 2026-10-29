@@ -22,7 +22,8 @@
 #define SATURATE_IL 1000
 // sunnypilot (tncr): unlock the doors after the ignition goes off, see door_unlock_after_ignition
 #define DOOR_UNLOCK_DELAY_MS 1000.0   // first frame this long after the ignition went off (OBD window module: 1.28 s)
-#define DOOR_UNLOCK_WINDOW_MS 3000.0  // Toyota safety and CAN kept this long after the ignition went off
+#define DOOR_UNLOCK_WINDOW_MS 8000.0  // Toyota safety and CAN kept until the unlock is sent, at most this long
+#define DOOR_UNLOCK_GAP_MS 80.0       // at least this long between two unlock frames
 
 ExitHandler do_exit;
 
@@ -181,8 +182,10 @@ void fill_panda_can_state(cereal::PandaState::PandaCanState::Builder &cs, const 
 // sunnypilot (tncr): Corolla Cross door unlock after the ignition goes off, the frames the owner's OBD window module
 // sends then (recorded 2026-10-29) = opendbc/sunnypilot/car/toyota/door_unlock.py UNLOCK_SEQ: default and extended
 // session, IOControlByIdentifier DID 0x2811 (unlock) and return control, on 0x750 (body ECU, sub-address 0x40).
-// Called at 10 Hz: one frame per call (100 ms apart), only inside the window after the ignition went off.
-void door_unlock_after_ignition(Panda *panda, bool door_window, double since_off_ms) {
+// Called from send_panda_states: one frame per call, at least DOOR_UNLOCK_GAP_MS apart. It does not count on the
+// 10 Hz cycle: on 2026-10-29 22:1x the calls after the ignition went off came ~1 s apart, so with a fixed 3 s window only
+// the two session frames went out and the doors stayed locked. Returns the number of frames sent so far.
+int door_unlock_after_ignition(Panda *panda, bool ignition, double since_off_ms) {
   static const uint8_t UNLOCK_SEQ[4][8] = {
     {0x40, 0x02, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00},
     {0x40, 0x02, 0x10, 0x03, 0x00, 0x00, 0x00, 0x00},
@@ -190,20 +193,27 @@ void door_unlock_after_ignition(Panda *panda, bool door_window, double since_off
     {0x40, 0x06, 0x2f, 0x28, 0x11, 0x03, 0x00, 0x80},
   };
   static int sent = 4;
-  if (!door_window) {
+  static double last_ms = 0.0;
+  if (ignition) {
     sent = 0;  // armed for the next ignition off
-    return;
+    return sent;
   }
-  if (sent >= 4 || since_off_ms < DOOR_UNLOCK_DELAY_MS) return;
+  if (sent >= 4 || since_off_ms < DOOR_UNLOCK_DELAY_MS || since_off_ms >= DOOR_UNLOCK_WINDOW_MS ||
+      millis_since_boot() - last_ms < DOOR_UNLOCK_GAP_MS) {
+    return sent;
+  }
 
   MessageBuilder msg;
   auto frames = msg.initEvent().initSendcan(1);
   frames[0].setAddress(0x750);
   frames[0].setDat(kj::arrayPtr(UNLOCK_SEQ[sent], 8));
   frames[0].setSrc(0);
+  const double t = millis_since_boot();
   panda->can_send(frames.asReader());
-  LOGW("door unlock after ignition off: frame %d", sent);
+  last_ms = millis_since_boot();
+  LOGW("door unlock after ignition off: frame %d at %.0f ms, can_send %.1f ms", sent, since_off_ms, last_ms - t);
   sent++;
+  return sent;
 }
 
 std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroad, bool spoofing_started, bool always_offroad) {
@@ -246,11 +256,11 @@ std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroa
   if (prev_ignition && !ignition_local) ignition_off_ms = millis_since_boot();
   prev_ignition = ignition_local;
   const double since_off_ms = millis_since_boot() - ignition_off_ms;
-  const bool door_window = !ignition_local && since_off_ms < DOOR_UNLOCK_WINDOW_MS &&
-                           health.safety_mode_pkt == (uint8_t)(cereal::CarParams::SafetyModel::TOYOTA);
-  door_unlock_after_ignition(panda, door_window, since_off_ms);  // sunnypilot hook
+  const bool toyota = health.safety_mode_pkt == (uint8_t)(cereal::CarParams::SafetyModel::TOYOTA);
+  const int door_sent = door_unlock_after_ignition(panda, ignition_local || !toyota, since_off_ms);  // sunnypilot hook
+  const bool door_window = !ignition_local && toyota && door_sent < 4 && since_off_ms < DOOR_UNLOCK_WINDOW_MS;
 
-  bool power_save_desired = !ignition_local && since_off_ms >= DOOR_UNLOCK_WINDOW_MS;
+  bool power_save_desired = !ignition_local && !door_window;
   if (((health.flags_pkt & HEALTH_FLAG_POWER_SAVE_ENABLED) != 0U) != power_save_desired) {
     panda->set_power_saving(power_save_desired);
   }

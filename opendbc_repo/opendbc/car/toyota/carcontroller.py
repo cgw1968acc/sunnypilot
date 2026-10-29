@@ -11,7 +11,6 @@ from opendbc.car.toyota import toyotacan
 from opendbc.car.toyota.values import CAR, NO_STOP_TIMER_CAR, TSS2_CAR, \
                                         CarControllerParams, ToyotaFlags
 from opendbc.can import CANPacker
-from opendbc.sunnypilot.car.toyota.door_unlock import DoorLock
 from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
@@ -86,7 +85,6 @@ class CarController(CarControllerBase, GasInterceptorCarController):
     self.long_pid = get_long_tune(self.CP, self.CP_SP, self.params)
     self.delivery_trim = DeliveryTrim()  # sunnypilot hook (tncr): measured delivery residual, see delivery_trim.py
     self.aego = FirstOrderFilter(0.0, 0.45, DT_CTRL * 3)
-    self.door_lock = DoorLock()  # sunnypilot: lock above 10 km/h in D (unlock after ignition off: pandad)
     self.pitch = FirstOrderFilter(0, 0.5, DT_CTRL)
     self.pitch_hp = HighPassFilter(0.0, 0.25, 1.5, DT_CTRL)
 
@@ -231,7 +229,6 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     if self.auto_brake_hold.enabled:
       can_sends.extend(self.auto_brake_hold.update(CS, self.frame, self.packer, pitch_deg=math.degrees(self.pitch.x)))
-    can_sends.extend(self.door_lock.update(CS.out.gearShifter, self.frame, CS.out.vEgo, CS.out.doorOpen))  # sunnypilot hook: door_unlock.py
 
     # handle UI messages
     fcw_alert = hud_control.visualAlert == VisualAlert.fcw
