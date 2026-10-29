@@ -22,14 +22,15 @@ def cached_car_params(params: Params) -> bytes | None:
   """
   CarParams to fingerprint from without the VIN/firmware query (opendbc car_helpers.fingerprint uses them when they
   hold carFw and a VIN). Stock only has CarParamsCache, cleared on every manager start, so every cold boot queries
-  ~60 ECUs over the OBD port and the camera bus 2 s after start.
-  tncr 2026-10-29, Corolla Cross with the dealer (CarMate) head unit: that query is what stops the head unit's own
-  diagnostic reads at ignition (routes 000000bd/000000be: its 0x750 reads of the body ECU and gateway run 0-2 s,
-  stop exactly when the query starts, and never come back for the whole drive), and the iOS Toyota Drive+ Link app's
-  vehicle status then stays frozen at the moment of starting. With the C4 unplugged, or plugged in but not running,
-  the app updates normally.
+  ~60 ECUs over diagnostics ~2 s after start.
+  Why it matters (tncr 2026-10-29, Corolla Cross hybrid, dealer CarMate head unit with Toyota Drive+ Link): the head
+  unit polls the car's ECUs over UDS all through the ignition cycle and feeds the Drive+ Link app. It stops polling
+  the moment another tester's diagnostic frames appear on the bus and stays stopped into the next ignition cycle, so
+  the app's vehicle status freezes. Routes 000000bd/000000be: last poll at 6.3 s, right in this query; route 000000cb:
+  with no query and nothing else sent, polling ran the whole drive (~1000 reads/min) and the app kept updating.
   When the platform is already fixed by the user (CarPlatformBundle), the identity cannot come from the query anyway,
-  so the last drive's CarParams (CarParamsPersistent, same carFw and VIN) are used and the query is skipped.
+  so the last drive's CarParams (CarParamsPersistent, same carFw and VIN) are used and the query is skipped. Without a
+  fixed platform, or on the very first boot (no CarParamsPersistent yet), the stock query runs unchanged.
   """
   cached = params.get("CarParamsCache")
   if cached is not None:
