@@ -18,6 +18,32 @@ import openpilot.system.sentry as sentry
 from openpilot.sunnypilot.sunnylink.statsd import STATSLOGSP
 
 
+def cached_car_params(params: Params) -> bytes | None:
+  """
+  CarParams to fingerprint from without the VIN/firmware query (opendbc car_helpers.fingerprint uses them when they
+  hold carFw and a VIN). Stock only has CarParamsCache, cleared on every manager start, so every cold boot queries
+  ~60 ECUs over diagnostics ~2 s after start.
+  Why it matters (tncr 2026-10-29, Corolla Cross hybrid, dealer CarMate head unit with Toyota Drive+ Link): the head
+  unit polls the car's ECUs over UDS all through the ignition cycle and feeds the Drive+ Link app. It stops polling
+  the moment another tester's diagnostic frames appear on the bus and stays stopped into the next ignition cycle, so
+  the app's vehicle status freezes. Routes 000000bd/000000be: last poll at 6.3 s, right in this query; route 000000cb:
+  with no query and nothing else sent, polling ran the whole drive (~1000 reads/min) and the app kept updating.
+  When the platform is already fixed by the user (CarPlatformBundle), the identity cannot come from the query anyway,
+  so the last drive's CarParams (CarParamsPersistent, same carFw and VIN) are used and the query is skipped. Without a
+  fixed platform, or on the very first boot (no CarParamsPersistent yet), the stock query runs unchanged.
+  Notes: only the VIN and carFw are reused (CarParams are rebuilt by the current code). After an ECU firmware update,
+  an ECU replacement or moving the device to another car, un-fix the platform for one drive so the query refreshes
+  them, then fix it again. Other diagnostic senders (door lock/unlock features, OBD dongles) still stop the head
+  unit's polling; this only removes the boot query. Road-tested on one Taiwan Corolla Cross hybrid (CarMate head unit).
+  """
+  cached = params.get("CarParamsCache")
+  if cached is not None:
+    return cached
+  if (params.get("CarPlatformBundle") or {}).get("platform") is None:
+    return None
+  return params.get("CarParamsPersistent")
+
+
 def log_fingerprint(CP: structs.CarParams) -> None:
   if CP.carFingerprint == "MOCK":
     sentry.capture_fingerprint_mock()
