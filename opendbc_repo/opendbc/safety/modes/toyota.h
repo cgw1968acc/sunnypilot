@@ -416,6 +416,17 @@ static bool toyota_tx_hook(const CANPacket_t *msg) {
                          ((GET_BYTES(msg, 4, 4) == 0x00004000U) ||      // unlock
                           (GET_BYTES(msg, 4, 4) == 0x00008000U));       // lock
 
+    // tncr: Corolla Cross body ECU (sub-address 0x40) door lock/unlock, the way an OBD window module does it
+    // (sunnypilot/car/toyota/door_unlock.py): session 10 01 / 10 03, then IOControlByIdentifier 0x2810
+    sp_valid_uds_msgs |= ((GET_BYTES(msg, 0, 4) == 0x01100240U) ||      // 40 02 10 01 default session
+                          (GET_BYTES(msg, 0, 4) == 0x03100240U)) &&     // 40 02 10 03 extended session
+                         (GET_BYTES(msg, 4, 4) == 0x0U);
+    sp_valid_uds_msgs |= (GET_BYTES(msg, 0, 4) == 0x282F0640U) &&       // 40 06 2F 28 10 03 xx yy
+                         ((GET_BYTES(msg, 4, 4) == 0x80010310U) ||      // lock
+                          (GET_BYTES(msg, 4, 4) == 0x80000310U) ||      // lock, return control
+                          (GET_BYTES(msg, 4, 4) == 0x40010310U) ||      // unlock
+                          (GET_BYTES(msg, 4, 4) == 0x40000310U));       // unlock, return control
+
     bool valid_tester_present = !invalid_uds_msg && !toyota_stock_longitudinal && !toyota_secoc;
     if (!valid_tester_present && !sp_valid_uds_msgs) {
       tx = false;
