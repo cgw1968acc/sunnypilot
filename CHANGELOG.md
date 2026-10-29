@@ -1,3 +1,12 @@
+tnpbx 試用版（2026-10-30）：Corolla Altis 與 RAV4 TSS2（汽油、油電）
+========================
+* Auto Hold 改良：用輪速脈衝判斷真正停住、平順接手、依坡度加大保持力、坡道不輕易放開（已在 Altis 油電版實車驗證）
+* 汽油車 Auto Hold 加重版：一開始就用 -1.5 m/s²，車子往前爬時自動加力，最多 -3.0 m/s²（實驗性，尚未在汽油車實測，前幾次請把腳放在煞車上）
+* RAV4 2022 以後（雷達 ACC 車款）與 RAV4 Prime 不支援 Auto Hold
+* Drive+ Link 修正：固定車型後開機跳過韌體查詢，車美仕頭機的 App 可正常更新
+* 使用 Auto Hold：開啟 Auto Brake Hold，ACC 主開關要打開、巡航不要啟動
+* 完整說明與回報方式（請附 comma connect 的 route ID）：github.com/cgw1968acc/sunnypilot/tree/tnpbx
+
 sunnypilot Version 2026.002.000 (2026-06-28)
 ========================
 * What's Changed (sunnypilot/sunnypilot)
