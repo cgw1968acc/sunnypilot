@@ -28,7 +28,6 @@ from openpilot.sunnypilot.selfdrive.controls.lib.set_speed_ramp import SetSpeedR
 from openpilot.sunnypilot.selfdrive.controls.lib.slope_cruise import SlopeCruise
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.ev_glide import EvGlide
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller.accel_controller import AccelProfile
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_stop.e2e_stop_anchor import E2eStopAnchor, model_stop_x
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
@@ -88,7 +87,6 @@ class LongitudinalPlannerSP:
     self.params = Params()
     self._sp_dt = mpc.dt
     self.lead_start_assist = LeadStartAssist(mpc.dt)
-    self.e2e_stop_anchor = E2eStopAnchor()  # tncr: experimental-mode stop lands where the model first said
     self._sp_v_cruise_prev = 0.0
     self._sp_t_set_speed_up = SET_SPEED_INTENT_T  # s since the last set-speed increase
     self.set_speed_ramp = SetSpeedRamp()
@@ -285,7 +283,6 @@ class LongitudinalPlannerSP:
 
   def reset_sp(self) -> None:
     self.lead_start_assist.reset()
-    self.e2e_stop_anchor.reset()
 
   def max_accel_sp(self, max_accel_override: float | None, sm: messaging.SubMaster) -> float | None:
     """uphill scaling of the accel profile ceiling; tncr: the eco EV glide lift (ev_glide.py) on top"""
@@ -322,17 +319,6 @@ class LongitudinalPlannerSP:
     lead_one = sm['radarState'].leadOne
     long_allowed = (not long_control_off and not force_decel and not sm['carState'].brakePressed and
                     not sm['carState'].gasPressed)
-    # tncr: an e2e stop with no lead near it lands where the model first put its stop point, not where that point
-    # drifts back to while the car slows (e2e_stop/e2e_stop_anchor.py, route 000000be 16:59); only while e2e is the
-    # candidate in control, the model's accel otherwise
-    model = sm['modelV2']
-    e2e_in_control = is_e2e and long_allowed and self.mpc.source == MpcPlanSource.e2e
-    anchored = self.e2e_stop_anchor.update(e2e_in_control, v_ego, self._sp_dt, model_stop_x(model.position.x, model.velocity.x),
-                                           output_a_target, lead_one.dRel if lead_one.present else None)
-    if anchored is not None:
-      output_a_target = anchored[0]
-      if not anchored[1]:
-        output_should_stop = output_should_stop and not output_should_stop_e2e
     assist_allowed = long_allowed and not (is_e2e and output_should_stop_e2e)
     # tncr: the floor never exceeds the accel profile limit (uphill factor included); since 2026-10-22 it is capped at
     # LAUNCH_CAP and fades out by 20 km/h
