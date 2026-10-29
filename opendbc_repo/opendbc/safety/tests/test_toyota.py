@@ -125,16 +125,17 @@ class TestToyotaSafetyBase(common.CarSafetyTest, common.LongitudinalAccelSafetyT
       self.assertFalse(self._tx(pkt), msg.hex())
 
   def test_door_lock_io_control(self):
-    # tncr: Corolla Cross body ECU door lock/unlock via session change + IOControlByIdentifier 0x2810 (door_unlock.py)
+    # tncr: Corolla Cross body ECU door lock/unlock via session change + IOControlByIdentifier 0x2810/0x2811 (door_unlock.py)
     for msg in (b"\x40\x02\x10\x01\x00\x00\x00\x00", b"\x40\x02\x10\x03\x00\x00\x00\x00",
                 b"\x40\x06\x2f\x28\x10\x03\x01\x80", b"\x40\x06\x2f\x28\x10\x03\x00\x80",
-                b"\x40\x06\x2f\x28\x10\x03\x01\x40", b"\x40\x06\x2f\x28\x10\x03\x00\x40"):
+                b"\x40\x06\x2f\x28\x11\x03\x01\x80", b"\x40\x06\x2f\x28\x11\x03\x00\x80"):
       self.assertTrue(self._tx(libsafety_py.make_CANPacket(0x750, 0, msg)), msg.hex())
     for msg in (b"\x40\x02\x10\x02\x00\x00\x00\x00",  # programming session
                 b"\x41\x02\x10\x03\x00\x00\x00\x00",  # extended session, not the body ECU
                 b"\x40\x02\x10\x03\x01\x00\x00\x00",  # non-zero trailing bytes
                 b"\x40\x06\x2f\x28\x10\x03\x01\x20",  # other control mask
-                b"\x40\x06\x2f\x28\x11\x03\x01\x80",  # other DID
+                b"\x40\x06\x2f\x28\x10\x03\x01\x40",  # other control mask (the refused unlock guess)
+                b"\x40\x06\x2f\x28\x12\x03\x01\x80",  # other DID
                 b"\x40\x02\x11\x01\x00\x00\x00\x00"):  # ECU reset
       self.assertFalse(self._tx(libsafety_py.make_CANPacket(0x750, 0, msg)), msg.hex())
 

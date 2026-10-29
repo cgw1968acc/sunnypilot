@@ -20,7 +20,9 @@
 #define MAX_IR_PANDA_VAL 50
 #define CUTOFF_IL 400
 #define SATURATE_IL 1000
-#define UNLOCK_CAPTURE_MS 15000.0  // sunnypilot (tncr, temporary): see send_panda_states
+// sunnypilot (tncr): unlock the doors after the ignition goes off, see door_unlock_after_ignition
+#define DOOR_UNLOCK_DELAY_MS 1000.0   // first frame this long after the ignition went off (OBD window module: 1.28 s)
+#define DOOR_UNLOCK_WINDOW_MS 3000.0  // Toyota safety and CAN kept this long after the ignition went off
 
 ExitHandler do_exit;
 
@@ -176,6 +178,34 @@ void fill_panda_can_state(cereal::PandaState::PandaCanState::Builder &cs, const 
   cs.setCanCoreResetCnt(can_health.can_core_reset_cnt);
 }
 
+// sunnypilot (tncr): Corolla Cross door unlock after the ignition goes off, the frames the owner's OBD window module
+// sends then (recorded 2026-10-29) = opendbc/sunnypilot/car/toyota/door_unlock.py UNLOCK_SEQ: default and extended
+// session, IOControlByIdentifier DID 0x2811 (unlock) and return control, on 0x750 (body ECU, sub-address 0x40).
+// Called at 10 Hz: one frame per call (100 ms apart), only inside the window after the ignition went off.
+void door_unlock_after_ignition(Panda *panda, bool door_window, double since_off_ms) {
+  static const uint8_t UNLOCK_SEQ[4][8] = {
+    {0x40, 0x02, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00},
+    {0x40, 0x02, 0x10, 0x03, 0x00, 0x00, 0x00, 0x00},
+    {0x40, 0x06, 0x2f, 0x28, 0x11, 0x03, 0x01, 0x80},
+    {0x40, 0x06, 0x2f, 0x28, 0x11, 0x03, 0x00, 0x80},
+  };
+  static int sent = 4;
+  if (!door_window) {
+    sent = 0;  // armed for the next ignition off
+    return;
+  }
+  if (sent >= 4 || since_off_ms < DOOR_UNLOCK_DELAY_MS) return;
+
+  MessageBuilder msg;
+  auto frames = msg.initEvent().initSendcan(1);
+  frames[0].setAddress(0x750);
+  frames[0].setDat(kj::arrayPtr(UNLOCK_SEQ[sent], 8));
+  frames[0].setSrc(0);
+  panda->can_send(frames.asReader());
+  LOGW("door unlock after ignition off: frame %d", sent);
+  sent++;
+}
+
 std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroad, bool spoofing_started, bool always_offroad) {
   // build msg
   MessageBuilder msg;
@@ -209,17 +239,24 @@ std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroa
     panda->set_safety_model(cereal::CarParams::SafetyModel::NO_OUTPUT);
   }
 
-  // sunnypilot (tncr, temporary): keep CAN live UNLOCK_CAPTURE_MS after the ignition goes off, so
-  // tn_unlock_capture can record the OBD window module's door unlock (sent at ignition off)
-  static double last_ignition_ms = 0.0;
-  if (ignition_local) last_ignition_ms = millis_since_boot();
-  bool power_save_desired = !ignition_local && (millis_since_boot() - last_ignition_ms) > UNLOCK_CAPTURE_MS;
+  // sunnypilot (tncr): the doors are unlocked right after the ignition goes off (door_unlock_after_ignition); for
+  // DOOR_UNLOCK_WINDOW_MS the Toyota safety (which allows only those diagnostic frames) and CAN stay as they were
+  static double ignition_off_ms = -1e9;
+  static bool prev_ignition = false;
+  if (prev_ignition && !ignition_local) ignition_off_ms = millis_since_boot();
+  prev_ignition = ignition_local;
+  const double since_off_ms = millis_since_boot() - ignition_off_ms;
+  const bool door_window = !ignition_local && since_off_ms < DOOR_UNLOCK_WINDOW_MS &&
+                           health.safety_mode_pkt == (uint8_t)(cereal::CarParams::SafetyModel::TOYOTA);
+  door_unlock_after_ignition(panda, door_window, since_off_ms);  // sunnypilot hook
+
+  bool power_save_desired = !ignition_local && since_off_ms >= DOOR_UNLOCK_WINDOW_MS;
   if (((health.flags_pkt & HEALTH_FLAG_POWER_SAVE_ENABLED) != 0U) != power_save_desired) {
     panda->set_power_saving(power_save_desired);
   }
 
   // set safety mode to NO_OUTPUT when car is off or we're not onroad. ELM327 is an alternative if we want to leverage athenad/connect
-  bool should_close_relay = !ignition_local || !is_onroad;
+  bool should_close_relay = (!ignition_local || !is_onroad) && !door_window;  // sunnypilot: door_window
   if (should_close_relay && (health.safety_mode_pkt != (uint8_t)(cereal::CarParams::SafetyModel::NO_OUTPUT))) {
     panda->set_safety_model(cereal::CarParams::SafetyModel::NO_OUTPUT);
   }

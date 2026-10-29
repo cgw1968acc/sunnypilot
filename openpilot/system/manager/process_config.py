@@ -153,7 +153,6 @@ procs = [
   PythonProcess("updated", "openpilot.system.updated.updated", only_offroad, enabled=not PC),
   PythonProcess("tn_autoupdate", "openpilot.sunnypilot.system.tn_autoupdate", always_run, enabled=not PC),  # sunnypilot hook
   PythonProcess("tn_iowatch", "openpilot.sunnypilot.system.tn_iowatch", only_onroad, enabled=not PC),  # sunnypilot hook
-  PythonProcess("tn_unlock_capture", "openpilot.sunnypilot.system.tn_unlock_capture", always_run, enabled=not PC),  # sunnypilot hook (temporary)
   PythonProcess("uploader", "openpilot.system.loggerd.uploader", uploader_ready),
   PythonProcess("statsd", "openpilot.sunnypilot.system.statsd", always_run),
 
