@@ -59,15 +59,34 @@ class TestEndOfStop:
     out = run(sc, PID, cs(2.5), -1.8, out, 0.6)
     assert abs(out - (-1.8)) < 1e-6
 
-  def test_a_light_plan_at_entry_starts_the_line_at_end_hi(self):
+  def test_a_light_plan_at_entry_starts_the_line_where_the_request_is(self):
     sc = StoppingController(-2.0)
     light = END_HI + 0.1
     out = run(sc, PID, cs(7.0), light, light, 0.5)
-    assert abs(sc.a_entry - END_HI) < 1e-6
-    assert abs(out - END_HI) < 1e-6
+    assert abs(sc.a_entry - light) < 1e-6  # no step to END_HI at the entry
+    assert abs(out - blend(sc, 7.0)) < 1e-6
     # the planner's own curve eases off below 5 km/h: the request follows the line, never the plan
     out = run(sc, PID, cs(2.5), -0.10, out, 0.5)
     assert abs(out - blend(sc, 2.5)) < 1e-6
+
+  def test_far_lead_caps_the_line_at_what_the_room_needs(self):
+    sc = StoppingController(-2.0)
+    car = cs(4.0)
+    _, out = sc.update(PID, PID, car, -0.5, -0.5, -0.5, LIMITS, has_lead=True, lead_d=9.5, lead_v=0.5)
+    for _ in range(100):
+      _, out = sc.update(PID, PID, car, -0.10, out, -0.10, LIMITS, has_lead=True, lead_d=9.5, lead_v=0.5)
+    room = 9.5 + 0.5 ** 2 / 2.0 - StoppingController.END_NEED_GAP
+    need = (4.0 / 3.6) ** 2 / (2.0 * room)
+    assert abs(out - (-StoppingController.END_NEED_K * need)) < 1e-6
+    assert out > blend(sc, 4.0)
+
+  def test_normal_end_is_not_capped(self):
+    sc = StoppingController(-2.0)
+    car = cs(4.0)
+    _, out = sc.update(PID, PID, car, -0.5, -0.5, -0.5, LIMITS, has_lead=True, lead_d=4.5, lead_v=0.0)
+    for _ in range(100):
+      _, out = sc.update(PID, PID, car, -0.10, out, -0.10, LIMITS, has_lead=True, lead_d=4.5, lead_v=0.0)
+    assert abs(out - blend(sc, 4.0)) < 1e-6
 
   def test_entry_is_rate_limited(self):
     sc = StoppingController(-2.0)

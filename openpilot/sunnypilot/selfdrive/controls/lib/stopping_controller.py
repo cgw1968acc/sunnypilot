@@ -106,7 +106,7 @@ class StoppingController:
   # torque), while -0.63..-0.78 gave -0.6..-1.07 at 3 km/h. The driver's template ends at 0.5-0.7 m/s^2.
   # Driver 2026-10-03 afternoon, after the -0.50 / -0.40 / -0.35 flat ends: "from 5 km/h to 0 use a formula: -0.5 at
   # 5 km/h, -0.3 at 0 km/h, interpolated - firmer at 5 km/h, then easing as the car comes to rest". So the line is
-  # now piecewise linear through (BLEND_V, a_entry) -> (END_V_HI, END_HI) -> (0, END_LO); a_entry is at least END_HI.
+  # now piecewise linear through (BLEND_V, a_entry) -> (END_V_HI, END_HI) -> (0, END_LO); a_entry is the request at that moment.
   BLEND_V = 10.0 / 3.6  # m/s: the line starts here, at the request the car had at that moment
   END_V_HI = 5.0 / 3.6  # m/s
   END_HI = -0.65  # m/s^2 at END_V_HI (~1200 N); -0.60 -> -0.65 2026-10-08, see END_CURVE_A
@@ -143,6 +143,15 @@ class StoppingController:
   # accepted). The request is eased down to the line at END_CAP_RATE so the hand-over itself is not felt. With a lead
   # the plan still wins whenever it is firmer.
   END_CAP_RATE = 1.0  # m/s^3
+  # With a lead still far ahead the line is capped at what the remaining room needs (owner 2026-10-31, route 178
+  # 09:02:11: line -0.77 -> -0.39 while the plan eased to -0.1 with the lead ~9.5 m ahead and moving -> stopped at
+  # 9.9 m, the plan released, rolled, stopped again at 6.2 m). room = lead gap + the lead's own stop at END_NEED_LEAD_B
+  # - END_NEED_GAP; need = v^2 / 2 room; the line is never firmer than END_NEED_K * need (the plan still is, as
+  # before). Faded in over END_NEED_FADE of room, so a normal end (room <= 1.5 m at the line) is unchanged.
+  END_NEED_K = 2.0
+  END_NEED_GAP = 3.5  # m
+  END_NEED_LEAD_B = 1.0  # m/s^2
+  END_NEED_FADE = [1.5, 2.5]  # m of room
 
   # Leaving the standstill hold (driver 2026-10-04, route 000000fa 14:43:32: "the brake release at launch is a jerk, as
   # if let go suddenly; make it linear and slow"). There the request went from the -2.0 hold (3960 N) to +0.7 in 0.5 s
@@ -231,8 +240,13 @@ class StoppingController:
       return float(np.interp(max(v_ego, 0.0), self.END_CURVE_V, self.END_CURVE_A))
     return float(np.interp(v_ego, [self.END_V_HI, self.BLEND_V], [self.END_HI, self.a_entry]))
 
-  def _end_request(self, a_target, prev_accel, v_ego, has_lead=True):
+  def _end_request(self, a_target, prev_accel, v_ego, has_lead=True, lead_d=None, lead_v=None):
     line = self._blend(v_ego)
+    if has_lead and lead_d is not None and lead_v is not None:
+      room = lead_d + max(lead_v, 0.0) ** 2 / (2.0 * self.END_NEED_LEAD_B) - self.END_NEED_GAP
+      need = max(v_ego, 0.0) ** 2 / (2.0 * max(room, 0.5))
+      w = float(np.interp(room, self.END_NEED_FADE, [0.0, 1.0]))
+      line += w * (max(line, -self.END_NEED_K * need) - line)
     target = min(a_target, line)  # the firmer of the plan and the line
     if not has_lead and v_ego < self.END_V_HI and target < line:
       # no lead: the line is also the ceiling here, reached gently
@@ -277,7 +291,7 @@ class StoppingController:
     return self.cf_stopping
 
   def update(self, prev_state, state, CS, a_target, prev_accel, stock_accel, accel_limits, has_lead=False, pitch=None,
-             a_long=None):
+             a_long=None, lead_d=None, lead_v=None):
     if prev_state == LongCtrlState.stopping and state == LongCtrlState.pid and CS.standstill:
       self.go_t += DT_CTRL
       if self.go_t < self.STOPPING_EXIT_DEBOUNCE:
@@ -304,13 +318,15 @@ class StoppingController:
       self.end_active = False
     elif not self.end_active and a_target <= self.END_PLAN_MIN:
       self.end_active = True
-      self.a_entry = min(prev_accel, self.END_HI)  # the line starts where the request is now, at least END_HI
+      # the line starts where the request is now (owner 2026-10-31, route 178 08:42:27: forcing at least END_HI stepped
+      # -0.28 -> -0.65 in 0.2 s at 9.8 km/h); a normal end enters firmer than END_HI anyway
+      self.a_entry = prev_accel
 
     if state != LongCtrlState.stopping:
       if cf_stop:
         return state, float(np.clip(self._cf_request(a_target, prev_accel), accel_limits[0], accel_limits[1]))
       if self.end_active:
-        return state, float(np.clip(self._end_request(a_target, prev_accel, CS.vEgo, has_lead), accel_limits[0], accel_limits[1]))
+        return state, float(np.clip(self._end_request(a_target, prev_accel, CS.vEgo, has_lead, lead_d, lead_v), accel_limits[0], accel_limits[1]))
       # coming off the hold: linear, slow through the hand-over band, then LAUNCH_RATE up to the plan (see RELEASE_*)
       if prev_state == LongCtrlState.stopping and state == LongCtrlState.pid and prev_accel < self.RELEASE_BAND_HI:
         self.releasing = True
@@ -337,7 +353,7 @@ class StoppingController:
         output_accel = self._cf_request(a_target, prev_accel)
       elif self.end_active:
         # still rolling inside the end window: the line (or the plan where it is firmer), never the eased-off curve
-        output_accel = self._end_request(a_target, prev_accel, CS.vEgo, has_lead)
+        output_accel = self._end_request(a_target, prev_accel, CS.vEgo, has_lead, lead_d, lead_v)
 
       hold_delay = self.STANDSTILL_HOLD_DELAY_LEAD if has_lead else self.STANDSTILL_HOLD_DELAY_NO_LEAD
       if CS.standstill and not has_lead and self.engaged_t < self.ENGAGE_STANDSTILL_GRACE:

@@ -145,17 +145,19 @@ class Controls(ControlsExt):
                                            CC.longActive, long_plan.shouldStop)  # sunnypilot hook
     accel = self.LoC.update(CC.longActive, CS, a_target, long_plan.shouldStop, pid_accel_limits)
     stock_state = self.LoC.long_control_state
+    lead_one = self.sm['radarState'].leadOne
     self.LoC.long_control_state, accel = self.stopping_controller.update(
       prev_state, stock_state, CS, a_target, prev_accel, accel, pid_accel_limits, long_plan.hasLead,
       pitch=self.calibrated_pose.orientation.pitch if self.calibrated_pose is not None else None,
-      a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None)  # sunnypilot hook
+      a_long=self.calibrated_pose.acceleration.x if self.calibrated_pose is not None else None,
+      lead_d=lead_one.dRel if lead_one.present else None,
+      lead_v=lead_one.vLead if lead_one.present else None)  # sunnypilot hook
     if self.LoC.long_control_state != stock_state:
       self.LoC.reset()
     self.LoC.last_output_accel = accel
     # sunnypilot hook: the stop-gap hold, creep-stall guard and boost only shape what is sent; last_output_accel (the
     # next frame's prev_accel for the stopping controller and LongControl's stopping state) keeps the plain request, or
     # the boost would compound
-    lead_one = self.sm['radarState'].leadOne
     accel_shaped = self.stop_gap_hold.update(accel, CS.vEgo, CS.aEgo, CS.standstill, lead_one, CC.longActive)
     accel_shaped = self.stop_gap_close.update(accel_shaped, CS.vEgo, CS.aEgo, CS.standstill, lead_one, CC.longActive)
     # the gap-close crawl rolls on purpose: not a creep stall
